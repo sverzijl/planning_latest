@@ -160,7 +160,142 @@ def render_upload_page():
                     st.dataframe(df_forecast.head(100), use_container_width=True)
                     st.caption(f"📊 {len(df_forecast)} forecast entries (showing first 100)")
                 except Exception as e:
-                    st.error(f"Error reading Forecast sheet: {e}")
+                    # Enhanced error handling for missing Forecast sheet
+                    error_msg = str(e)
+
+                    if "Worksheet" in error_msg and "not found" in error_msg:
+                        # Forecast sheet missing - provide helpful guidance
+                        st.error("⚠️ **Forecast sheet not found in uploaded file**")
+
+                        # Detect available sheets
+                        try:
+                            xl_file = pd.ExcelFile(forecast_file, engine="openpyxl")
+                            available_sheets = xl_file.sheet_names
+
+                            # Check if it's SAP IBP format
+                            is_sap_ibp = any(sheet in ["G610 RET", "SapIbpChartFeeder", "IBPFormattingSheet"]
+                                           for sheet in available_sheets)
+
+                            if is_sap_ibp:
+                                st.warning("""
+                                **🔍 SAP IBP Format Detected**
+
+                                This file appears to be in **SAP Integrated Business Planning (IBP)** export format,
+                                which uses a wide format with dates as columns. The application can automatically
+                                convert this to the expected long format.
+
+                                **Available sheets in this file:**
+                                """)
+                                for sheet in available_sheets:
+                                    st.write(f"- `{sheet}`")
+
+                                # Add conversion button
+                                if st.button("🔄 Convert SAP IBP to Long Format", type="primary"):
+                                    with st.spinner("Converting SAP IBP format..."):
+                                        try:
+                                            from pathlib import Path
+                                            import tempfile
+                                            from src.parsers import SapIbpConverter
+
+                                            # Save uploaded file to temp location
+                                            with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp_file:
+                                                tmp_file.write(forecast_file.getvalue())
+                                                tmp_path = tmp_file.name
+
+                                            # Convert
+                                            converter = SapIbpConverter(tmp_path)
+                                            df_converted = converter.convert()
+
+                                            # Display success and preview
+                                            st.success(f"✅ Conversion successful! {len(df_converted)} forecast entries generated.")
+
+                                            st.subheader("📊 Converted Forecast Data")
+                                            st.dataframe(df_converted.head(100), use_container_width=True)
+                                            st.caption(f"📊 {len(df_converted)} forecast entries (showing first 100)")
+
+                                            # Show summary
+                                            col1, col2, col3 = st.columns(3)
+                                            with col1:
+                                                st.metric("Locations", df_converted["location_id"].nunique())
+                                            with col2:
+                                                st.metric("Products", df_converted["product_id"].nunique())
+                                            with col3:
+                                                date_range = f"{df_converted['date'].min()} to {df_converted['date'].max()}"
+                                                st.metric("Date Range", "")
+                                                st.caption(date_range)
+
+                                            # Offer download
+                                            st.divider()
+                                            st.info("💾 **Download Converted File** (optional)")
+
+                                            # Convert to Excel bytes for download
+                                            from io import BytesIO
+                                            output = BytesIO()
+                                            with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                                                df_converted.to_excel(writer, sheet_name="Forecast", index=False)
+                                            output.seek(0)
+
+                                            st.download_button(
+                                                label="⬇️ Download as Excel",
+                                                data=output,
+                                                file_name="Forecast_Converted.xlsx",
+                                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                            )
+
+                                            # Clean up
+                                            Path(tmp_path).unlink()
+
+                                        except Exception as convert_error:
+                                            st.error(f"❌ Conversion failed: {convert_error}")
+                                            import traceback
+                                            st.code(traceback.format_exc())
+
+                                st.divider()
+                                st.info("""
+                                **📖 Alternative Options:**
+
+                                1. **Manual Conversion**: See `data/examples/SAP_IBP_FORMAT.md` for details
+                                2. **Command-Line Tool**: Use `python scripts/convert_sap_ibp.py` for batch conversion
+
+                                **Expected Forecast Sheet Format:**
+                                - Columns: `location_id`, `product_id`, `date`, `quantity`
+                                - Format: Long format (one row per location-product-date combination)
+                                - See: `data/examples/EXCEL_TEMPLATE_SPEC.md` for complete specification
+                                """)
+
+                                st.markdown("""
+                                **📄 Documentation:**
+                                - See `data/examples/SAP_IBP_FORMAT.md` for details on this file's structure
+                                - See `data/examples/EXCEL_TEMPLATE_SPEC.md` for expected format specification
+                                """)
+                            else:
+                                # Unknown format
+                                st.warning(f"""
+                                The uploaded file does not contain a sheet named "Forecast".
+
+                                **Available sheets in this file:**
+                                """)
+                                for sheet in available_sheets:
+                                    st.write(f"- `{sheet}`")
+
+                                st.info("""
+                                **Expected Format:**
+
+                                Your forecast file should contain a sheet named "Forecast" with these columns:
+                                - `location_id`: Location identifier (e.g., "6104")
+                                - `product_id`: Product identifier (e.g., "168846")
+                                - `date`: Forecast date (YYYY-MM-DD format)
+                                - `quantity`: Forecasted units
+                                - `confidence`: (optional) Confidence level
+
+                                See `data/examples/EXCEL_TEMPLATE_SPEC.md` for complete specification.
+                                """)
+
+                        except Exception as detect_error:
+                            st.error(f"Error detecting file format: {detect_error}")
+                    else:
+                        # Other error
+                        st.error(f"Error reading Forecast sheet: {e}")
             tab_idx += 1
 
         # Network config tabs

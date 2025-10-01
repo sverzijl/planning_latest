@@ -425,7 +425,224 @@ The provided `Gfree Forecast.xlsm` is in SAP IBP export format, which differs fr
 | Metadata | Embedded headers | Clean tabular |
 | Ready to use | No (needs conversion) | Yes (direct load) |
 
-**To convert SAP IBP:** See `SAP_IBP_FORMAT.md` for conversion process.
+**To convert SAP IBP:** See below for automatic conversion options.
+
+---
+
+## SAP IBP Conversion
+
+The application includes automatic conversion from SAP Integrated Business Planning (IBP) export format to the required long format.
+
+### What is SAP IBP Format?
+
+SAP IBP exports use a **wide format** where:
+- Dates are column headers (e.g., "02.06.2025", "03.06.2025", ...)
+- Each row represents one location-product combination
+- Forecast quantities are cell values at date intersections
+- File contains 5 metadata/header rows before data
+
+**Example SAP IBP Structure:**
+```
+Sheet: "G610 RET"
+Row 5 (headers): [metadata...] | Product | Location | ... | 02.06.2025 | 03.06.2025 | ...
+Row 6 (data):    [metadata...] | 168846  | 6104     | ... | 120        | 125        | ...
+Row 7 (data):    [metadata...] | 168846  | 6105     | ... | 85         | 90         | ...
+```
+
+**Target Long Format:**
+```
+location_id  product_id  date        quantity
+6104         168846      2025-06-02  120
+6104         168846      2025-06-03  125
+6105         168846      2025-06-02  85
+6105         168846      2025-06-03  90
+```
+
+### Conversion Methods
+
+#### Method 1: Streamlit UI (Recommended for Interactive Use)
+
+1. **Upload SAP IBP file** to the Upload Data page
+2. **Automatic detection**: App detects SAP IBP format by sheet names
+3. **One-click conversion**: Click "🔄 Convert SAP IBP to Long Format" button
+4. **Preview results**: View converted data with summary metrics
+5. **Download**: Optionally download converted Excel file
+
+**Features:**
+- Automatic format detection
+- Real-time preview of converted data
+- Summary statistics (locations, products, date range)
+- Excel download option
+- Error handling with detailed messages
+
+#### Method 2: Command-Line Tool (Recommended for Batch Processing)
+
+Use the `convert_sap_ibp.py` script for batch conversion or automation:
+
+```bash
+# Basic usage - converts to [input_file]_Converted.xlsx
+python scripts/convert_sap_ibp.py "Gfree Forecast.xlsm"
+
+# Custom output filename
+python scripts/convert_sap_ibp.py "Gfree Forecast.xlsm" "Forecast_Long.xlsx"
+
+# Verbose mode for detailed output
+python scripts/convert_sap_ibp.py "Gfree Forecast.xlsm" -v
+
+# Specify sheet name (if multiple data sheets)
+python scripts/convert_sap_ibp.py "Gfree Forecast.xlsm" --sheet "G610 RET"
+
+# Custom output sheet name
+python scripts/convert_sap_ibp.py "Gfree Forecast.xlsm" --output-sheet "Forecast"
+```
+
+**Command-Line Options:**
+- `input_file` (required): Path to SAP IBP Excel file
+- `output_file` (optional): Output path (default: input_file_Converted.xlsx)
+- `--sheet SHEET`: Sheet name to read (auto-detects if not specified)
+- `--output-sheet SHEET`: Output sheet name (default: "Forecast")
+- `-v, --verbose`: Detailed output with statistics
+
+**Example Output:**
+```
+🔄 Converting SAP IBP file...
+   Input:  data/Gfree Forecast.xlsm
+   Output: data/Gfree Forecast_Converted.xlsx
+
+✅ Conversion successful!
+   Output file: data/Gfree Forecast_Converted.xlsx
+   Entries: 9180
+```
+
+#### Method 3: Python API (Recommended for Programmatic Use)
+
+Use the `SapIbpConverter` class directly in your Python code:
+
+```python
+from pathlib import Path
+from src.parsers import SapIbpConverter
+
+# Initialize converter
+converter = SapIbpConverter("data/Gfree Forecast.xlsm")
+
+# Option A: Convert and get DataFrame
+df_forecast = converter.convert()
+print(f"Converted {len(df_forecast)} forecast entries")
+print(df_forecast.head())
+
+# Option B: Convert and save directly to Excel
+converter.convert_and_save(
+    output_path="Forecast_Converted.xlsx",
+    sheet_name=None,  # Auto-detect
+    output_sheet_name="Forecast"
+)
+
+# Option C: Step-by-step conversion
+df_raw = converter.read_sap_ibp_data()  # Read raw data
+df_long = converter.convert_to_long_format(df_raw)  # Transform
+
+# Detect SAP IBP format
+is_sap_ibp = SapIbpConverter.detect_sap_ibp_format("file.xlsx")
+```
+
+**Class Methods:**
+- `detect_sap_ibp_format(file_path)`: Static method to detect SAP IBP format
+- `find_data_sheet()`: Find data sheet in SAP IBP file
+- `read_sap_ibp_data(sheet_name)`: Read raw SAP IBP data
+- `parse_date_column(date_str)`: Parse SAP IBP date format (DD.MM.YYYY)
+- `convert_to_long_format(df_raw)`: Transform wide to long format
+- `convert(sheet_name)`: Full conversion pipeline
+- `convert_and_save(output_path, sheet_name, output_sheet_name)`: Convert and save
+
+### Conversion Details
+
+**Date Format Handling:**
+- SAP IBP uses `DD.MM.YYYY` format (e.g., "02.06.2025")
+- Also supports ISO format `YYYY-MM-DD` and common date formats
+- Invalid dates are automatically filtered out
+
+**Column Mapping:**
+- Product ID: Column 7 (Excel index, 0-indexed column 6)
+- Location ID: Column 8 (Excel index, 0-indexed column 7)
+- Date columns: Start at column 11 (0-indexed column 10)
+
+**Data Cleaning:**
+- Removes rows with missing location_id or product_id
+- Filters out non-numeric quantities
+- Removes invalid or unparseable dates
+- Sorts by location_id, product_id, date for consistency
+
+**Output Format:**
+- Columns: `location_id`, `product_id`, `date`, `quantity`
+- Types: string, string, date, float
+- Long format: One row per location-product-date combination
+
+### Example Conversion Results
+
+**Input: Gfree Forecast.xlsm (SAP IBP format)**
+- Sheet: "G610 RET"
+- Raw size: 50 rows × 214 columns
+- File size: 441 KB
+
+**Output: Gfree Forecast_Converted.xlsx (Long format)**
+- Sheet: "Forecast"
+- Converted size: 9,180 rows × 4 columns
+- File size: 224 KB
+- Coverage: 9 locations × 5 products × 204 days
+
+**Summary Statistics:**
+- Locations: 6103, 6104, 6105, 6110, 6120, 6123, 6125, 6130, 6134
+- Products: 168846, 168847, 168848, 179649, 179650
+- Date range: June 2, 2025 to December 22, 2025 (204 days)
+
+### Integration with MultiFileParser
+
+After conversion, use the converted file with `MultiFileParser`:
+
+```python
+from src.parsers import SapIbpConverter, MultiFileParser
+
+# Step 1: Convert SAP IBP file
+converter = SapIbpConverter("Gfree Forecast.xlsm")
+converter.convert_and_save("Forecast_Converted.xlsx")
+
+# Step 2: Load with MultiFileParser
+parser = MultiFileParser(
+    forecast_file="Forecast_Converted.xlsx",  # Converted forecast
+    network_file="Network_Config.xlsx"         # Network configuration
+)
+
+# Step 3: Parse and validate
+forecast, locations, routes, labor, trucks, costs = parser.parse_all()
+validation = parser.validate_consistency(forecast, locations, routes)
+
+print(f"✅ Loaded {len(forecast.entries)} forecast entries")
+```
+
+### Troubleshooting
+
+**Error: "Worksheet named 'Forecast' not found"**
+- Cause: File is in SAP IBP format (wide layout)
+- Solution: Use automatic conversion via UI or CLI tool
+
+**Error: "No SAP IBP data sheet found"**
+- Cause: File doesn't contain recognized SAP IBP sheets
+- Solution: Specify sheet name manually with `--sheet` option
+
+**Error: "No valid date columns found"**
+- Cause: Date columns not in expected format
+- Solution: Verify column headers use DD.MM.YYYY or YYYY-MM-DD format
+
+**Warning: "File may not be in SAP IBP format"**
+- Cause: Detection heuristic failed but file might be valid
+- Action: Review file structure; continue conversion if confident
+
+### See Also
+
+- `SAP_IBP_FORMAT.md`: Detailed SAP IBP structure analysis
+- `scripts/convert_sap_ibp.py`: Command-line conversion tool source code
+- `src/parsers/sap_ibp_converter.py`: Converter class implementation
+- `tests/test_sap_ibp_converter.py`: Conversion tests (16 tests)
 
 ---
 
@@ -435,3 +652,4 @@ The provided `Gfree Forecast.xlsm` is in SAP IBP export format, which differs fr
 2. Test with `ExcelParser` to ensure compatibility
 3. Build UI upload feature using these formats
 4. Create validation layer for data quality checks
+5. For SAP IBP files: Use automatic conversion before loading

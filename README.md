@@ -91,6 +91,44 @@ print(f"Loaded {len(forecast.entries)} forecast entries for {len(locations)} loc
 
 Alternatively, upload both files through the Streamlit UI (Upload Data page).
 
+### SAP IBP Forecast Conversion
+
+If your forecast data is in **SAP Integrated Business Planning (IBP)** export format (wide format with dates as columns), you can convert it to the required long format:
+
+**Option 1: Streamlit UI (Automatic Detection)**
+1. Upload your SAP IBP file to the Upload Data page
+2. The application automatically detects SAP IBP format
+3. Click "🔄 Convert SAP IBP to Long Format" button
+4. Preview converted data and download the result
+
+**Option 2: Command-Line Tool**
+```bash
+# Convert with default output name (input_file_Converted.xlsx)
+python scripts/convert_sap_ibp.py "data/Gfree Forecast.xlsm"
+
+# Convert with custom output name
+python scripts/convert_sap_ibp.py "Gfree Forecast.xlsm" "Forecast_Long.xlsx"
+
+# Verbose mode with detailed output
+python scripts/convert_sap_ibp.py "Gfree Forecast.xlsm" -v
+```
+
+**Option 3: Python API**
+```python
+from src.parsers import SapIbpConverter
+
+# Convert SAP IBP file
+converter = SapIbpConverter("data/Gfree Forecast.xlsm")
+df_forecast = converter.convert()
+
+# Save to Excel
+converter.convert_and_save("Forecast_Converted.xlsx")
+
+# Result: 9,180 entries (9 locations × 5 products × 204 days)
+```
+
+See `data/examples/SAP_IBP_FORMAT.md` for details on SAP IBP format structure.
+
 ### Running Tests
 
 ```bash
@@ -104,7 +142,7 @@ pytest --cov=src tests/
 pytest tests/test_models.py
 ```
 
-**Test Coverage:** 57 tests covering all core models, parsers, and multi-file workflow
+**Test Coverage:** 73 tests covering all core models, parsers, multi-file workflow, and SAP IBP conversion
 
 ### Code Quality
 
@@ -300,8 +338,13 @@ The `data/examples/` directory contains:
 6. **Gfree Forecast.xlsm** - Real-world SAP IBP forecast export
    - Format: SAP Integrated Business Planning (IBP) wide format
    - Contains: 9 breadroom locations, 5 products, 204 days of forecast (Jun 2 - Dec 22, 2025)
-   - **Note:** This is in SAP IBP format and requires preprocessing before use with the application parser
-   - See `SAP_IBP_FORMAT.md` and `EXCEL_TEMPLATE_SPEC.md` for conversion details
+   - **Conversion:** Automatically converted by UI or use `python scripts/convert_sap_ibp.py`
+   - See `SAP_IBP_FORMAT.md` for format details and conversion process
+
+7. **Gfree Forecast_Converted.xlsx** - Converted forecast in application format
+   - Pre-converted version of `Gfree Forecast.xlsm` in long format
+   - Ready to use directly with `MultiFileParser` or Streamlit UI
+   - 9,180 forecast entries (9 locations × 5 products × 204 days)
 
 **Breadroom Destinations (from Gfree Forecast.xlsm):**
 - 6103 - QBA-Canberra (ACT)
