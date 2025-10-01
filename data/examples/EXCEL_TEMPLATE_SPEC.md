@@ -343,6 +343,77 @@ ValueError: Quantity must be numeric
 
 ---
 
+## Multi-File Workflow (Recommended)
+
+### Two-File Approach
+
+For production use, we recommend **separating forecast data from network configuration** using two files:
+
+**File 1: Forecast File** (`Gfree Forecast.xlsm` or similar)
+- Contains: `Forecast` sheet only
+- Updates: Frequently (weekly/monthly from demand planning system)
+- Source: SAP IBP or other forecasting tools
+- Format: Requires conversion to long format if from SAP IBP
+
+**File 2: Network Configuration File** (`Network_Config.xlsx`)
+- Contains: `Locations`, `Routes`, `LaborCalendar`, `TruckSchedules`, `CostParameters` sheets
+- Updates: Infrequently (when network structure or operations change)
+- Source: Operations team, manually maintained
+- Format: Direct use with parser
+
+### Benefits of Two-File Approach
+
+1. **Separation of Concerns**: Demand planning team updates forecasts, operations team maintains network config
+2. **Reduced File Size**: Forecast files can be large; separating keeps network config manageable
+3. **Version Control**: Network config can be version-controlled separately
+4. **Easier Updates**: Update forecast without touching network configuration
+5. **Flexibility**: Use different forecast files with same network config for scenarios
+
+### Usage with MultiFileParser
+
+```python
+from src.parsers import MultiFileParser
+
+# Load both files
+parser = MultiFileParser(
+    forecast_file="data/Gfree Forecast.xlsm",  # After SAP IBP conversion
+    network_file="data/Network_Config.xlsx"
+)
+
+# Parse all data
+forecast, locations, routes, labor, trucks, costs = parser.parse_all()
+
+# Validate consistency
+validation = parser.validate_consistency(forecast, locations, routes)
+if validation["warnings"]:
+    for warning in validation["warnings"]:
+        print(f"⚠️ {warning}")
+```
+
+### Example Files
+
+**Forecast File**: Use `Gfree Forecast.xlsm` (requires SAP IBP conversion) or create your own with `Forecast` sheet
+
+**Network Config File**: Use `Network_Config.xlsx` (provided in `data/examples/`)
+- 11 locations (6122 manufacturing + 2 hubs + 1 frozen storage + 7 breadrooms)
+- 10 routes (4 primary + 5 secondary + 1 frozen buffer)
+- 204-day labor calendar (Jun 2 - Dec 22, 2025)
+- 11 weekly truck departures
+- 12 cost parameters
+
+### Single-File Approach (Alternative)
+
+You can still use a single file with all 6 sheets if preferred:
+
+```python
+from src.parsers import ExcelParser
+
+parser = ExcelParser("data/complete_data.xlsx")
+forecast, locations, routes, labor, trucks, costs = parser.parse_all()
+```
+
+---
+
 ## Differences from SAP IBP Format
 
 The provided `Gfree Forecast.xlsm` is in SAP IBP export format, which differs from this template:

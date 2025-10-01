@@ -68,6 +68,29 @@ streamlit run ui/app.py
 
 The application will open in your browser at `http://localhost:8501`
 
+### Quick Start: Two-File Workflow
+
+The recommended workflow uses separate files for forecast and network configuration:
+
+```python
+from src.parsers import MultiFileParser
+
+# Load forecast and network configuration
+parser = MultiFileParser(
+    forecast_file="data/examples/your_forecast.xlsx",  # Your forecast file
+    network_file="data/examples/Network_Config.xlsx"   # Provided template
+)
+
+# Parse all data
+forecast, locations, routes, labor, trucks, costs = parser.parse_all()
+
+# Validate consistency
+validation = parser.validate_consistency(forecast, locations, routes)
+print(f"Loaded {len(forecast.entries)} forecast entries for {len(locations)} locations")
+```
+
+Alternatively, upload both files through the Streamlit UI (Upload Data page).
+
 ### Running Tests
 
 ```bash
@@ -81,7 +104,7 @@ pytest --cov=src tests/
 pytest tests/test_models.py
 ```
 
-**Test Coverage:** 41 tests covering all core models and parsers
+**Test Coverage:** 57 tests covering all core models, parsers, and multi-file workflow
 
 ### Code Quality
 
@@ -237,8 +260,15 @@ The `data/examples/` directory contains:
 1. **EXCEL_TEMPLATE_SPEC.md** - Excel file format specification ⭐ **START HERE**
    - Complete column-by-column specification for all 6 sheets
    - Required vs. optional fields with examples
+   - **Multi-file workflow** (recommended): separate forecast and network config files
    - Validation rules and common errors
    - Minimal working example structure
+
+1.5. **Network_Config.xlsx** - Network configuration template file ⭐ **NEW**
+   - 11 locations, 10 routes, 204-day labor calendar, 11 truck schedules, 12 cost parameters
+   - Ready to use with MultiFileParser
+   - Use with forecast files for two-file workflow
+   - Update for your specific network structure
 
 2. **MANUFACTURING_SCHEDULE.md** - Manufacturing operations reference
    - Complete labor schedule (12h M-F + OT, weekends, 2025/2026 public holidays)
