@@ -17,7 +17,8 @@ from pyomo.environ import ConcreteModel, Var, Objective, Constraint, NonNegative
 
 class SolverType(str, Enum):
     """Supported solver types."""
-    CBC = "cbc"
+    ASL_CBC = "asl:cbc"  # AMPL interface (preferred for CBC 2.10.12+)
+    CBC = "cbc"          # Direct interface (may have issues with CBC 2.10.12+)
     GLPK = "glpk"
     GUROBI = "gurobi"
     CPLEX = "cplex"
@@ -77,7 +78,8 @@ class SolverConfig:
     SOLVER_PREFERENCE = [
         SolverType.GUROBI,   # Commercial, fastest
         SolverType.CPLEX,    # Commercial, very fast
-        SolverType.CBC,      # Open source, good performance
+        SolverType.ASL_CBC,  # Open source via AMPL interface (best for CBC 2.10.12+)
+        SolverType.CBC,      # Open source direct (may fail with CBC 2.10.12+)
         SolverType.GLPK,     # Open source, slower but widely available
     ]
 
