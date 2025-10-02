@@ -313,20 +313,37 @@ class TruckLoader:
         if shipment.first_leg_destination != truck_load.destination_id:
             return False
 
-        # Check 2: Timing (D-1 vs D0)
-        is_d1 = shipment.is_d1_production(departure_date)
-        is_d0 = shipment.is_d0_production(departure_date)
+        # Check 2: Timing (production date vs truck departure)
+        #
+        # Original strict logic was D-1 for morning, D-1/D0 for afternoon.
+        # However, this fails when there are weekend/holiday gaps (e.g., Friday
+        # production can't be D-1 for Monday truck because Saturday has no production).
+        #
+        # Updated logic:
+        # - Production must be on or before truck departure (not future)
+        # - Production should be recent (within 5 days for freshness)
+        # - Morning trucks: production before departure day (D-1, D-2, etc.)
+        # - Afternoon trucks: production on or before departure day (D0, D-1, D-2, etc.)
 
-        if not (is_d1 or is_d0):
-            # Shipment not ready for this truck departure
+        from datetime import timedelta
+
+        # Check if production is in the future (impossible)
+        if shipment.production_date > departure_date:
             return False
 
-        # Morning trucks: D-1 only
-        if truck_load.departure_type == "morning" and not is_d1:
+        # Check if production is too old (more than 5 days old)
+        days_since_production = (departure_date - shipment.production_date).days
+        if days_since_production > 5:
+            # Production too old - likely expired or wrong match
             return False
 
-        # Afternoon trucks: D-1 or D0
-        # (D0 feasibility would need production time check - assume feasible for now)
+        # Morning trucks: production must be strictly before departure
+        if truck_load.departure_type == "morning":
+            if shipment.production_date >= departure_date:
+                return False
+
+        # Afternoon trucks: production can be same day (D0) or before
+        # Already covered by the >= check above
 
         return True
 

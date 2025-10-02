@@ -252,6 +252,9 @@ class ProductionScheduler:
         """
         Calculate production date using backward scheduling.
 
+        Ensures production falls on a valid production day (with available labor).
+        If calculated date is weekend/holiday, moves backward to previous production day.
+
         Args:
             delivery_date: Target delivery date
             transit_days: Transit time in days
@@ -262,7 +265,56 @@ class ProductionScheduler:
         # Backward schedule: delivery date - transit - safety margin
         production_date = delivery_date - timedelta(days=transit_days + self.SAFETY_MARGIN_DAYS)
 
+        # Adjust to valid production day (skip weekends/holidays with no fixed labor)
+        production_date = self._adjust_to_production_day(production_date)
+
         return production_date
+
+    def _adjust_to_production_day(self, target_date: date) -> date:
+        """
+        Adjust date to nearest valid production day (on or before target).
+
+        A valid production day has fixed labor hours > 0 in the labor calendar,
+        or falls on a weekday (Mon-Fri) if not in calendar.
+
+        Args:
+            target_date: Target date
+
+        Returns:
+            Adjusted date that is a valid production day
+        """
+        # Try to find the date in labor calendar
+        labor_day = self.labor_calendar.get_labor_day(target_date)
+
+        if labor_day:
+            # Check if this day has fixed labor (standard production day)
+            if labor_day.fixed_hours > 0:
+                return target_date
+            # Otherwise, it's a weekend/holiday - move backward
+        else:
+            # Not in calendar, check if it's a weekday
+            if target_date.weekday() < 5:  # Mon-Fri
+                return target_date
+
+        # Move backward to find previous production day
+        check_date = target_date - timedelta(days=1)
+        max_lookback = 7  # Don't look back more than a week
+
+        for _ in range(max_lookback):
+            labor_day = self.labor_calendar.get_labor_day(check_date)
+
+            if labor_day and labor_day.fixed_hours > 0:
+                # Found a day with fixed labor
+                return check_date
+
+            if not labor_day and check_date.weekday() < 5:
+                # Not in calendar but is a weekday
+                return check_date
+
+            check_date -= timedelta(days=1)
+
+        # Fallback: return target date (should rarely happen)
+        return target_date
 
     def _round_to_case_increment(self, quantity: float) -> float:
         """
