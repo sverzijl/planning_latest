@@ -164,7 +164,8 @@ class SolverConfig:
 
             # Create solver and solve
             solver = SolverFactory(solver_name)
-            results = solver.solve(model, tee=verbose)
+            # Use symbolic_solver_labels=False for CBC 2.10.12+ compatibility
+            results = solver.solve(model, tee=verbose, symbolic_solver_labels=False)
 
             # Check if solved successfully
             success = (
