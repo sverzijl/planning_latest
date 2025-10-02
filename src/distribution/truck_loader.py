@@ -227,7 +227,7 @@ class TruckLoader:
             truck_schedule_id=truck.id,
             truck_name=truck.truck_name,
             departure_date=departure_date,
-            departure_type=truck.departure_type.value,
+            departure_type=truck.departure_type,  # Already a string due to use_enum_values=True
             destination_id=truck.destination_id,
             shipments=[],
             total_units=0.0,

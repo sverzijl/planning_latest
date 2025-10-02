@@ -221,12 +221,7 @@ class TestShipment:
 
     def test_shipment_d1_d0_check(self):
         """Test D-1 and D0 production checks."""
-        route_path = RoutePath(
-            id="ROUTE1",
-            legs=[],
-            total_transit_days=2,
-            total_cost=0.50
-        )
+        route_path = create_simple_route("6122", "6125")
 
         shipment = Shipment(
             id="SHIP1",
@@ -298,33 +293,8 @@ class TestShipmentPlanner:
 
     def test_group_shipments_by_destination(self):
         """Test grouping shipments by first leg destination."""
-        route_vic = RoutePath(
-            id="ROUTE_VIC",
-            legs=[
-                RouteLeg(
-                    from_location_id="6122",
-                    to_location_id="6125",
-                    transit_days=2,
-                    transport_mode="ambient"
-                )
-            ],
-            total_transit_days=2,
-            total_cost=0.50
-        )
-
-        route_nsw = RoutePath(
-            id="ROUTE_NSW",
-            legs=[
-                RouteLeg(
-                    from_location_id="6122",
-                    to_location_id="6104",
-                    transit_days=2,
-                    transport_mode="ambient"
-                )
-            ],
-            total_transit_days=2,
-            total_cost=0.60
-        )
+        route_vic = create_simple_route("6122", "6125", transit_days=2, cost=0.50)
+        route_nsw = create_simple_route("6122", "6104", transit_days=2, cost=0.60)
 
         shipments = [
             Shipment(
@@ -381,19 +351,7 @@ class TestTruckLoader:
 
     def test_assign_single_shipment(self, truck_schedules):
         """Test assigning a single shipment to truck."""
-        route = RoutePath(
-            id="ROUTE1",
-            legs=[
-                RouteLeg(
-                    from_location_id="6122",
-                    to_location_id="6125",
-                    transit_days=2,
-                    transport_mode="ambient"
-                )
-            ],
-            total_transit_days=2,
-            total_cost=0.50
-        )
+        route = create_simple_route("6122", "6125")
 
         # Production on Jan 15, truck departs Jan 16 (D-1)
         shipment = Shipment(
@@ -422,19 +380,7 @@ class TestTruckLoader:
 
     def test_morning_truck_d1_only(self, truck_schedules):
         """Test that morning trucks only load D-1 production."""
-        route = RoutePath(
-            id="ROUTE1",
-            legs=[
-                RouteLeg(
-                    from_location_id="6122",
-                    to_location_id="6125",
-                    transit_days=2,
-                    transport_mode="ambient"
-                )
-            ],
-            total_transit_days=2,
-            total_cost=0.50
-        )
+        route = create_simple_route("6122", "6125")
 
         # D0 shipment (same day as truck departure)
         shipment_d0 = Shipment(
@@ -462,19 +408,7 @@ class TestTruckLoader:
 
     def test_afternoon_truck_d1_and_d0(self, truck_schedules):
         """Test that afternoon trucks can load both D-1 and D0."""
-        route = RoutePath(
-            id="ROUTE1",
-            legs=[
-                RouteLeg(
-                    from_location_id="6122",
-                    to_location_id="6104",
-                    transit_days=2,
-                    transport_mode="ambient"
-                )
-            ],
-            total_transit_days=2,
-            total_cost=0.60
-        )
+        route = create_simple_route("6122", "6104", transit_days=2, cost=0.60)
 
         monday = date(2025, 1, 6)  # A Monday
 
@@ -518,19 +452,7 @@ class TestTruckLoader:
 
     def test_capacity_constraint(self, truck_schedules):
         """Test that capacity constraints are respected."""
-        route = RoutePath(
-            id="ROUTE1",
-            legs=[
-                RouteLeg(
-                    from_location_id="6122",
-                    to_location_id="6125",
-                    transit_days=2,
-                    transport_mode="ambient"
-                )
-            ],
-            total_transit_days=2,
-            total_cost=0.50
-        )
+        route = create_simple_route("6122", "6125")
 
         # Create shipments exceeding truck capacity (14,080 units)
         shipments = [
@@ -562,33 +484,8 @@ class TestTruckLoader:
 
     def test_destination_matching(self, truck_schedules):
         """Test that shipments only go on trucks serving their destination."""
-        route_vic = RoutePath(
-            id="ROUTE_VIC",
-            legs=[
-                RouteLeg(
-                    from_location_id="6122",
-                    to_location_id="6125",
-                    transit_days=2,
-                    transport_mode="ambient"
-                )
-            ],
-            total_transit_days=2,
-            total_cost=0.50
-        )
-
-        route_nsw = RoutePath(
-            id="ROUTE_NSW",
-            legs=[
-                RouteLeg(
-                    from_location_id="6122",
-                    to_location_id="6104",
-                    transit_days=2,
-                    transport_mode="ambient"
-                )
-            ],
-            total_transit_days=2,
-            total_cost=0.60
-        )
+        route_vic = create_simple_route("6122", "6125", transit_days=2, cost=0.50)
+        route_nsw = create_simple_route("6122", "6104", transit_days=2, cost=0.60)
 
         # VIC shipment (first leg to 6125)
         shipment_vic = Shipment(
@@ -600,7 +497,7 @@ class TestTruckLoader:
             destination_id="6103",
             delivery_date=date(2025, 1, 20),
             route=route_vic,
-            production_date=date(2025, 1, 4),  # Sunday
+            production_date=date(2025, 1, 5),  # Sunday (D-1 for Monday truck)
         )
 
         # NSW shipment (first leg to 6104)
@@ -613,7 +510,7 @@ class TestTruckLoader:
             destination_id="6101",
             delivery_date=date(2025, 1, 20),
             route=route_nsw,
-            production_date=date(2025, 1, 5),  # Monday - 1 = Sunday
+            production_date=date(2025, 1, 5),  # Sunday (D-1 for Monday truck)
         )
 
         loader = TruckLoader(truck_schedules)
@@ -641,19 +538,7 @@ class TestTruckLoader:
 
     def test_pallet_utilization(self, truck_schedules):
         """Test pallet utilization calculation."""
-        route = RoutePath(
-            id="ROUTE1",
-            legs=[
-                RouteLeg(
-                    from_location_id="6122",
-                    to_location_id="6125",
-                    transit_days=2,
-                    transport_mode="ambient"
-                )
-            ],
-            total_transit_days=2,
-            total_cost=0.50
-        )
+        route = create_simple_route("6122", "6125")
 
         # 320 units = 1 pallet exactly
         shipment = Shipment(

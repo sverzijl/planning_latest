@@ -4,12 +4,11 @@ A shipment represents a portion of a production batch that needs to be
 delivered to a specific destination via a specific route.
 """
 
-from datetime import date
-from typing import Optional, TYPE_CHECKING
-from pydantic import BaseModel, Field
+from __future__ import annotations
 
-if TYPE_CHECKING:
-    from src.network import RoutePath
+from datetime import date
+from typing import Optional, Any
+from pydantic import BaseModel, Field
 
 
 class Shipment(BaseModel):
@@ -38,7 +37,7 @@ class Shipment(BaseModel):
     origin_id: str = Field(..., description="Origin location ID")
     destination_id: str = Field(..., description="Final destination location ID")
     delivery_date: date = Field(..., description="Required delivery date")
-    route: "RoutePath" = Field(..., description="Route from origin to destination")
+    route: Any = Field(..., description="Route from origin to destination")  # RoutePath - use Any to avoid circular import
     assigned_truck_id: Optional[str] = Field(
         None,
         description="Assigned truck schedule ID"

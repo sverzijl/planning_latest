@@ -6,7 +6,7 @@ capabilities for the distribution network.
 """
 
 from .graph_builder import NetworkGraphBuilder, NetworkNode, NetworkEdge
-from .route_finder import RouteFinder, RoutePath
+from .route_finder import RouteFinder, RoutePath, RouteLeg
 
 __all__ = [
     'NetworkGraphBuilder',
@@ -14,4 +14,5 @@ __all__ = [
     'NetworkEdge',
     'RouteFinder',
     'RoutePath',
+    'RouteLeg',
 ]
