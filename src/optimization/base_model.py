@@ -251,7 +251,14 @@ class BaseOptimizationModel(ABC):
 
         # Solve
         solve_start = time.time()
-        results = solver.solve(self.model, tee=tee)
+
+        # Pass options to avoid compatibility issues with CBC
+        # symbolic_solver_labels=False prevents -printingOptions error
+        results = solver.solve(
+            self.model,
+            tee=tee,
+            symbolic_solver_labels=False,
+        )
         solve_time = time.time() - solve_start
 
         # Extract result information
