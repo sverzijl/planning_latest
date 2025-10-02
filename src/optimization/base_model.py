@@ -254,10 +254,12 @@ class BaseOptimizationModel(ABC):
 
         # Pass options to avoid compatibility issues with CBC
         # symbolic_solver_labels=False prevents -printingOptions error
+        # load_solutions=False to handle errors more gracefully
         results = solver.solve(
             self.model,
             tee=tee,
             symbolic_solver_labels=False,
+            load_solutions=False,  # Load manually to handle errors better
         )
         solve_time = time.time() - solve_start
 
@@ -265,9 +267,12 @@ class BaseOptimizationModel(ABC):
         result = self._process_results(results, solver_name, solve_time)
         self.result = result
 
-        # Extract solution if successful
+        # Load solutions and extract if successful
         if result.is_feasible():
             try:
+                # Load solution into model
+                self.model.solutions.load_from(results)
+                # Extract solution to our format
                 self.solution = self.extract_solution(self.model)
             except Exception as e:
                 result.infeasibility_message = f"Error extracting solution: {e}"
@@ -339,7 +344,18 @@ class BaseOptimizationModel(ABC):
                 "Model is infeasible. Constraints cannot all be satisfied simultaneously."
             )
         elif not success:
-            infeasibility_message = f"Solver failed: {termination_condition}"
+            # Try to get more detailed error info
+            error_details = f"Status: {solver_status}, Termination: {termination_condition}"
+
+            # Check for solver message
+            if hasattr(results.solver, 'message') and results.solver.message:
+                error_details += f", Message: {results.solver.message}"
+
+            # Check for error messages in results
+            if hasattr(results.solver, 'error') and results.solver.error:
+                error_details += f", Error: {results.solver.error}"
+
+            infeasibility_message = f"Solver failed - {error_details}"
 
         return OptimizationResult(
             success=success,
