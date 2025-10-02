@@ -157,6 +157,91 @@ flake8 src/ tests/ ui/
 mypy src/
 ```
 
+## Troubleshooting
+
+### ModuleNotFoundError: No module named 'ui'
+
+**Problem:** When running the Streamlit app, you get:
+```
+ModuleNotFoundError: No module named 'ui'
+Traceback:
+File ".../ui/app.py", line X, in <module>
+    from ui import session_state
+```
+
+**Root Cause:** The application uses absolute imports (`from ui import ...`) which require the project root directory to be in Python's path. This error occurs when:
+1. Running from the wrong directory
+2. Python path doesn't include the project root
+3. Working directory is not set correctly
+
+**Solution 1: Run from Correct Directory (Recommended)**
+
+Always run Streamlit from the **project root directory** (`planning_latest/`):
+
+```bash
+# Navigate to project root
+cd planning_latest
+
+# Run Streamlit (NOT from ui/ directory!)
+streamlit run ui/app.py
+```
+
+**Solution 2: Check Working Directory**
+
+Verify you're in the correct directory:
+```bash
+# On Linux/Mac
+pwd
+# Should show: .../planning_latest
+
+# On Windows
+cd
+# Should show: ...\planning_latest
+```
+
+If you're in the wrong directory (e.g., `planning_latest/ui/`), navigate up one level:
+```bash
+cd ..
+streamlit run ui/app.py
+```
+
+**Solution 3: Windows WinPython Users**
+
+If using WinPython portable distribution:
+1. Open WinPython Command Prompt (not regular Command Prompt)
+2. Navigate to project root: `cd C:\path\to\planning_latest`
+3. Activate virtual environment: `venv\Scripts\activate`
+4. Run: `streamlit run ui/app.py`
+
+**Solution 4: Verify Python Path Setup**
+
+The application automatically adds the project root to `sys.path`. If you still see errors:
+1. Check the path in error message - look for duplicate directories (e.g., `planning_latest\planning_latest`)
+2. Ensure project isn't nested incorrectly
+3. Try: `python -c "import sys; print(sys.path)"` to debug
+
+**Note:** The application includes automatic path setup in all UI files (added in v2.1), so this error should be resolved. If it persists, please report the issue with your environment details.
+
+### Other Common Issues
+
+**Streamlit Not Found:**
+```bash
+# Install/reinstall requirements
+pip install -r requirements.txt
+```
+
+**Excel File Read Errors:**
+```bash
+# Install openpyxl for .xlsx/.xlsm files
+pip install openpyxl
+```
+
+**Graph Visualization Issues:**
+```bash
+# Ensure NetworkX and Plotly are installed
+pip install networkx plotly
+```
+
 ## Project Structure
 
 ```

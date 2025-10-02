@@ -4,6 +4,14 @@ This is the home page. Other pages are in the pages/ directory and will be
 automatically discovered by Streamlit's multi-page app feature.
 """
 
+import sys
+from pathlib import Path
+
+# Add project root to Python path
+project_root = Path(__file__).parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
 import streamlit as st
 from ui import session_state
 

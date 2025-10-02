@@ -1,7 +1,14 @@
 """Data upload page for forecast and network configuration files."""
 
-import streamlit as st
+import sys
 from pathlib import Path
+
+# Add project root to Python path
+project_root = Path(__file__).parent.parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+import streamlit as st
 import pandas as pd
 import tempfile
 from ui import session_state
