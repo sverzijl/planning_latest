@@ -269,6 +269,63 @@ results = solver.solve(model, tee=True)
 print(results.solver)
 ```
 
+### Problem: CBC 2.10.12 "invalid option '-printingOptions'" error
+
+**Symptoms:**
+```
+ERROR: Solver (cbc) returned non-zero return code (1)
+ERROR: Solver log: Error: cbc 2.10.12: invalid option '-printingOptions'
+```
+or
+```
+ERROR: Solver log: Error: cbc 2.10.12: Unknown option or invalid key "sec"
+```
+
+**Cause:**
+Pyomo 6.9.x passes incompatible options to CBC 2.10.12+. The `-printingOptions` flag and some option keys (like `sec`, `ratio`) were changed in CBC 2.10.12 but Pyomo's default interface still tries to use the old names.
+
+**Solution 1: Use our solver (automatic - preferred)**
+The application automatically avoids this issue by not passing options to CBC. No action needed if using the provided optimization models (`ProductionOptimizationModel`, `IntegratedProductionDistributionModel`).
+
+**Solution 2: Manual workaround**
+If directly using Pyomo with CBC, avoid passing solver options:
+```python
+from pyomo.opt import SolverFactory
+
+# BAD - will fail with CBC 2.10.12
+solver = SolverFactory('cbc')
+solver.options['sec'] = 300  # Unknown option!
+results = solver.solve(model)
+
+# GOOD - works with all CBC versions
+solver = SolverFactory('cbc')
+results = solver.solve(
+    model,
+    symbolic_solver_labels=False,  # Prevent -printingOptions
+    load_solutions=False            # Prevent auto-loading errors
+)
+# Manually load solution
+model.solutions.load_from(results)
+```
+
+**Solution 3: Downgrade CBC (not recommended)**
+```bash
+conda install -c conda-forge "coincbc<2.10.12"
+```
+
+**Root Cause:**
+CBC 2.10.12 removed the `-printingOptions` flag and changed option key names, but Pyomo's `SolverFactory('cbc')` interface wasn't updated to match. The application resolves this by:
+- Using `symbolic_solver_labels=False` to prevent Pyomo from passing `-printingOptions`
+- Not passing solver options (like `sec`, `ratio`) that have incompatible names
+- Using `load_solutions=False` to handle solution loading errors gracefully
+
+**Tested Versions:**
+- ✅ CBC 2.10.12 + Pyomo 6.9.4 (with our workaround)
+- ✅ CBC 2.10.10 + Pyomo 6.9.4
+- ✅ CBC 2.10.5 + Pyomo 6.9.4
+
+**Note:** Commercial solvers (Gurobi, CPLEX) don't have this issue and fully support option passing.
+
 ### Problem: Solver is very slow
 
 **Solutions:**

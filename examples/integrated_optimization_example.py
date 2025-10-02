@@ -295,6 +295,10 @@ def main():
             print()
             model.print_solution_summary()
 
+            # Print demand diagnostics
+            print()
+            model.print_demand_diagnostics()
+
             # Get shipment plan
             shipments = model.get_shipment_plan()
             if shipments:
