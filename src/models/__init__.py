@@ -8,6 +8,7 @@ from .manufacturing import ManufacturingSite
 from .truck_schedule import TruckSchedule, DepartureType, DayOfWeek
 from .labor_calendar import LaborCalendar, LaborDay
 from .production_batch import ProductionBatch
+from .shipment import Shipment
 from .cost_structure import CostStructure
 
 __all__ = [
@@ -29,6 +30,8 @@ __all__ = [
     "LaborCalendar",
     "LaborDay",
     "ProductionBatch",
+    # Distribution
+    "Shipment",
     # Cost structure
     "CostStructure",
 ]
