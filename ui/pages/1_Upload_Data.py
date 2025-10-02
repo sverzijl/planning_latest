@@ -12,6 +12,12 @@ import streamlit as st
 import pandas as pd
 import tempfile
 from ui import session_state
+from ui.components.styling import (
+    apply_custom_css,
+    section_header,
+    success_badge,
+    info_badge,
+)
 
 # Page config
 st.set_page_config(
@@ -20,27 +26,36 @@ st.set_page_config(
     layout="wide",
 )
 
+# Apply custom CSS
+apply_custom_css()
+
 # Initialize session state
 session_state.initialize_session_state()
 
-st.header("📤 Upload Data")
+st.markdown(section_header("Upload Data", level=1, icon="📤"), unsafe_allow_html=True)
 
 st.markdown(
     """
-    Upload TWO separate Excel files:
-    1. **Forecast File**: Sales demand by location and date
-    2. **Network Configuration File**: Locations, routes, labor, trucks, and costs
-
-    This separation allows you to update forecast data frequently while keeping
-    network configuration stable.
-    """
+    <div class="info-box">
+        <div style="font-weight: 600; margin-bottom: 8px;">📋 Required Files</div>
+        <div>Upload TWO separate Excel files:</div>
+        <ol style="margin-top: 8px; padding-left: 20px;">
+            <li><strong>Forecast File:</strong> Sales demand by location and date</li>
+            <li><strong>Network Configuration File:</strong> Locations, routes, labor, trucks, and costs</li>
+        </ol>
+        <div style="margin-top: 12px; font-size: 13px; color: #757575;">
+            This separation allows you to update forecast data frequently while keeping network configuration stable.
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True
 )
 
 # Two-column layout for file uploads
 col1, col2 = st.columns(2)
 
 with col1:
-    st.subheader("1️⃣ Forecast File")
+    st.markdown(section_header("1️⃣ Forecast File", level=3), unsafe_allow_html=True)
     forecast_file = st.file_uploader(
         "Choose forecast file",
         type=["xlsm", "xlsx"],
@@ -48,10 +63,10 @@ with col1:
         key="forecast_uploader",
     )
     if forecast_file:
-        st.success(f"✅ {forecast_file.name}")
+        st.markdown(success_badge(forecast_file.name), unsafe_allow_html=True)
 
 with col2:
-    st.subheader("2️⃣ Network Configuration File")
+    st.markdown(section_header("2️⃣ Network Configuration File", level=3), unsafe_allow_html=True)
     network_file = st.file_uploader(
         "Choose network config file",
         type=["xlsm", "xlsx"],
@@ -59,12 +74,12 @@ with col2:
         key="network_uploader",
     )
     if network_file:
-        st.success(f"✅ {network_file.name}")
+        st.markdown(success_badge(network_file.name), unsafe_allow_html=True)
 
 # Display file contents if uploaded
 if forecast_file is not None or network_file is not None:
     st.divider()
-    st.subheader("📋 File Contents Preview")
+    st.markdown(section_header("File Contents Preview", level=2, icon="📋"), unsafe_allow_html=True)
 
     # Create tabs based on what's uploaded
     if forecast_file and network_file:

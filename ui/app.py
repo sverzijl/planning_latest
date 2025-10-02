@@ -14,6 +14,15 @@ if str(project_root) not in sys.path:
 
 import streamlit as st
 from ui import session_state
+from ui.components.styling import (
+    apply_custom_css,
+    section_header,
+    phase_card,
+    status_badge,
+    colored_metric,
+    success_badge,
+    info_badge,
+)
 
 # Set page configuration
 st.set_page_config(
@@ -23,131 +32,175 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# Apply custom CSS
+apply_custom_css()
+
 # Initialize session state
 session_state.initialize_session_state()
 
 # Main title
-st.title("🍞 Gluten-Free Bread Supply Chain Optimizer")
+st.markdown(section_header("Gluten-Free Bread Supply Chain Optimizer", level=1, icon="🍞"), unsafe_allow_html=True)
 st.markdown(
     """
+    <div class="body-text" style="margin-bottom: 24px;">
     Integrated production scheduling and distribution planning for gluten-free bread
     from manufacturing through multi-echelon networks to breadroom destinations.
-    """
+    </div>
+    """,
+    unsafe_allow_html=True
 )
 
 st.divider()
 
 # Status section
-st.header("📊 Project Status")
+st.markdown(section_header("Project Status", level=2, icon="📊"), unsafe_allow_html=True)
 
 col1, col2 = st.columns(2)
 
 with col1:
-    st.success("**Phase 1: Foundation ✅ Complete**")
-    st.markdown(
-        """
-        - ✅ Data models (11 core models)
-        - ✅ Excel parsers (multi-file support)
-        - ✅ Network graph builder
-        - ✅ Shelf life tracking engine
-        - ✅ 100+ tests passing
-        """
-    )
+    phase1_items = [
+        "✅ Data models (11 core models)",
+        "✅ Excel parsers (multi-file support)",
+        "✅ Network graph builder",
+        "✅ Shelf life tracking engine",
+        "✅ 100+ tests passing"
+    ]
+    st.markdown(phase_card("Phase 1: Foundation", phase1_items, "complete", "✅"), unsafe_allow_html=True)
 
-    st.divider()
+    st.markdown("<br>", unsafe_allow_html=True)
 
-    st.success("**Phase 2: Core Logic ✅ Complete**")
-    st.markdown(
-        """
-        - ✅ Production scheduler with labor optimization
-        - ✅ Truck loading with D-1/D0 timing
-        - ✅ Cost calculation engine (4 components)
-        - ✅ Network analysis and route finding
-        - ✅ End-to-end planning workflow
-        - ✅ 200 tests passing
-        """
-    )
+    phase2_items = [
+        "✅ Production scheduler with labor optimization",
+        "✅ Truck loading with D-1/D0 timing",
+        "✅ Cost calculation engine (4 components)",
+        "✅ Network analysis and route finding",
+        "✅ End-to-end planning workflow",
+        "✅ 200 tests passing"
+    ]
+    st.markdown(phase_card("Phase 2: Core Logic", phase2_items, "complete", "✅"), unsafe_allow_html=True)
 
 with col2:
-    st.success("**Phase 3: Optimization ✅ Complete**")
-    st.markdown(
-        """
-        - ✅ Mathematical optimization (Pyomo)
-        - ✅ Minimize total cost to serve
-        - ✅ Shortage penalties (soft constraints)
-        - ✅ Shelf life enforcement
-        - ✅ Multi-solver support (CBC, GLPK, Gurobi, CPLEX)
-        - ✅ Demand satisfaction diagnostics
-        - ✅ Cross-platform compatibility
-        """
-    )
+    phase3_items = [
+        "✅ Mathematical optimization (Pyomo)",
+        "✅ Minimize total cost to serve",
+        "✅ Shortage penalties (soft constraints)",
+        "✅ Shelf life enforcement",
+        "✅ Multi-solver support (CBC, GLPK, Gurobi, CPLEX)",
+        "✅ Demand satisfaction diagnostics",
+        "✅ Cross-platform compatibility"
+    ]
+    st.markdown(phase_card("Phase 3: Optimization", phase3_items, "complete", "⚡"), unsafe_allow_html=True)
 
-    st.divider()
+    st.markdown("<br>", unsafe_allow_html=True)
 
-    st.info("**Phase 4: Advanced Features 🔜 Planned**")
-    st.markdown(
-        """
-        **Future:**
-        - Rolling horizon planning
-        - Stochastic demand scenarios
-        - Integer pallet optimization
-        - Flexible truck routing
-        - What-if scenario comparison
-        """
-    )
+    phase4_items = [
+        "Rolling horizon planning",
+        "Stochastic demand scenarios",
+        "Integer pallet optimization",
+        "Flexible truck routing",
+        "What-if scenario comparison"
+    ]
+    st.markdown(phase_card("Phase 4: Advanced Features", phase4_items, "planned", "🔜"), unsafe_allow_html=True)
 
 st.divider()
 
 # Current session status
-st.header("🎯 Quick Start")
+st.markdown(section_header("Quick Start", level=2, icon="🎯"), unsafe_allow_html=True)
 
 # Check data upload status
 if session_state.is_data_uploaded():
-    st.success("✅ Data Loaded")
+    st.markdown(success_badge("Data Loaded"), unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
 
     stats = session_state.get_summary_stats()
 
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("Locations", stats.get('locations', 0))
-        st.metric("Routes", stats.get('routes', 0))
+        st.markdown(
+            colored_metric("Locations", str(stats.get('locations', 0)), "primary"),
+            unsafe_allow_html=True
+        )
+        st.markdown(
+            colored_metric("Routes", str(stats.get('routes', 0)), "primary"),
+            unsafe_allow_html=True
+        )
     with col2:
-        st.metric("Forecast Entries", stats.get('forecast_entries', 0))
-        st.metric("Products", stats.get('products_in_forecast', 0))
+        st.markdown(
+            colored_metric("Forecast Entries", f"{stats.get('forecast_entries', 0):,}", "secondary"),
+            unsafe_allow_html=True
+        )
+        st.markdown(
+            colored_metric("Products", str(stats.get('products_in_forecast', 0)), "secondary"),
+            unsafe_allow_html=True
+        )
     with col3:
-        st.metric("Total Demand", f"{stats.get('total_demand', 0):,.0f}")
-        st.metric("Planning Days", stats.get('date_range_days', 0))
+        st.markdown(
+            colored_metric("Total Demand", f"{stats.get('total_demand', 0):,.0f}", "accent"),
+            unsafe_allow_html=True
+        )
+        st.markdown(
+            colored_metric("Planning Days", str(stats.get('date_range_days', 0)), "accent"),
+            unsafe_allow_html=True
+        )
     with col4:
-        st.metric("Labor Days", stats.get('labor_days', 0))
-        st.metric("Trucks/Week", stats.get('truck_schedules', 0))
+        st.markdown(
+            colored_metric("Labor Days", str(stats.get('labor_days', 0)), "success"),
+            unsafe_allow_html=True
+        )
+        st.markdown(
+            colored_metric("Trucks/Week", str(stats.get('truck_schedules', 0)), "success"),
+            unsafe_allow_html=True
+        )
 
     # Check planning status
     st.divider()
 
     if session_state.is_planning_complete():
-        st.success("✅ Planning Complete")
+        st.markdown(success_badge("Planning Complete"), unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
 
         summary = session_state.get_planning_summary()
 
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.metric("Production Batches", summary.get('production_batches', 0))
-            st.metric("Total Units", f"{summary.get('total_units', 0):,.0f}")
+            st.markdown(
+                colored_metric("Production Batches", str(summary.get('production_batches', 0)), "primary"),
+                unsafe_allow_html=True
+            )
+            st.markdown(
+                colored_metric("Total Units", f"{summary.get('total_units', 0):,.0f}", "primary"),
+                unsafe_allow_html=True
+            )
         with col2:
-            st.metric("Shipments", summary.get('shipments_count', 0))
-            st.metric("Trucks Used", summary.get('trucks_used', 0))
+            st.markdown(
+                colored_metric("Shipments", str(summary.get('shipments_count', 0)), "secondary"),
+                unsafe_allow_html=True
+            )
+            st.markdown(
+                colored_metric("Trucks Used", str(summary.get('trucks_used', 0)), "secondary"),
+                unsafe_allow_html=True
+            )
         with col3:
-            st.metric("Total Cost", f"${summary.get('total_cost', 0):,.2f}")
-            st.metric("Cost/Unit", f"${summary.get('cost_per_unit', 0):.2f}")
+            st.markdown(
+                colored_metric("Total Cost", f"${summary.get('total_cost', 0):,.2f}", "accent"),
+                unsafe_allow_html=True
+            )
+            st.markdown(
+                colored_metric("Cost/Unit", f"${summary.get('cost_per_unit', 0):.2f}", "accent"),
+                unsafe_allow_html=True
+            )
         with col4:
             if summary.get('production_is_feasible', True) and summary.get('truck_plan_is_feasible', True):
-                st.success("✅ Feasible Plan")
+                st.markdown(success_badge("Feasible Plan"), unsafe_allow_html=True)
             else:
-                st.warning("⚠️ Has Infeasibilities")
+                st.markdown(
+                    status_badge("warning", "Has Infeasibilities", icon="⚠️"),
+                    unsafe_allow_html=True
+                )
 
         # Quick navigation to results
         st.divider()
-        st.subheader("📑 View Results")
+        st.markdown(section_header("View Results", level=3, icon="📑"), unsafe_allow_html=True)
 
         col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
@@ -167,7 +220,14 @@ if session_state.is_data_uploaded():
                 st.switch_page("pages/3_Planning_Workflow.py")
 
     else:
-        st.info("ℹ️ Ready to plan. Run the planning workflow to generate production and distribution plans.")
+        st.markdown(info_badge("Ready to plan"), unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("""
+        <div class="body-text">
+        Run the planning workflow to generate production and distribution plans.
+        </div>
+        """, unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
 
         col1, col2 = st.columns(2)
         with col1:
@@ -178,86 +238,114 @@ if session_state.is_data_uploaded():
                 st.switch_page("pages/10_Optimization.py")
 
 else:
-    st.warning("⚠️ No data loaded. Upload forecast and network configuration files to get started.")
+    st.markdown(
+        status_badge("warning", "No data loaded", icon="⚠️"),
+        unsafe_allow_html=True
+    )
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("""
+    <div class="body-text">
+    Upload forecast and network configuration files to get started.
+    </div>
+    """, unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
 
     if st.button("📤 Upload Data", type="primary", use_container_width=True):
         st.switch_page("pages/1_Upload_Data.py")
 
     st.divider()
 
-    st.info("""
-    **Getting Started:**
-
-    1. **Upload Data** - Provide forecast and network configuration Excel files
-    2. **Run Planning Workflow** - Generate production schedule, assign to trucks, calculate costs
-    3. **Analyze Results** - Review production, distribution, and cost details
-    4. **Optimize** (Phase 3) - Find optimal plans that minimize total cost to serve
-    """)
+    st.markdown("""
+    <div class="info-box">
+        <div style="font-weight: 600; margin-bottom: 12px;">🚀 Getting Started</div>
+        <ol style="margin: 0; padding-left: 20px;">
+            <li><strong>Upload Data</strong> - Provide forecast and network configuration Excel files</li>
+            <li><strong>Run Planning Workflow</strong> - Generate production schedule, assign to trucks, calculate costs</li>
+            <li><strong>Analyze Results</strong> - Review production, distribution, and cost details</li>
+            <li><strong>Optimize</strong> (Phase 3) - Find optimal plans that minimize total cost to serve</li>
+        </ol>
+    </div>
+    """, unsafe_allow_html=True)
 
 st.divider()
 
 # Business rules reference
-st.header("📝 Key Business Rules")
+st.markdown(section_header("Key Business Rules", level=2, icon="📝"), unsafe_allow_html=True)
 
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.subheader("Shelf Life")
-    st.metric("Ambient", "17 days")
-    st.metric("Frozen", "120 days")
-    st.metric("Thawed", "14 days")
+    st.markdown(section_header("Shelf Life", level=3), unsafe_allow_html=True)
+    st.markdown(colored_metric("Ambient", "17 days", "primary"), unsafe_allow_html=True)
+    st.markdown(colored_metric("Frozen", "120 days", "secondary"), unsafe_allow_html=True)
+    st.markdown(colored_metric("Thawed", "14 days", "accent"), unsafe_allow_html=True)
 
 with col2:
-    st.subheader("Quality Standards")
-    st.metric("Min. Acceptable", "7 days")
-    st.caption("Breadrooms discard stock with <7 days remaining")
-    st.metric("Manufacturing Site", "6122")
-    st.caption("Source location for all products")
+    st.markdown(section_header("Quality Standards", level=3), unsafe_allow_html=True)
+    st.markdown(colored_metric("Min. Acceptable", "7 days", "warning"), unsafe_allow_html=True)
+    st.markdown('<p class="caption-text">Breadrooms discard stock with <7 days remaining</p>', unsafe_allow_html=True)
+    st.markdown(colored_metric("Manufacturing Site", "6122", "primary"), unsafe_allow_html=True)
+    st.markdown('<p class="caption-text">Source location for all products</p>', unsafe_allow_html=True)
 
 with col3:
-    st.subheader("Production Capacity")
-    st.metric("Production Rate", "1,400 units/hour")
-    st.metric("Regular Hours", "12h/day (Mon-Fri)")
-    st.metric("Max w/ Overtime", "14h/day")
-    st.caption("Weekend: 4h minimum payment")
+    st.markdown(section_header("Production Capacity", level=3), unsafe_allow_html=True)
+    st.markdown(colored_metric("Production Rate", "1,400 units/hour", "success"), unsafe_allow_html=True)
+    st.markdown(colored_metric("Regular Hours", "12h/day (Mon-Fri)", "success"), unsafe_allow_html=True)
+    st.markdown(colored_metric("Max w/ Overtime", "14h/day", "success"), unsafe_allow_html=True)
+    st.markdown('<p class="caption-text">Weekend: 4h minimum payment</p>', unsafe_allow_html=True)
 
 st.divider()
 
 # Network overview
-st.header("🌐 Network Overview")
+st.markdown(section_header("Network Overview", level=2, icon="🌐"), unsafe_allow_html=True)
 
 col1, col2 = st.columns(2)
 
 with col1:
-    st.subheader("Distribution Network")
+    st.markdown(section_header("Distribution Network", level=3), unsafe_allow_html=True)
     st.markdown("""
-    **Structure:** 2-echelon hub-and-spoke + frozen buffer
-
-    - **Manufacturing:** Location 6122 (source)
-    - **Regional Hubs:** 6104 (NSW/ACT), 6125 (VIC/TAS/SA)
-    - **Frozen Buffer:** Lineage (WA route)
-    - **Destinations:** 9 breadrooms across Australia
-    - **Routes:** 10 route legs
-
-    **Special:** WA (6130) receives frozen, thaws on-site (shelf life resets to 14 days)
-    """)
+    <div class="card">
+        <div class="body-text">
+            <strong>Structure:</strong> 2-echelon hub-and-spoke + frozen buffer
+        </div>
+        <ul style="margin-top: 12px; line-height: 1.8;">
+            <li><strong>Manufacturing:</strong> Location 6122 (source)</li>
+            <li><strong>Regional Hubs:</strong> 6104 (NSW/ACT), 6125 (VIC/TAS/SA)</li>
+            <li><strong>Frozen Buffer:</strong> Lineage (WA route)</li>
+            <li><strong>Destinations:</strong> 9 breadrooms across Australia</li>
+            <li><strong>Routes:</strong> 10 route legs</li>
+        </ul>
+        <div class="warning-box" style="margin-top: 12px;">
+            <strong>Special:</strong> WA (6130) receives frozen, thaws on-site (shelf life resets to 14 days)
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 with col2:
-    st.subheader("Truck Schedule")
+    st.markdown(section_header("Truck Schedule", level=3), unsafe_allow_html=True)
     st.markdown("""
-    **Morning Truck (Daily Mon-Fri):**
-    - Mon, Tue, Thu, Fri: 6122 → 6125
-    - Wednesday: 6122 → Lineage → 6125
-    - Loads D-1 production only
-
-    **Afternoon Truck (Day-Specific):**
-    - Monday: 6122 → 6104
-    - Tuesday: 6122 → 6110
-    - Wednesday: 6122 → 6104
-    - Thursday: 6122 → 6110
-    - Friday: 6122 → 6110 AND 6122 → 6104 (2 trucks)
-    - Loads D-1 or D0 production
-    """)
+    <div class="card">
+        <div class="body-text" style="font-weight: 600; margin-bottom: 8px;">
+            Morning Truck (Daily Mon-Fri):
+        </div>
+        <ul style="line-height: 1.8;">
+            <li>Mon, Tue, Thu, Fri: 6122 → 6125</li>
+            <li>Wednesday: 6122 → Lineage → 6125</li>
+            <li>Loads D-1 production only</li>
+        </ul>
+        <div class="body-text" style="font-weight: 600; margin-top: 16px; margin-bottom: 8px;">
+            Afternoon Truck (Day-Specific):
+        </div>
+        <ul style="line-height: 1.8;">
+            <li>Monday: 6122 → 6104</li>
+            <li>Tuesday: 6122 → 6110</li>
+            <li>Wednesday: 6122 → 6104</li>
+            <li>Thursday: 6122 → 6110</li>
+            <li>Friday: 6122 → 6110 AND 6122 → 6104 (2 trucks)</li>
+            <li>Loads D-1 or D0 production</li>
+        </ul>
+    </div>
+    """, unsafe_allow_html=True)
 
 st.divider()
 

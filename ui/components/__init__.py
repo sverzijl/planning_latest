@@ -30,6 +30,13 @@ from .data_tables import (
     render_labor_breakdown_table,
     render_daily_breakdown_table,
 )
+from .date_filter import (
+    render_date_range_filter,
+    apply_date_filter,
+    get_quick_range_dates,
+    calculate_date_stats,
+    sync_url_params,
+)
 
 __all__ = [
     # Network visualization
@@ -60,4 +67,10 @@ __all__ = [
     'render_cost_summary_table',
     'render_labor_breakdown_table',
     'render_daily_breakdown_table',
+    # Date filter
+    'render_date_range_filter',
+    'apply_date_filter',
+    'get_quick_range_dates',
+    'calculate_date_stats',
+    'sync_url_params',
 ]
