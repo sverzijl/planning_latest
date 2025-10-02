@@ -42,6 +42,8 @@ else:
 # Try Pyomo solver detection
 print("\n3. Testing Pyomo solver detection...")
 try:
+    # IMPORTANT: Must import pyomo.environ first to register solver plugins
+    import pyomo.environ  # noqa: F401
     from pyomo.opt import SolverFactory
 
     for solver_name in ['cbc', 'glpk', 'gurobi', 'cplex']:
