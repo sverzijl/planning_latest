@@ -273,7 +273,7 @@ def main():
 
     # Build model
     print("\nBuilding optimization model...")
-    pyomo_model = model.build_model()
+    model.model = model.build_model()  # Assign to self.model so stats work
     stats = model.get_model_statistics()
     print(f"  Variables: {stats['num_variables']}")
     print(f"  Constraints: {stats['num_constraints']}")
