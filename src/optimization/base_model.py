@@ -274,6 +274,14 @@ class BaseOptimizationModel(ABC):
             try:
                 # Load solution into model
                 self.model.solutions.load_from(results)
+
+                # Get objective value from model if not already set
+                if result.objective_value is None and hasattr(self.model, 'obj'):
+                    try:
+                        result.objective_value = value(self.model.obj)
+                    except:
+                        pass
+
                 # Extract solution to our format
                 self.solution = self.extract_solution(self.model)
             except Exception as e:
@@ -312,12 +320,20 @@ class BaseOptimizationModel(ABC):
             ]
         )
 
-        # Get objective value
+        # Get objective value from results (not model, since solutions not loaded yet)
         objective_value = None
-        if success and hasattr(self.model, 'obj'):
+        if success:
             try:
-                objective_value = value(self.model.obj)
-            except:
+                # Try to get from results.problem first
+                if hasattr(results, 'problem') and hasattr(results.problem, 'upper_bound'):
+                    objective_value = results.problem.upper_bound
+                # Fallback: try to get from solution
+                elif hasattr(results, 'solution') and len(results.solution) > 0:
+                    sol = results.solution(0)
+                    if hasattr(sol, 'objective'):
+                        objective_value = sol.objective.values()[0].value if sol.objective else None
+            except Exception as e:
+                # If we can't get objective from results, we'll get it after loading
                 objective_value = None
 
         # Get gap if available
