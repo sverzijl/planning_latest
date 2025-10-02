@@ -219,29 +219,25 @@ class BaseOptimizationModel(ABC):
 
         # Prepare solver options
         options = solver_options or {}
-        if time_limit_seconds is not None:
-            # Set time limit (solver-specific parameter names)
-            if solver_name == 'asl:cbc':
-                # AMPL interface uses different option names
-                options['timelim'] = time_limit_seconds
-            elif solver_name in ['cbc', None]:
-                options['sec'] = time_limit_seconds
-            elif solver_name == 'gurobi':
-                options['TimeLimit'] = time_limit_seconds
-            elif solver_name == 'cplex':
-                options['timelimit'] = time_limit_seconds
 
-        if mip_gap is not None:
-            # Set MIP gap (solver-specific parameter names)
-            if solver_name == 'asl:cbc':
-                # AMPL interface uses different option names
-                options['ratioGap'] = mip_gap
-            elif solver_name in ['cbc', None]:
-                options['ratio'] = mip_gap
-            elif solver_name == 'gurobi':
-                options['MIPGap'] = mip_gap
-            elif solver_name == 'cplex':
-                options['mip_tolerances_mipgap'] = mip_gap
+        # For CBC 2.10.12+, avoid passing options that may not be recognized
+        # Only set options if explicitly provided or for commercial solvers
+        if solver_name not in ['cbc', 'asl:cbc', None]:
+            if time_limit_seconds is not None:
+                # Set time limit (solver-specific parameter names)
+                if solver_name == 'gurobi':
+                    options['TimeLimit'] = time_limit_seconds
+                elif solver_name == 'cplex':
+                    options['timelimit'] = time_limit_seconds
+
+            if mip_gap is not None:
+                # Set MIP gap (solver-specific parameter names)
+                if solver_name == 'gurobi':
+                    options['MIPGap'] = mip_gap
+                elif solver_name == 'cplex':
+                    options['mip_tolerances_mipgap'] = mip_gap
+        # For CBC, let it run with defaults to avoid option compatibility issues
+        # Time limit and gap can still be passed via solver_options if needed
 
         # Create solver
         try:
