@@ -166,7 +166,7 @@ with tab4:
                 'Fixed Hours': day.fixed_hours,
                 'Regular Rate': f"${day.regular_rate:.2f}",
                 'Overtime Rate': f"${day.overtime_rate:.2f}",
-                'Non-Fixed Rate': f"${day.non_fixed_rate:.2f}",
+                'Non-Fixed Rate': f"${day.non_fixed_rate:.2f}" if day.non_fixed_rate is not None else "N/A",
                 'Is Fixed Day': '✓' if day.is_fixed_day else '',
             })
 
