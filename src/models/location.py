@@ -44,6 +44,16 @@ class Location(BaseModel):
         """Pydantic configuration."""
         use_enum_values = True
 
+    @property
+    def location_id(self) -> str:
+        """Alias for id for backward compatibility."""
+        return self.id
+
+    @property
+    def location_type(self) -> LocationType:
+        """Alias for type for backward compatibility."""
+        return self.type
+
     def can_store_mode(self, mode: StorageMode) -> bool:
         """
         Check if location can store products in the given mode.

@@ -17,7 +17,10 @@ class ManufacturingSite(Location):
         production_rate: Units produced per labor hour
         max_daily_capacity: Maximum units that can be produced per day
         production_cost_per_unit: Base production cost per unit
-        setup_time_hours: Hours required for production setup (if applicable)
+        daily_startup_hours: Time required to start production line each day
+        daily_shutdown_hours: Time required to shut down production line each day
+        default_changeover_hours: Default time for product changeovers
+        setup_time_hours: DEPRECATED - Use daily_startup_hours instead
         morning_truck_cutoff_hour: Hour by which morning truck production must complete (default: 24, i.e., end of previous day)
         afternoon_truck_cutoff_hour: Hour by which afternoon truck production must complete (default: 12, i.e., noon)
     """
@@ -37,9 +40,24 @@ class ManufacturingSite(Location):
         description="Base production cost per unit",
         ge=0
     )
+    daily_startup_hours: float = Field(
+        default=0.5,
+        description="Daily production line startup time in hours",
+        ge=0
+    )
+    daily_shutdown_hours: float = Field(
+        default=0.5,
+        description="Daily production line shutdown time in hours",
+        ge=0
+    )
+    default_changeover_hours: float = Field(
+        default=1.0,
+        description="Default product changeover time in hours (when not specified in changeover matrix)",
+        ge=0
+    )
     setup_time_hours: float = Field(
         default=0.0,
-        description="Production setup time in hours",
+        description="DEPRECATED: Use daily_startup_hours instead. Kept for backward compatibility.",
         ge=0
     )
     morning_truck_cutoff_hour: int = Field(

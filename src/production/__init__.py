@@ -10,8 +10,18 @@ Phase 2 Implementation:
 - Production schedule generation
 """
 
-# Future exports (Phase 2):
-# from .scheduler import ProductionScheduler
-# from .labor_cost import LaborCostCalculator
+from .feasibility import ProductionFeasibilityChecker, FeasibilityResult, PackagingAnalysis
+from .scheduler import ProductionScheduler, ProductionSchedule, ProductionRequirement
+from .changeover import ProductChangeoverMatrix, ProductChangeoverTime, create_simple_changeover_matrix
 
-__all__ = []
+__all__ = [
+    'ProductionFeasibilityChecker',
+    'FeasibilityResult',
+    'PackagingAnalysis',
+    'ProductionScheduler',
+    'ProductionSchedule',
+    'ProductionRequirement',
+    'ProductChangeoverMatrix',
+    'ProductChangeoverTime',
+    'create_simple_changeover_matrix',
+]

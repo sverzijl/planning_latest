@@ -34,6 +34,31 @@ class Route(BaseModel):
         """Pydantic configuration."""
         use_enum_values = True
 
+    @property
+    def from_location(self) -> str:
+        """Alias for origin_id for backward compatibility."""
+        return self.origin_id
+
+    @property
+    def to_location(self) -> str:
+        """Alias for destination_id for backward compatibility."""
+        return self.destination_id
+
+    @property
+    def transit_days(self) -> float:
+        """Alias for transit_time_days for backward compatibility."""
+        return self.transit_time_days
+
+    @property
+    def cost_per_unit(self) -> Optional[float]:
+        """Alias for cost for backward compatibility."""
+        return self.cost
+
+    @property
+    def intermediate_stops(self) -> list:
+        """Empty list for compatibility (Phase 1 doesn't support intermediate stops)."""
+        return []
+
     def __str__(self) -> str:
         """String representation."""
         return (

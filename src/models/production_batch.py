@@ -23,6 +23,9 @@ class ProductionBatch(BaseModel):
         quantity: Units produced
         initial_state: Initial product state (typically AMBIENT or FROZEN)
         assigned_truck_id: Truck this batch is assigned to (if any)
+        sequence_number: Position in daily production sequence (1=first, 2=second, etc.)
+        changeover_from_product: Product that was produced immediately before this one
+        changeover_time_hours: Time spent on changeover to this product
         labor_hours_used: Labor hours consumed to produce this batch
         production_cost: Total production cost for this batch
     """
@@ -42,6 +45,20 @@ class ProductionBatch(BaseModel):
     assigned_truck_id: Optional[str] = Field(
         None,
         description="Assigned truck schedule ID"
+    )
+    sequence_number: Optional[int] = Field(
+        None,
+        description="Position in daily production sequence (1=first, 2=second, etc.)",
+        ge=1
+    )
+    changeover_from_product: Optional[str] = Field(
+        None,
+        description="Product ID that was produced immediately before this batch"
+    )
+    changeover_time_hours: float = Field(
+        default=0.0,
+        description="Time spent on changeover to this product (0 for first batch of day)",
+        ge=0
     )
     labor_hours_used: float = Field(
         default=0.0,
