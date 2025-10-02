@@ -69,16 +69,30 @@ with col1:
     )
 
 with col2:
-    st.info("**Phase 3: Optimization 🔄 In Progress**")
+    st.success("**Phase 3: Optimization ✅ Complete**")
     st.markdown(
         """
-        **Coming Soon:**
-        - Mathematical optimization (Pyomo)
-        - Minimize total cost to serve
-        - What-if scenario analysis
-        - Multi-period rolling horizon
-        - Sensitivity analysis
-        - Production campaign optimization
+        - ✅ Mathematical optimization (Pyomo)
+        - ✅ Minimize total cost to serve
+        - ✅ Shortage penalties (soft constraints)
+        - ✅ Shelf life enforcement
+        - ✅ Multi-solver support (CBC, GLPK, Gurobi, CPLEX)
+        - ✅ Demand satisfaction diagnostics
+        - ✅ Cross-platform compatibility
+        """
+    )
+
+    st.divider()
+
+    st.info("**Phase 4: Advanced Features 🔜 Planned**")
+    st.markdown(
+        """
+        **Future:**
+        - Rolling horizon planning
+        - Stochastic demand scenarios
+        - Integer pallet optimization
+        - Flexible truck routing
+        - What-if scenario comparison
         """
     )
 
@@ -135,7 +149,7 @@ if session_state.is_data_uploaded():
         st.divider()
         st.subheader("📑 View Results")
 
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
             if st.button("📦 Production Schedule", use_container_width=True):
                 st.switch_page("pages/4_Production_Schedule.py")
@@ -146,14 +160,22 @@ if session_state.is_data_uploaded():
             if st.button("💰 Cost Analysis", use_container_width=True):
                 st.switch_page("pages/6_Cost_Analysis.py")
         with col4:
+            if st.button("⚡ Optimization", use_container_width=True):
+                st.switch_page("pages/10_Optimization.py")
+        with col5:
             if st.button("🔄 Re-run Planning", use_container_width=True):
                 st.switch_page("pages/3_Planning_Workflow.py")
 
     else:
         st.info("ℹ️ Ready to plan. Run the planning workflow to generate production and distribution plans.")
 
-        if st.button("🚀 Run Planning Workflow", type="primary", use_container_width=True):
-            st.switch_page("pages/3_Planning_Workflow.py")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🚀 Run Planning Workflow (Heuristic)", type="primary", use_container_width=True):
+                st.switch_page("pages/3_Planning_Workflow.py")
+        with col2:
+            if st.button("⚡ Run Optimization (Optimal)", type="primary", use_container_width=True):
+                st.switch_page("pages/10_Optimization.py")
 
 else:
     st.warning("⚠️ No data loaded. Upload forecast and network configuration files to get started.")
@@ -240,4 +262,4 @@ with col2:
 st.divider()
 
 # Footer
-st.caption("Built with Streamlit • Powered by Pyomo • Phase 2 Complete ✅")
+st.caption("Built with Streamlit • Powered by Pyomo • Phase 3 Complete ✅ • Optimization Ready ⚡")

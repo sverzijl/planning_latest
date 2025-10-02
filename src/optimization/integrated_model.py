@@ -6,16 +6,18 @@ scheduling with distribution routing decisions to minimize total cost.
 Decision Variables:
 - production[date, product]: Quantity to produce
 - shipment[route_index, product, delivery_date]: Quantity to ship on each route
+- shortage[dest, product, date]: Demand shortage (if allow_shortages=True)
 
 Constraints:
-- Demand satisfaction: Shipments arriving at each location meet demand
+- Demand satisfaction: Shipments (+ shortage) arriving at each location meet demand
 - Flow conservation: Total shipments ≤ total production
 - Labor capacity: Production hours ≤ available labor hours per day
 - Production capacity: Production ≤ max capacity per day
 - Timing feasibility: Shipments depart on/after production date
+- Shelf life: Routes filtered to exclude transit times > max_product_age_days (default: 10 days)
 
 Objective:
-- Minimize: labor cost + production cost + transport cost
+- Minimize: labor cost + production cost + transport cost + shortage penalty
 """
 
 from typing import Dict, List, Tuple, Set, Optional, Any
@@ -96,6 +98,9 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         start_date: Optional[Date] = None,
         end_date: Optional[Date] = None,
         max_routes_per_destination: int = 5,
+        allow_shortages: bool = False,
+        enforce_shelf_life: bool = True,
+        max_product_age_days: int = 10,
     ):
         """
         Initialize integrated production-distribution model.
@@ -111,6 +116,9 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             start_date: Planning horizon start (default: first forecast date)
             end_date: Planning horizon end (default: last forecast date)
             max_routes_per_destination: Maximum routes to enumerate per destination
+            allow_shortages: If True, allow demand shortages with penalty cost
+            enforce_shelf_life: If True, filter routes exceeding shelf life limits
+            max_product_age_days: Maximum product age at delivery (17-day shelf life - 7-day min = 10 days)
         """
         super().__init__(solver_config)
 
@@ -121,6 +129,9 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         self.locations = locations
         self.routes = routes
         self.max_routes_per_destination = max_routes_per_destination
+        self.allow_shortages = allow_shortages
+        self.enforce_shelf_life = enforce_shelf_life
+        self.max_product_age_days = max_product_age_days
 
         # Store user-provided dates
         self._user_start_date = start_date
@@ -201,7 +212,23 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         )
 
         # Store enumerated routes
-        self.enumerated_routes: List[EnumeratedRoute] = self.route_enumerator.get_all_routes()
+        all_routes = self.route_enumerator.get_all_routes()
+
+        # Filter routes based on shelf life constraints if enforced
+        if self.enforce_shelf_life:
+            self.enumerated_routes: List[EnumeratedRoute] = [
+                r for r in all_routes
+                if r.total_transit_days <= self.max_product_age_days
+            ]
+            # Log filtered routes
+            filtered_count = len(all_routes) - len(self.enumerated_routes)
+            if filtered_count > 0:
+                import warnings
+                warnings.warn(
+                    f"Shelf life constraint filtered out {filtered_count} routes with transit > {self.max_product_age_days} days"
+                )
+        else:
+            self.enumerated_routes: List[EnumeratedRoute] = all_routes
 
         # Create route indices set
         self.route_indices: Set[int] = {r.index for r in self.enumerated_routes}
@@ -331,6 +358,16 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             within=NonNegativeReals,
             doc="Shipment quantity by route, product, and delivery date"
         )
+
+        # Decision variables: shortage[dest, product, delivery_date] (if allowed)
+        if self.allow_shortages:
+            # Create shortage variables only for demand keys
+            demand_keys = list(self.demand.keys())
+            model.shortage = Var(
+                [(dest, prod, deliv_date) for dest, prod, deliv_date in demand_keys],
+                within=NonNegativeReals,
+                doc="Demand shortage by destination, product, and delivery date"
+            )
 
         # Auxiliary variables for labor cost calculation
         model.labor_hours = Var(
@@ -474,7 +511,12 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 for r in route_list
             )
 
-            return total_shipments >= demand_qty
+            # If shortages allowed, constraint is: shipments + shortage >= demand
+            # Otherwise, constraint is: shipments >= demand
+            if self.allow_shortages:
+                return total_shipments + model.shortage[dest, prod, delivery_date] >= demand_qty
+            else:
+                return total_shipments >= demand_qty
 
         # Create constraint for all location-product-date combinations with demand
         demand_keys = list(self.demand.keys())
@@ -511,7 +553,7 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             doc="Production >= shipments departing on each date"
         )
 
-        # Objective: Minimize total cost = labor cost + production cost + transport cost
+        # Objective: Minimize total cost = labor + production + transport + shortage penalty
         def objective_rule(model):
             # Labor cost (same as production model)
             labor_cost = 0.0
@@ -533,7 +575,7 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 for p in model.products:
                     production_cost += self.cost_structure.production_cost_per_unit * model.production[d, p]
 
-            # NEW: Transport cost
+            # Transport cost
             transport_cost = 0.0
             for r in model.routes:
                 route_cost = self.route_cost[r]
@@ -541,12 +583,21 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                     for d in model.dates:
                         transport_cost += route_cost * model.shipment[r, p, d]
 
-            return labor_cost + production_cost + transport_cost
+            # Shortage penalty cost (if shortages allowed)
+            shortage_cost = 0.0
+            if self.allow_shortages:
+                for dest, prod, delivery_date in self.demand.keys():
+                    shortage_cost += (
+                        self.cost_structure.shortage_penalty_per_unit
+                        * model.shortage[dest, prod, delivery_date]
+                    )
+
+            return labor_cost + production_cost + transport_cost + shortage_cost
 
         model.obj = Objective(
             rule=objective_rule,
             sense=minimize,
-            doc="Minimize total cost (labor + production + transport)"
+            doc="Minimize total cost (labor + production + transport + shortage penalty)"
         )
 
         return model
@@ -618,15 +669,30 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                     qty = value(model.shipment[r, p, d])
                     total_transport_cost += route_cost * qty
 
+        # Extract shortage quantities (if shortages allowed)
+        shortages_by_dest_product_date: Dict[Tuple[str, str, Date], float] = {}
+        total_shortage_cost = 0.0
+        total_shortage_units = 0.0
+        if self.allow_shortages:
+            for dest, prod, delivery_date in self.demand.keys():
+                qty = value(model.shortage[dest, prod, delivery_date])
+                if qty > 1e-6:
+                    shortages_by_dest_product_date[(dest, prod, delivery_date)] = qty
+                    total_shortage_units += qty
+                    total_shortage_cost += self.cost_structure.shortage_penalty_per_unit * qty
+
         return {
             'production_by_date_product': production_by_date_product,
             'labor_hours_by_date': labor_hours_by_date,
             'labor_cost_by_date': labor_cost_by_date,
             'shipments_by_route_product_date': shipments_by_route_product_date,
+            'shortages_by_dest_product_date': shortages_by_dest_product_date,
             'total_labor_cost': total_labor_cost,
             'total_production_cost': total_production_cost,
             'total_transport_cost': total_transport_cost,
-            'total_cost': total_labor_cost + total_production_cost + total_transport_cost,
+            'total_shortage_cost': total_shortage_cost,
+            'total_shortage_units': total_shortage_units,
+            'total_cost': total_labor_cost + total_production_cost + total_transport_cost + total_shortage_cost,
         }
 
     def get_shipment_plan(self) -> Optional[List[Shipment]]:
@@ -725,6 +791,8 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         print(f"  Labor Cost:      ${solution['total_labor_cost']:>12,.2f}")
         print(f"  Production Cost: ${solution['total_production_cost']:>12,.2f}")
         print(f"  Transport Cost:  ${solution['total_transport_cost']:>12,.2f}")
+        if self.allow_shortages and solution.get('total_shortage_cost', 0) > 0:
+            print(f"  Shortage Cost:   ${solution['total_shortage_cost']:>12,.2f}")
         print(f"  {'─' * 30}")
         print(f"  Total Cost:      ${solution['total_cost']:>12,.2f}")
 
@@ -751,11 +819,23 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
 
         # Demand satisfaction
         print(f"\nDemand Satisfaction:")
+
+        # Calculate shortage by product if applicable
+        shortage_by_product: Dict[str, float] = defaultdict(float)
+        if self.allow_shortages:
+            for (_, product_id, _), qty in solution.get('shortages_by_dest_product_date', {}).items():
+                shortage_by_product[product_id] += qty
+
         for product_id, demand in self.total_demand_by_product.items():
             produced = by_product.get(product_id, 0.0)
-            pct = (produced / demand * 100) if demand > 0 else 0
-            status = "✓" if produced >= demand * 0.999 else "✗"
-            print(f"  {status} {product_id}: {produced:,.0f} / {demand:,.0f} ({pct:.1f}%)")
+            shortage = shortage_by_product.get(product_id, 0.0)
+            satisfied = produced - shortage
+            pct = (satisfied / demand * 100) if demand > 0 else 0
+            status = "✓" if satisfied >= demand * 0.999 else "✗"
+            if shortage > 0.1:
+                print(f"  {status} {product_id}: {satisfied:,.0f} / {demand:,.0f} ({pct:.1f}%) [shortage: {shortage:,.0f}]")
+            else:
+                print(f"  {status} {product_id}: {satisfied:,.0f} / {demand:,.0f} ({pct:.1f}%)")
 
         print("=" * 70)
 
