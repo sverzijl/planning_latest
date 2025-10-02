@@ -81,8 +81,12 @@ class ShipmentPlanner:
             # (In practice, requirement aggregates to one batch per (date, product))
             batch = batches[0]
 
-            # Create shipment for each demand detail
+            # Create shipment for each demand detail (skip zero quantities)
             for location_id, delivery_date, quantity, route in requirement.demand_details:
+                # Skip zero-quantity demands (no shipment needed)
+                if quantity <= 0:
+                    continue
+
                 shipment = Shipment(
                     id=self._generate_shipment_id(batch.id, location_id),
                     batch_id=batch.id,
