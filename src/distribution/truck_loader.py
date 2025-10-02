@@ -7,7 +7,7 @@ This module assigns shipments to specific truck departures based on:
 - Day-specific routing (Monday-Friday schedules)
 """
 
-from datetime import date, timedelta
+from datetime import date, time, timedelta
 from typing import List, Dict, Optional
 from dataclasses import dataclass, field
 import math
@@ -26,6 +26,7 @@ class TruckLoad:
         truck_name: Name of truck for display
         departure_date: Date of truck departure
         departure_type: morning or afternoon
+        departure_time: Time of departure (from TruckSchedule)
         destination_id: Truck's destination location
         shipments: List of assigned shipments
         total_units: Total units loaded
@@ -33,12 +34,14 @@ class TruckLoad:
         capacity_units: Maximum units capacity
         capacity_pallets: Maximum pallet capacity
         capacity_utilization: Percentage of pallet capacity used (0.0 to 1.0)
+        utilization_pct: Alias for capacity_utilization (for visualization compatibility)
         is_full: Whether truck is at capacity
     """
     truck_schedule_id: str
     truck_name: str
     departure_date: date
     departure_type: str
+    departure_time: time
     destination_id: Optional[str]
     shipments: List[Shipment] = field(default_factory=list)
     total_units: float = 0.0
@@ -46,6 +49,7 @@ class TruckLoad:
     capacity_units: float = 0.0
     capacity_pallets: int = 44
     capacity_utilization: float = 0.0
+    utilization_pct: float = 0.0
     is_full: bool = False
 
     def __str__(self) -> str:
@@ -228,6 +232,7 @@ class TruckLoader:
             truck_name=truck.truck_name,
             departure_date=departure_date,
             departure_type=truck.departure_type,  # Already a string due to use_enum_values=True
+            departure_time=truck.departure_time,
             destination_id=truck.destination_id,
             shipments=[],
             total_units=0.0,
@@ -235,6 +240,7 @@ class TruckLoader:
             capacity_units=truck.capacity,
             capacity_pallets=truck.pallet_capacity,
             capacity_utilization=0.0,
+            utilization_pct=0.0,
             is_full=False
         )
 
@@ -354,6 +360,7 @@ class TruckLoader:
         truck_load.total_units += shipment.quantity
         truck_load.total_pallets += pallets_needed
         truck_load.capacity_utilization = truck_load.total_pallets / truck_load.capacity_pallets
+        truck_load.utilization_pct = truck_load.capacity_utilization  # Keep in sync
 
         return True
 
