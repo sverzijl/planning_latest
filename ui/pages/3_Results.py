@@ -254,8 +254,8 @@ with tab_distribution:
             st.markdown(colored_metric("Total Units", f"{sum(s.quantity for s in shipments):,.0f}", "primary"), unsafe_allow_html=True)
 
         with col2:
-            st.markdown(colored_metric("Trucks Used", str(len(truck_plan.truck_loadings)), "secondary"), unsafe_allow_html=True)
-            avg_load = sum(tl.total_units for tl in truck_plan.truck_loadings) / len(truck_plan.truck_loadings) if truck_plan.truck_loadings else 0
+            st.markdown(colored_metric("Trucks Used", str(len(truck_plan.loads)), "secondary"), unsafe_allow_html=True)
+            avg_load = sum(tl.total_units for tl in truck_plan.loads) / len(truck_plan.loads) if truck_plan.loads else 0
             st.markdown(colored_metric("Avg Load", f"{avg_load:,.0f} units", "secondary"), unsafe_allow_html=True)
 
         with col3:
