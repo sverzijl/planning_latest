@@ -285,7 +285,7 @@ with tab_distribution:
 
             with col1:
                 st.markdown(section_header("Shipments by Destination", level=4), unsafe_allow_html=True)
-                render_shipments_by_destination_chart(shipments)
+                render_shipments_by_destination_chart(truck_plan)
 
             with col2:
                 st.markdown(section_header("Truck Utilization", level=4), unsafe_allow_html=True)
