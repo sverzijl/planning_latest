@@ -46,11 +46,16 @@ def initialize_session_state():
         'route_finder': None,
         'scheduler': None,
 
-        # Planning results
+        # Planning results (heuristic)
         'production_schedule': None,
         'shipments': None,
         'truck_plan': None,
         'cost_breakdown': None,
+
+        # Optimization results (Phase 3)
+        'optimization_complete': False,
+        'optimization_result': None,
+        'optimization_model': None,
 
         # Metadata
         'forecast_filename': None,
@@ -73,6 +78,9 @@ def clear_planning_results():
     st.session_state.shipments = None
     st.session_state.truck_plan = None
     st.session_state.cost_breakdown = None
+    st.session_state.optimization_complete = False
+    st.session_state.optimization_result = None
+    st.session_state.optimization_model = None
 
 
 def clear_all_data():
@@ -94,6 +102,9 @@ def clear_all_data():
     st.session_state.shipments = None
     st.session_state.truck_plan = None
     st.session_state.cost_breakdown = None
+    st.session_state.optimization_complete = False
+    st.session_state.optimization_result = None
+    st.session_state.optimization_model = None
     st.session_state.forecast_filename = None
     st.session_state.network_filename = None
 
@@ -149,6 +160,18 @@ def store_planning_results(
     st.session_state.planning_complete = True
 
 
+def store_optimization_results(model: Any, result: dict):
+    """Store optimization results in session state.
+
+    Args:
+        model: The optimization model (IntegratedProductionDistributionModel)
+        result: Dictionary containing optimization results
+    """
+    st.session_state.optimization_model = model
+    st.session_state.optimization_result = result
+    st.session_state.optimization_complete = True
+
+
 # ========== Data Retrieval Functions ==========
 
 def get_parsed_data() -> Optional[dict]:
@@ -180,6 +203,22 @@ def get_planning_results() -> Optional[dict]:
     }
 
 
+def get_optimization_results() -> Optional[dict]:
+    """Get optimization results as a dictionary.
+
+    Returns:
+        Dictionary with 'model' and 'result' keys if optimization is complete,
+        None otherwise.
+    """
+    if not st.session_state.get('optimization_complete', False):
+        return None
+
+    return {
+        'model': st.session_state.optimization_model,
+        'result': st.session_state.optimization_result,
+    }
+
+
 # ========== Status Check Functions ==========
 
 def is_data_uploaded() -> bool:
@@ -190,6 +229,15 @@ def is_data_uploaded() -> bool:
 def is_planning_complete() -> bool:
     """Check if planning workflow is complete."""
     return st.session_state.get('planning_complete', False)
+
+
+def is_optimization_complete() -> bool:
+    """Check if optimization is complete.
+
+    Returns:
+        True if optimization has been run and results are stored, False otherwise.
+    """
+    return st.session_state.get('optimization_complete', False)
 
 
 def get_current_step() -> int:

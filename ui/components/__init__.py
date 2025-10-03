@@ -4,6 +4,7 @@ from .network_graph import render_network_graph, render_connectivity_matrix
 from .cost_charts import (
     render_cost_pie_chart,
     render_cost_breakdown_chart,
+    render_cost_by_category_chart,
     render_daily_cost_chart,
     render_labor_cost_breakdown,
     render_transport_cost_by_route,
@@ -25,8 +26,10 @@ from .data_tables import (
     render_production_batches_table,
     render_shipments_table,
     render_truck_loads_table,
+    render_truck_loadings_table,
     render_unassigned_shipments_table,
     render_cost_summary_table,
+    render_cost_breakdown_table,
     render_labor_breakdown_table,
     render_daily_breakdown_table,
 )
@@ -45,6 +48,7 @@ __all__ = [
     # Cost charts
     'render_cost_pie_chart',
     'render_cost_breakdown_chart',
+    'render_cost_by_category_chart',
     'render_daily_cost_chart',
     'render_labor_cost_breakdown',
     'render_transport_cost_by_route',
@@ -63,8 +67,10 @@ __all__ = [
     'render_production_batches_table',
     'render_shipments_table',
     'render_truck_loads_table',
+    'render_truck_loadings_table',
     'render_unassigned_shipments_table',
     'render_cost_summary_table',
+    'render_cost_breakdown_table',
     'render_labor_breakdown_table',
     'render_daily_breakdown_table',
     # Date filter

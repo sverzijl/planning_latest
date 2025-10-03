@@ -136,6 +136,17 @@ def render_truck_loads_table(truck_plan: TruckLoadPlan, max_rows: int = None):
         st.caption(f"{len(df)} total truck loads")
 
 
+def render_truck_loadings_table(truck_plan: TruckLoadPlan, max_rows: int = None):
+    """
+    Alias for render_truck_loads_table for backward compatibility.
+
+    Args:
+        truck_plan: TruckLoadPlan instance
+        max_rows: Maximum number of rows to display (None for all)
+    """
+    return render_truck_loads_table(truck_plan, max_rows)
+
+
 def render_unassigned_shipments_table(truck_plan: TruckLoadPlan):
     """
     Render unassigned shipments as a Streamlit dataframe.
@@ -190,6 +201,16 @@ def render_cost_summary_table(cost_breakdown):
 
     st.dataframe(df, use_container_width=True, hide_index=True)
     st.caption(f"Cost per unit delivered: ${cost_breakdown.cost_per_unit_delivered:.2f}")
+
+
+def render_cost_breakdown_table(cost_breakdown):
+    """
+    Alias for render_cost_summary_table for backward compatibility.
+
+    Args:
+        cost_breakdown: TotalCostBreakdown instance
+    """
+    return render_cost_summary_table(cost_breakdown)
 
 
 def render_labor_breakdown_table(cost_breakdown):

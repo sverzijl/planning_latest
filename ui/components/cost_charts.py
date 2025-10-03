@@ -91,6 +91,21 @@ def render_cost_breakdown_chart(cost_breakdown: TotalCostBreakdown, height: int 
     return fig
 
 
+def render_cost_by_category_chart(cost_breakdown: TotalCostBreakdown, height: int = 400):
+    """
+    Alias for render_cost_pie_chart for backward compatibility.
+    Renders cost breakdown by category as a pie chart.
+
+    Args:
+        cost_breakdown: TotalCostBreakdown instance
+        height: Chart height in pixels
+
+    Returns:
+        Plotly figure object
+    """
+    return render_cost_pie_chart(cost_breakdown, height)
+
+
 def render_daily_cost_chart(cost_breakdown: TotalCostBreakdown, height: int = 400):
     """
     Render daily cost breakdown as a stacked bar chart.
