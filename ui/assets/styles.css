@@ -538,3 +538,26 @@
 .gap-sm { gap: var(--spacing-sm); }
 .gap-md { gap: var(--spacing-md); }
 .gap-lg { gap: var(--spacing-lg); }
+
+/* ========================================
+   Navigation Components
+   ======================================== */
+
+.breadcrumb {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-caption);
+    margin-bottom: var(--spacing-md);
+    padding: var(--spacing-sm) 0;
+    font-weight: 500;
+}
+
+.breadcrumb a {
+    color: var(--color-primary);
+    text-decoration: none;
+    transition: color 0.2s ease;
+}
+
+.breadcrumb a:hover {
+    color: var(--color-primary-dark);
+    text-decoration: underline;
+}

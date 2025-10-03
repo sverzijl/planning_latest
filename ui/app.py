@@ -205,19 +205,19 @@ if session_state.is_data_uploaded():
         col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
             if st.button("📦 Production Schedule", use_container_width=True):
-                st.switch_page("pages/4_Production_Schedule.py")
+                st.switch_page("pages/3_Results.py")
         with col2:
             if st.button("🚚 Distribution Plan", use_container_width=True):
-                st.switch_page("pages/5_Distribution_Plan.py")
+                st.switch_page("pages/3_Results.py")
         with col3:
             if st.button("💰 Cost Analysis", use_container_width=True):
-                st.switch_page("pages/6_Cost_Analysis.py")
+                st.switch_page("pages/3_Results.py")
         with col4:
             if st.button("⚡ Optimization", use_container_width=True):
-                st.switch_page("pages/10_Optimization.py")
+                st.switch_page("pages/2_Planning.py")
         with col5:
             if st.button("🔄 Re-run Planning", use_container_width=True):
-                st.switch_page("pages/3_Planning_Workflow.py")
+                st.switch_page("pages/2_Planning.py")
 
     else:
         st.markdown(info_badge("Ready to plan"), unsafe_allow_html=True)
@@ -232,10 +232,10 @@ if session_state.is_data_uploaded():
         col1, col2 = st.columns(2)
         with col1:
             if st.button("🚀 Run Planning Workflow (Heuristic)", type="primary", use_container_width=True):
-                st.switch_page("pages/3_Planning_Workflow.py")
+                st.switch_page("pages/2_Planning.py")
         with col2:
             if st.button("⚡ Run Optimization (Optimal)", type="primary", use_container_width=True):
-                st.switch_page("pages/10_Optimization.py")
+                st.switch_page("pages/2_Planning.py")
 
 else:
     st.markdown(
@@ -251,7 +251,7 @@ else:
     st.markdown("<br>", unsafe_allow_html=True)
 
     if st.button("📤 Upload Data", type="primary", use_container_width=True):
-        st.switch_page("pages/1_Upload_Data.py")
+        st.switch_page("pages/1_Data.py")
 
     st.divider()
 
@@ -266,6 +266,74 @@ else:
         </ol>
     </div>
     """, unsafe_allow_html=True)
+
+st.divider()
+
+# Quick Navigation section
+st.markdown(section_header("Quick Navigation", level=2, icon="🧭"), unsafe_allow_html=True)
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    st.markdown("""
+    <div class="card card-hover">
+        <div style="font-size: 32px; margin-bottom: 8px;">📁</div>
+        <div style="font-weight: 600; font-size: 16px; margin-bottom: 8px;">Data Management</div>
+        <div class="caption-text">Upload files, view data summaries, and edit forecasts</div>
+    </div>
+    """, unsafe_allow_html=True)
+    if st.button("Go to Data Management", use_container_width=True, key="nav_data"):
+        st.switch_page("pages/1_Data.py")
+
+with col2:
+    st.markdown("""
+    <div class="card card-hover">
+        <div style="font-size: 32px; margin-bottom: 8px;">📋</div>
+        <div style="font-weight: 600; font-size: 16px; margin-bottom: 8px;">Planning</div>
+        <div class="caption-text">Run heuristic planning, optimization, or manage scenarios</div>
+    </div>
+    """, unsafe_allow_html=True)
+    if st.button("Go to Planning", use_container_width=True, key="nav_planning"):
+        st.switch_page("pages/2_Planning.py")
+
+with col3:
+    st.markdown("""
+    <div class="card card-hover">
+        <div style="font-size: 32px; margin-bottom: 8px;">📈</div>
+        <div style="font-weight: 600; font-size: 16px; margin-bottom: 8px;">Results</div>
+        <div class="caption-text">View production, distribution, costs, and comparisons</div>
+    </div>
+    """, unsafe_allow_html=True)
+    if st.button("Go to Results", use_container_width=True, key="nav_results"):
+        st.switch_page("pages/3_Results.py")
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    st.markdown("""
+    <div class="card card-hover">
+        <div style="font-size: 32px; margin-bottom: 8px;">🗺️</div>
+        <div style="font-weight: 600; font-size: 16px; margin-bottom: 8px;">Network Analysis</div>
+        <div class="caption-text">Visualize network graph and analyze routes</div>
+    </div>
+    """, unsafe_allow_html=True)
+    if st.button("Go to Network Analysis", use_container_width=True, key="nav_network"):
+        st.switch_page("pages/4_Network.py")
+
+with col2:
+    st.markdown("""
+    <div class="card card-hover">
+        <div style="font-size: 32px; margin-bottom: 8px;">⚙️</div>
+        <div style="font-weight: 600; font-size: 16px; margin-bottom: 8px;">Settings</div>
+        <div class="caption-text">Configure application preferences</div>
+    </div>
+    """, unsafe_allow_html=True)
+    if st.button("Go to Settings", use_container_width=True, key="nav_settings"):
+        st.switch_page("pages/5_Settings.py")
+
+with col3:
+    # Empty placeholder for symmetry
+    pass
 
 st.divider()
 

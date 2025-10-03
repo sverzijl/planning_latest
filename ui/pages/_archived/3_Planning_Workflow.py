@@ -11,10 +11,12 @@ if str(project_root) not in sys.path:
 import streamlit as st
 from datetime import date, timedelta
 from ui import session_state
+from ui.components.styling import apply_custom_css, info_box
 from src.network import NetworkGraphBuilder, RouteFinder
 from src.production.scheduler import ProductionScheduler
 from src.distribution import ShipmentPlanner, TruckLoader
 from src.costs import CostCalculator
+from src.scenario import ScenarioManager
 
 # Page config
 st.set_page_config(
@@ -23,8 +25,15 @@ st.set_page_config(
     layout="wide",
 )
 
+# Apply custom styling
+apply_custom_css()
+
 # Initialize session state
 session_state.initialize_session_state()
+
+# Initialize scenario manager
+if 'scenario_manager' not in st.session_state:
+    st.session_state.scenario_manager = ScenarioManager()
 
 st.header("🚀 Planning Workflow")
 
@@ -259,6 +268,92 @@ def show_workflow_results():
         st.metric("Transport Cost", f"${summary.get('transport_cost', 0):,.2f}")
     with col4:
         st.metric("Waste Cost", f"${summary.get('waste_cost', 0):,.2f}")
+
+    # Save as scenario button
+    st.divider()
+    st.subheader("💾 Save Planning Results")
+
+    if st.button("💾 Save as Scenario", type="primary", use_container_width=False):
+        st.session_state.show_save_scenario_dialog = True
+
+    # Save scenario dialog
+    if st.session_state.get('show_save_scenario_dialog', False):
+        with st.form("save_scenario_form_workflow"):
+            st.markdown("**Save Current Planning Results as Scenario**")
+
+            name = st.text_input(
+                "Scenario Name*",
+                placeholder="e.g., Baseline Heuristic Plan Q1 2025",
+                help="Required: A descriptive name for this scenario"
+            )
+
+            description = st.text_area(
+                "Description",
+                placeholder="Optional notes about this planning scenario",
+                help="Optional: Detailed description"
+            )
+
+            tags_input = st.text_input(
+                "Tags (comma-separated)",
+                placeholder="e.g., heuristic, baseline, Q1",
+                help="Optional: Tags for organizing scenarios"
+            )
+
+            col1, col2 = st.columns(2)
+            with col1:
+                submitted = st.form_submit_button("💾 Save", type="primary", use_container_width=True)
+            with col2:
+                canceled = st.form_submit_button("❌ Cancel", use_container_width=True)
+
+            if submitted and name:
+                try:
+                    # Parse tags
+                    tags = [t.strip() for t in tags_input.split(",")] if tags_input else []
+
+                    # Extract current data
+                    scenario_data = {
+                        'forecast_data': st.session_state.get('forecast'),
+                        'labor_calendar': st.session_state.get('labor_calendar'),
+                        'truck_schedules': st.session_state.get('truck_schedules'),
+                        'cost_parameters': st.session_state.get('cost_structure'),
+                        'locations': st.session_state.get('locations'),
+                        'routes': st.session_state.get('routes'),
+                        'manufacturing_site': st.session_state.get('manufacturing_site'),
+                        'planning_mode': 'heuristic',
+                        'planning_results': st.session_state.get('cost_breakdown'),
+                    }
+
+                    # Save scenario
+                    scenario = st.session_state.scenario_manager.save_scenario(
+                        name=name,
+                        description=description,
+                        tags=tags,
+                        **scenario_data
+                    )
+
+                    st.success(f"✅ Scenario '{name}' saved successfully!")
+                    st.markdown(
+                        info_box(
+                            f"**Scenario ID:** {scenario.id}<br>"
+                            f"**Created:** {scenario.created_at.strftime('%Y-%m-%d %H:%M:%S')}",
+                            box_type="success"
+                        ),
+                        unsafe_allow_html=True
+                    )
+
+                    # Clear dialog flag
+                    st.session_state.show_save_scenario_dialog = False
+                    st.rerun()
+
+                except Exception as e:
+                    st.error(f"❌ Error saving scenario: {str(e)}")
+
+            elif submitted and not name:
+                st.error("❌ Please provide a scenario name")
+
+            if canceled:
+                st.session_state.show_save_scenario_dialog = False
+                st.rerun()
 
     # Links to detailed pages
     st.divider()
