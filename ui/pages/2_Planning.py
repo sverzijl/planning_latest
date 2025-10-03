@@ -422,19 +422,20 @@ with tab_optimization:
                 )
 
                 # Display results
-                if result['status'] in ['optimal', 'feasible']:
-                    st.success(f"✅ Optimization {result['status']}!")
+                if result.is_optimal() or result.is_feasible():
+                    status_str = "optimal" if result.is_optimal() else "feasible"
+                    st.success(f"✅ Optimization {status_str}!")
 
                     col1, col2, col3, col4 = st.columns(4)
                     with col1:
-                        st.metric("Status", result['status'].title())
+                        st.metric("Status", status_str.title())
                     with col2:
-                        st.metric("Total Cost", f"${result.get('objective_value', 0):,.2f}")
+                        st.metric("Total Cost", f"${result.objective_value or 0:,.2f}")
                     with col3:
-                        st.metric("Solve Time", f"{result.get('solve_time_seconds', 0):.1f}s")
+                        st.metric("Solve Time", f"{result.solve_time_seconds or 0:.1f}s")
                     with col4:
-                        if result.get('gap_pct') is not None:
-                            st.metric("Gap", f"{result['gap_pct']:.2f}%")
+                        if result.gap is not None:
+                            st.metric("Gap", f"{result.gap * 100:.2f}%")
 
                     # Store optimization results
                     session_state.store_optimization_results(
@@ -448,19 +449,18 @@ with tab_optimization:
                     if st.button("📈 View Results", type="primary", use_container_width=True, key="view_opt_results"):
                         st.switch_page("pages/3_Results.py")
 
-                elif result['status'] == 'infeasible':
+                elif result.is_infeasible():
                     st.error("❌ Problem is infeasible - no solution exists that satisfies all constraints")
 
                     # Show diagnostics
-                    if 'diagnostics' in result:
+                    if result.infeasibility_message:
                         st.warning("**Diagnostics:**")
-                        for key, value in result['diagnostics'].items():
-                            st.write(f"- **{key}:** {value}")
+                        st.write(result.infeasibility_message)
 
                     st.info("💡 Try enabling 'Allow Demand Shortages' to find a feasible solution")
 
                 else:
-                    st.warning(f"⚠️ Solver returned status: {result['status']}")
+                    st.warning(f"⚠️ Solver returned status: {result.termination_condition}")
 
         except Exception as e:
             st.error(f"❌ Error during optimization: {e}")

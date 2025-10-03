@@ -272,10 +272,18 @@ class ProductionScheduler:
 
     def _adjust_to_production_day(self, target_date: date) -> date:
         """
-        Adjust date to nearest valid production day (on or before target).
+        Adjust date to nearest valid production day using smart distribution.
 
         A valid production day has fixed labor hours > 0 in the labor calendar,
         or falls on a weekday (Mon-Fri) if not in calendar.
+
+        Strategy for weekend/holiday adjustment:
+        - Saturday demand: adjust backward to Friday (prevents Friday overload)
+        - Sunday demand: adjust forward to Monday (distributes weekend load)
+        - Weekday holidays: adjust forward to next valid day (better capacity spreading)
+
+        This approach distributes weekend demand across two weekdays (Fri + Mon)
+        instead of concentrating it all on one day.
 
         Args:
             target_date: Target date
@@ -290,17 +298,27 @@ class ProductionScheduler:
             # Check if this day has fixed labor (standard production day)
             if labor_day.fixed_hours > 0:
                 return target_date
-            # Otherwise, it's a weekend/holiday - move backward
+            # Otherwise, it's a weekend/holiday - needs adjustment
         else:
             # Not in calendar, check if it's a weekday
             if target_date.weekday() < 5:  # Mon-Fri
                 return target_date
 
-        # Move backward to find previous production day
-        check_date = target_date - timedelta(days=1)
-        max_lookback = 7  # Don't look back more than a week
+        # Determine adjustment direction based on day of week
+        # Saturday (weekday() == 5) → backward to Friday
+        # Sunday (weekday() == 6) or weekday holidays → forward to Monday
+        if target_date.weekday() == 5:  # Saturday
+            # Move backward to Friday
+            direction = -1
+            max_search = 7
+        else:  # Sunday or weekday holiday
+            # Move forward to next valid day
+            direction = 1
+            max_search = 7
 
-        for _ in range(max_lookback):
+        check_date = target_date + timedelta(days=direction)
+
+        for _ in range(max_search):
             labor_day = self.labor_calendar.get_labor_day(check_date)
 
             if labor_day and labor_day.fixed_hours > 0:
@@ -311,7 +329,7 @@ class ProductionScheduler:
                 # Not in calendar but is a weekday
                 return check_date
 
-            check_date -= timedelta(days=1)
+            check_date += timedelta(days=direction)
 
         # Fallback: return target date (should rarely happen)
         return target_date

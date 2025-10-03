@@ -302,7 +302,7 @@ class TestBackwardScheduling:
     """Tests for backward scheduling logic."""
 
     def test_production_date_calculation(self, scheduler):
-        """Test production date is calculated correctly."""
+        """Test production date is calculated correctly with weekend adjustment."""
         # VIC route: 2 + 1 = 3 days transit, +1 safety = 4 days before delivery
         delivery_date = date.today() + timedelta(days=20)
 
@@ -321,8 +321,20 @@ class TestBackwardScheduling:
         schedule = scheduler.schedule_from_forecast(forecast)
 
         batch = schedule.production_batches[0]
-        expected_prod_date = delivery_date - timedelta(days=4)
+        calculated_prod_date = delivery_date - timedelta(days=4)
+
+        # Expected production date accounts for weekend adjustment
+        # Saturday -> Friday (backward), Sunday -> Monday (forward)
+        if calculated_prod_date.weekday() == 5:  # Saturday
+            expected_prod_date = calculated_prod_date - timedelta(days=1)  # Friday
+        elif calculated_prod_date.weekday() == 6:  # Sunday
+            expected_prod_date = calculated_prod_date + timedelta(days=1)  # Monday
+        else:
+            expected_prod_date = calculated_prod_date  # Weekday, no adjustment
+
         assert batch.production_date == expected_prod_date
+        # Also verify it's not on a weekend
+        assert batch.production_date.weekday() < 5  # Monday-Friday
 
     def test_skip_past_dates(self, scheduler):
         """Test that past production dates are skipped."""
@@ -539,3 +551,140 @@ class TestEdgeCases:
 
         # Should skip entries with no route
         assert len(schedule.production_batches) == 0
+
+
+class TestWeekendAdjustment:
+    """Tests for weekend production date adjustment logic."""
+
+    def test_saturday_adjusts_to_friday(self, scheduler):
+        """Test that Saturday production dates adjust backward to Friday."""
+        # Setup: delivery date that would require Saturday production
+        # VIC route: 3 days transit + 1 safety = 4 days
+        # If delivery is on Wednesday, production should be on Saturday
+        # Saturday should adjust to Friday
+
+        # Get a Wednesday that's far enough in future
+        start_date = date.today() + timedelta(days=10)
+        # Find next Wednesday
+        while start_date.weekday() != 2:  # 2 = Wednesday
+            start_date += timedelta(days=1)
+
+        delivery_date = start_date
+
+        forecast = Forecast(
+            name="Saturday Test",
+            entries=[
+                ForecastEntry(
+                    location_id="6103",  # VIC breadroom
+                    product_id="PROD1",
+                    forecast_date=delivery_date,
+                    quantity=1000.0,
+                )
+            ],
+        )
+
+        schedule = scheduler.schedule_from_forecast(forecast)
+
+        # Should have production batch
+        assert len(schedule.production_batches) == 1
+        batch = schedule.production_batches[0]
+
+        # Production date should be Friday (weekday 4), not Saturday
+        assert batch.production_date.weekday() == 4  # Friday
+
+        # Verify it's the Friday before the calculated Saturday
+        expected_saturday = delivery_date - timedelta(days=4)
+        assert expected_saturday.weekday() == 5  # Verify calculation gives Saturday
+        expected_friday = expected_saturday - timedelta(days=1)
+        assert batch.production_date == expected_friday
+
+    def test_sunday_adjusts_to_monday(self, scheduler):
+        """Test that Sunday production dates adjust forward to Monday."""
+        # Setup: delivery date that would require Sunday production
+        # VIC route: 3 days transit + 1 safety = 4 days
+        # If delivery is on Thursday, production should be on Sunday
+        # Sunday should adjust to Monday
+
+        # Get a Thursday that's far enough in future
+        start_date = date.today() + timedelta(days=10)
+        # Find next Thursday
+        while start_date.weekday() != 3:  # 3 = Thursday
+            start_date += timedelta(days=1)
+
+        delivery_date = start_date
+
+        forecast = Forecast(
+            name="Sunday Test",
+            entries=[
+                ForecastEntry(
+                    location_id="6103",  # VIC breadroom
+                    product_id="PROD1",
+                    forecast_date=delivery_date,
+                    quantity=1000.0,
+                )
+            ],
+        )
+
+        schedule = scheduler.schedule_from_forecast(forecast)
+
+        # Should have production batch
+        assert len(schedule.production_batches) == 1
+        batch = schedule.production_batches[0]
+
+        # Production date should be Monday (weekday 0), not Sunday
+        assert batch.production_date.weekday() == 0  # Monday
+
+        # Verify it's the Monday after the calculated Sunday
+        expected_sunday = delivery_date - timedelta(days=4)
+        assert expected_sunday.weekday() == 6  # Verify calculation gives Sunday
+        expected_monday = expected_sunday + timedelta(days=1)
+        assert batch.production_date == expected_monday
+
+    def test_weekend_demand_distribution(self, scheduler):
+        """Test that weekend demand distributes across Friday and Monday."""
+        # Setup: Create demand for Wednesday and Thursday
+        # Which should map to Saturday and Sunday production
+        # Which should adjust to Friday and Monday respectively
+
+        # Get a Wednesday that's far enough in future
+        start_date = date.today() + timedelta(days=10)
+        while start_date.weekday() != 2:  # 2 = Wednesday
+            start_date += timedelta(days=1)
+
+        wednesday = start_date
+        thursday = wednesday + timedelta(days=1)
+
+        forecast = Forecast(
+            name="Weekend Distribution Test",
+            entries=[
+                ForecastEntry(
+                    location_id="6103",
+                    product_id="PROD1",
+                    forecast_date=wednesday,
+                    quantity=1000.0,
+                ),
+                ForecastEntry(
+                    location_id="6103",
+                    product_id="PROD1",
+                    forecast_date=thursday,
+                    quantity=1000.0,
+                ),
+            ],
+        )
+
+        schedule = scheduler.schedule_from_forecast(forecast)
+
+        # Should have two production batches
+        assert len(schedule.production_batches) == 2
+
+        # Get production dates
+        prod_dates = [batch.production_date for batch in schedule.production_batches]
+        weekdays = [d.weekday() for d in prod_dates]
+
+        # Should have one Friday (4) and one Monday (0)
+        assert 4 in weekdays  # Friday
+        assert 0 in weekdays  # Monday
+
+        # Verify no weekend production
+        assert 5 not in weekdays  # No Saturday
+        assert 6 not in weekdays  # No Sunday
