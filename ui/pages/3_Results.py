@@ -33,7 +33,7 @@ from ui.components import (
     render_shipments_by_destination_chart,
     render_truck_utilization_chart,
     render_shipments_table,
-    render_truck_loadings_table,
+    render_truck_loads_table,
     render_cost_breakdown_chart,
     render_cost_by_category_chart,
     render_daily_cost_chart,
@@ -301,7 +301,7 @@ with tab_distribution:
             st.divider()
 
             st.markdown(section_header("Truck Loadings", level=4), unsafe_allow_html=True)
-            render_truck_loadings_table(truck_plan)
+            render_truck_loads_table(truck_plan)
 
 
 # ===========================
