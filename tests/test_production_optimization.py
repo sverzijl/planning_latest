@@ -308,36 +308,44 @@ class TestProductionOptimizationSolve:
             from pyomo.opt import SolverStatus, TerminationCondition
             mock_results.solver.status = SolverStatus.ok
             mock_results.solver.termination_condition = TerminationCondition.optimal
-            mock_solver.solve.return_value = mock_results
 
+            # CRITICAL FIX: Mock the solve method to set variable values
+            def mock_solve(pyomo_model, **kwargs):
+                # Set production variables
+                for d in pyomo_model.dates:
+                    for p in pyomo_model.products:
+                        pyomo_model.production[d, p].set_value(1000.0)
+
+                # Set labor variables
+                for d in pyomo_model.dates:
+                    pyomo_model.labor_hours[d].set_value(5.0)
+                    pyomo_model.fixed_hours_used[d].set_value(5.0)
+                    pyomo_model.overtime_hours_used[d].set_value(0.0)
+                    pyomo_model.non_fixed_hours_paid[d].set_value(0.0)
+
+                # Mock load_from to be a no-op (values already set)
+                def load_from(results):
+                    pass
+                pyomo_model.solutions.load_from = load_from
+
+                return mock_results
+
+            mock_solver.solve = mock_solve
             return mock_solver
-
-        # Mock value function to return reasonable production values
-        def mock_value(var):
-            var_name = str(var.parent_component())
-            if 'production' in var_name:
-                return 1000.0  # Produce 1000 units
-            elif 'labor_hours' in var_name or 'fixed_hours' in var_name:
-                return 5.0  # 5 hours
-            elif 'overtime' in var_name or 'non_fixed' in var_name:
-                return 0.0
-            else:
-                return 0.0
 
         with patch('src.optimization.solver_config.SolverFactory',
                    side_effect=solver_factory_side_effect):
-            with patch('src.optimization.production_model.value', side_effect=mock_value):
-                model = ProductionOptimizationModel(
-                    forecast=simple_forecast,
-                    labor_calendar=simple_labor_calendar,
-                    manufacturing_site=manufacturing_site,
-                    cost_structure=cost_structure,
-                )
+            model = ProductionOptimizationModel(
+                forecast=simple_forecast,
+                labor_calendar=simple_labor_calendar,
+                manufacturing_site=manufacturing_site,
+                cost_structure=cost_structure,
+            )
 
-                result = model.solve()
+            result = model.solve()
 
-                assert isinstance(result, OptimizationResult)
-                assert result.success is True
+            assert isinstance(result, OptimizationResult)
+            assert result.success is True
 
     def test_extract_solution_after_solve(
         self,
@@ -357,37 +365,48 @@ class TestProductionOptimizationSolve:
             from pyomo.opt import SolverStatus, TerminationCondition
             mock_results.solver.status = SolverStatus.ok
             mock_results.solver.termination_condition = TerminationCondition.optimal
-            mock_solver.solve.return_value = mock_results
 
+            # CRITICAL FIX: Mock the solve method to set variable values
+            def mock_solve(pyomo_model, **kwargs):
+                # Set production variables
+                for d in pyomo_model.dates:
+                    for p in pyomo_model.products:
+                        pyomo_model.production[d, p].set_value(500.0)
+
+                # Set labor variables
+                for d in pyomo_model.dates:
+                    pyomo_model.labor_hours[d].set_value(3.0)
+                    pyomo_model.fixed_hours_used[d].set_value(3.0)
+                    pyomo_model.overtime_hours_used[d].set_value(0.0)
+                    pyomo_model.non_fixed_hours_paid[d].set_value(0.0)
+
+                # Mock load_from to be a no-op (values already set)
+                def load_from(results):
+                    pass
+                pyomo_model.solutions.load_from = load_from
+
+                return mock_results
+
+            mock_solver.solve = mock_solve
             return mock_solver
-
-        def mock_value(var):
-            var_name = str(var.parent_component())
-            if 'production' in var_name:
-                return 500.0
-            elif 'labor_hours' in var_name or 'fixed_hours' in var_name:
-                return 3.0
-            else:
-                return 0.0
 
         with patch('src.optimization.solver_config.SolverFactory',
                    side_effect=solver_factory_side_effect):
-            with patch('src.optimization.production_model.value', side_effect=mock_value):
-                model = ProductionOptimizationModel(
-                    forecast=simple_forecast,
-                    labor_calendar=simple_labor_calendar,
-                    manufacturing_site=manufacturing_site,
-                    cost_structure=cost_structure,
-                )
+            model = ProductionOptimizationModel(
+                forecast=simple_forecast,
+                labor_calendar=simple_labor_calendar,
+                manufacturing_site=manufacturing_site,
+                cost_structure=cost_structure,
+            )
 
-                result = model.solve()
-                solution = model.get_solution()
+            result = model.solve()
+            solution = model.get_solution()
 
-                assert solution is not None
-                assert 'production_by_date_product' in solution
-                assert 'labor_hours_by_date' in solution
-                assert 'total_labor_cost' in solution
-                assert 'total_production_cost' in solution
+            assert solution is not None
+            assert 'production_by_date_product' in solution
+            assert 'labor_hours_by_date' in solution
+            assert 'total_labor_cost' in solution
+            assert 'total_production_cost' in solution
 
     def test_get_production_schedule(
         self,
@@ -407,36 +426,47 @@ class TestProductionOptimizationSolve:
             from pyomo.opt import SolverStatus, TerminationCondition
             mock_results.solver.status = SolverStatus.ok
             mock_results.solver.termination_condition = TerminationCondition.optimal
-            mock_solver.solve.return_value = mock_results
 
+            # CRITICAL FIX: Mock the solve method to set variable values
+            def mock_solve(pyomo_model, **kwargs):
+                # Set production variables
+                for d in pyomo_model.dates:
+                    for p in pyomo_model.products:
+                        pyomo_model.production[d, p].set_value(1000.0)
+
+                # Set labor variables
+                for d in pyomo_model.dates:
+                    pyomo_model.labor_hours[d].set_value(5.0)
+                    pyomo_model.fixed_hours_used[d].set_value(5.0)
+                    pyomo_model.overtime_hours_used[d].set_value(0.0)
+                    pyomo_model.non_fixed_hours_paid[d].set_value(0.0)
+
+                # Mock load_from to be a no-op (values already set)
+                def load_from(results):
+                    pass
+                pyomo_model.solutions.load_from = load_from
+
+                return mock_results
+
+            mock_solver.solve = mock_solve
             return mock_solver
-
-        def mock_value(var):
-            var_name = str(var.parent_component())
-            if 'production' in var_name:
-                return 1000.0
-            elif 'labor_hours' in var_name or 'fixed_hours' in var_name:
-                return 5.0
-            else:
-                return 0.0
 
         with patch('src.optimization.solver_config.SolverFactory',
                    side_effect=solver_factory_side_effect):
-            with patch('src.optimization.production_model.value', side_effect=mock_value):
-                model = ProductionOptimizationModel(
-                    forecast=simple_forecast,
-                    labor_calendar=simple_labor_calendar,
-                    manufacturing_site=manufacturing_site,
-                    cost_structure=cost_structure,
-                )
+            model = ProductionOptimizationModel(
+                forecast=simple_forecast,
+                labor_calendar=simple_labor_calendar,
+                manufacturing_site=manufacturing_site,
+                cost_structure=cost_structure,
+            )
 
-                result = model.solve()
-                schedule = model.get_production_schedule()
+            result = model.solve()
+            schedule = model.get_production_schedule()
 
-                assert schedule is not None
-                assert len(schedule.production_batches) > 0
-                assert schedule.manufacturing_site_id == "MFG1"
-                assert schedule.is_feasible()
+            assert schedule is not None
+            assert len(schedule.production_batches) > 0
+            assert schedule.manufacturing_site_id == "MFG1"
+            assert schedule.is_feasible()
 
 
 if __name__ == "__main__":

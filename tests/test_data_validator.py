@@ -99,7 +99,7 @@ def sample_labor_calendar():
             minimum_hours=4.0 if is_weekend else 0.0
         ))
 
-    return LaborCalendar(days=days)
+    return LaborCalendar(name="Test Calendar", days=days)
 
 
 @pytest.fixture
@@ -613,7 +613,7 @@ class TestDateRangeChecks:
                 overtime_rate=37.5,
                 non_fixed_rate=50.0
             ))
-        labor_calendar = LaborCalendar(days=labor_days)
+        labor_calendar = LaborCalendar(name="Test Calendar", days=labor_days)
 
         validator = DataValidator(
             forecast=forecast,

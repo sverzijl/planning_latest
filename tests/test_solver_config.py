@@ -380,11 +380,12 @@ class TestSolverPreference:
 
     def test_solver_preference_order(self):
         """Test that solver preference is in expected order."""
-        # Preference should be: Gurobi > CPLEX > CBC > GLPK
+        # Preference should be: Gurobi > CPLEX > ASL_CBC > CBC > GLPK
         assert SolverConfig.SOLVER_PREFERENCE[0] == SolverType.GUROBI
         assert SolverConfig.SOLVER_PREFERENCE[1] == SolverType.CPLEX
-        assert SolverConfig.SOLVER_PREFERENCE[2] == SolverType.CBC
-        assert SolverConfig.SOLVER_PREFERENCE[3] == SolverType.GLPK
+        assert SolverConfig.SOLVER_PREFERENCE[2] == SolverType.ASL_CBC
+        assert SolverConfig.SOLVER_PREFERENCE[3] == SolverType.CBC
+        assert SolverConfig.SOLVER_PREFERENCE[4] == SolverType.GLPK
 
 
 if __name__ == "__main__":

@@ -618,10 +618,10 @@ class DataValidator:
     def check_transport_capacity(self):
         """Check if truck capacity is sufficient for demand."""
 
-        if self.forecast is None or self.truck_schedules is None:
+        if self.forecast is None:
             return
-
-        if len(self.truck_schedules) == 0:
+        
+        if self.truck_schedules is None or len(self.truck_schedules) == 0:
             # No truck schedules defined - can't check capacity
             self.issues.append(ValidationIssue(
                 id="TRANS_001",

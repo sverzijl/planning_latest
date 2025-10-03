@@ -5,7 +5,7 @@ Tests the integrated model that combines production scheduling with routing deci
 
 import pytest
 from datetime import date, timedelta
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, MagicMock
 
 from src.optimization.integrated_model import IntegratedProductionDistributionModel
 from src.optimization.base_model import OptimizationResult
@@ -417,40 +417,55 @@ class TestIntegratedModelSolve:
             from pyomo.opt import SolverStatus, TerminationCondition
             mock_results.solver.status = SolverStatus.ok
             mock_results.solver.termination_condition = TerminationCondition.optimal
-            mock_solver.solve.return_value = mock_results
 
+            # Mock solutions attribute for load_from
+            mock_solutions = Mock()
+
+            # CRITICAL FIX: Mock the solve method to set variable values
+            def mock_solve(pyomo_model, **kwargs):
+                # Set production variables
+                for d in pyomo_model.dates:
+                    for p in pyomo_model.products:
+                        pyomo_model.production[d, p].set_value(500.0)
+
+                # Set shipment variables
+                for r in pyomo_model.routes:
+                    for p in pyomo_model.products:
+                        for d in pyomo_model.dates:
+                            pyomo_model.shipment[r, p, d].set_value(100.0)
+
+                # Set labor variables
+                for d in pyomo_model.dates:
+                    pyomo_model.labor_hours[d].set_value(3.0)
+                    pyomo_model.fixed_hours_used[d].set_value(3.0)
+                    pyomo_model.overtime_hours_used[d].set_value(0.0)
+                    pyomo_model.non_fixed_hours_paid[d].set_value(0.0)
+
+                # Mock load_from to be a no-op (values already set)
+                def load_from(results):
+                    pass
+                pyomo_model.solutions.load_from = load_from
+
+                return mock_results
+
+            mock_solver.solve = mock_solve
             return mock_solver
-
-        # Mock value function to return reasonable values
-        def mock_value(var):
-            var_name = str(var.parent_component())
-            if 'production' in var_name:
-                return 500.0
-            elif 'shipment' in var_name:
-                return 100.0
-            elif 'labor_hours' in var_name or 'fixed_hours' in var_name:
-                return 3.0
-            elif 'overtime' in var_name or 'non_fixed' in var_name:
-                return 0.0
-            else:
-                return 0.0
 
         with patch('src.optimization.solver_config.SolverFactory',
                    side_effect=solver_factory_side_effect):
-            with patch('src.optimization.integrated_model.value', side_effect=mock_value):
-                model = IntegratedProductionDistributionModel(
-                    forecast=simple_forecast_disaggregated,
-                    labor_calendar=simple_labor_calendar,
-                    manufacturing_site=manufacturing_site,
-                    cost_structure=cost_structure,
-                    locations=simple_network_locations,
-                    routes=simple_network_routes,
-                )
+            model = IntegratedProductionDistributionModel(
+                forecast=simple_forecast_disaggregated,
+                labor_calendar=simple_labor_calendar,
+                manufacturing_site=manufacturing_site,
+                cost_structure=cost_structure,
+                locations=simple_network_locations,
+                routes=simple_network_routes,
+            )
 
-                result = model.solve()
+            result = model.solve()
 
-                assert isinstance(result, OptimizationResult)
-                assert result.success is True
+            assert isinstance(result, OptimizationResult)
+            assert result.success is True
 
     def test_extract_solution_includes_shipments(
         self,
@@ -472,41 +487,56 @@ class TestIntegratedModelSolve:
             from pyomo.opt import SolverStatus, TerminationCondition
             mock_results.solver.status = SolverStatus.ok
             mock_results.solver.termination_condition = TerminationCondition.optimal
-            mock_solver.solve.return_value = mock_results
 
+            # CRITICAL FIX: Mock the solve method to set variable values
+            def mock_solve(pyomo_model, **kwargs):
+                # Set production variables
+                for d in pyomo_model.dates:
+                    for p in pyomo_model.products:
+                        pyomo_model.production[d, p].set_value(500.0)
+
+                # Set shipment variables
+                for r in pyomo_model.routes:
+                    for p in pyomo_model.products:
+                        for d in pyomo_model.dates:
+                            pyomo_model.shipment[r, p, d].set_value(100.0)
+
+                # Set labor variables
+                for d in pyomo_model.dates:
+                    pyomo_model.labor_hours[d].set_value(3.0)
+                    pyomo_model.fixed_hours_used[d].set_value(3.0)
+                    pyomo_model.overtime_hours_used[d].set_value(0.0)
+                    pyomo_model.non_fixed_hours_paid[d].set_value(0.0)
+
+                # Mock load_from to be a no-op (values already set)
+                def load_from(results):
+                    pass
+                pyomo_model.solutions.load_from = load_from
+
+                return mock_results
+
+            mock_solver.solve = mock_solve
             return mock_solver
-
-        def mock_value(var):
-            var_name = str(var.parent_component())
-            if 'production' in var_name:
-                return 500.0
-            elif 'shipment' in var_name:
-                return 100.0
-            elif 'labor_hours' in var_name or 'fixed_hours' in var_name:
-                return 3.0
-            else:
-                return 0.0
 
         with patch('src.optimization.solver_config.SolverFactory',
                    side_effect=solver_factory_side_effect):
-            with patch('src.optimization.integrated_model.value', side_effect=mock_value):
-                model = IntegratedProductionDistributionModel(
-                    forecast=simple_forecast_disaggregated,
-                    labor_calendar=simple_labor_calendar,
-                    manufacturing_site=manufacturing_site,
-                    cost_structure=cost_structure,
-                    locations=simple_network_locations,
-                    routes=simple_network_routes,
-                )
+            model = IntegratedProductionDistributionModel(
+                forecast=simple_forecast_disaggregated,
+                labor_calendar=simple_labor_calendar,
+                manufacturing_site=manufacturing_site,
+                cost_structure=cost_structure,
+                locations=simple_network_locations,
+                routes=simple_network_routes,
+            )
 
-                result = model.solve()
-                solution = model.get_solution()
+            result = model.solve()
+            solution = model.get_solution()
 
-                assert solution is not None
-                assert 'production_by_date_product' in solution
-                assert 'shipments_by_route_product_date' in solution
-                assert 'total_transport_cost' in solution
-                assert 'total_cost' in solution
+            assert solution is not None
+            assert 'production_by_date_product' in solution
+            assert 'shipments_by_route_product_date' in solution
+            assert 'total_transport_cost' in solution
+            assert 'total_cost' in solution
 
     def test_get_shipment_plan(
         self,
@@ -528,45 +558,60 @@ class TestIntegratedModelSolve:
             from pyomo.opt import SolverStatus, TerminationCondition
             mock_results.solver.status = SolverStatus.ok
             mock_results.solver.termination_condition = TerminationCondition.optimal
-            mock_solver.solve.return_value = mock_results
 
+            # CRITICAL FIX: Mock the solve method to set variable values
+            def mock_solve(pyomo_model, **kwargs):
+                # Set production variables
+                for d in pyomo_model.dates:
+                    for p in pyomo_model.products:
+                        pyomo_model.production[d, p].set_value(500.0)
+
+                # Set shipment variables
+                for r in pyomo_model.routes:
+                    for p in pyomo_model.products:
+                        for d in pyomo_model.dates:
+                            pyomo_model.shipment[r, p, d].set_value(100.0)
+
+                # Set labor variables
+                for d in pyomo_model.dates:
+                    pyomo_model.labor_hours[d].set_value(3.0)
+                    pyomo_model.fixed_hours_used[d].set_value(3.0)
+                    pyomo_model.overtime_hours_used[d].set_value(0.0)
+                    pyomo_model.non_fixed_hours_paid[d].set_value(0.0)
+
+                # Mock load_from to be a no-op (values already set)
+                def load_from(results):
+                    pass
+                pyomo_model.solutions.load_from = load_from
+
+                return mock_results
+
+            mock_solver.solve = mock_solve
             return mock_solver
-
-        def mock_value(var):
-            var_name = str(var.parent_component())
-            if 'production' in var_name:
-                return 500.0
-            elif 'shipment' in var_name:
-                return 100.0
-            elif 'labor_hours' in var_name or 'fixed_hours' in var_name:
-                return 3.0
-            else:
-                return 0.0
 
         with patch('src.optimization.solver_config.SolverFactory',
                    side_effect=solver_factory_side_effect):
-            with patch('src.optimization.integrated_model.value', side_effect=mock_value):
-                model = IntegratedProductionDistributionModel(
-                    forecast=simple_forecast_disaggregated,
-                    labor_calendar=simple_labor_calendar,
-                    manufacturing_site=manufacturing_site,
-                    cost_structure=cost_structure,
-                    locations=simple_network_locations,
-                    routes=simple_network_routes,
-                )
+            model = IntegratedProductionDistributionModel(
+                forecast=simple_forecast_disaggregated,
+                labor_calendar=simple_labor_calendar,
+                manufacturing_site=manufacturing_site,
+                cost_structure=cost_structure,
+                locations=simple_network_locations,
+                routes=simple_network_routes,
+            )
 
-                result = model.solve()
-                shipments = model.get_shipment_plan()
+            result = model.solve()
+            shipments = model.get_shipment_plan()
 
-                assert shipments is not None
-                assert len(shipments) > 0
-                # Each shipment should have required fields
-                for shipment in shipments:
-                    assert shipment.id is not None
-                    assert shipment.product_id is not None
-                    assert shipment.quantity > 0
-                    assert shipment.origin_id == "6122"  # Manufacturing site
-                    assert shipment.destination_id in ["6103", "6105"]
+            assert shipments is not None
+            assert len(shipments) > 0
+            # Each shipment should have required fields
+            for shipment in shipments:
+                assert shipment.id is not None
+                assert shipment.product_id is not None
+                assert shipment.quantity > 0
+                assert shipment.origin_id == "6122"  # Manufacturing site
+                assert shipment.destination_id in ["6103", "6105"]
 
     def test_print_solution_summary_no_errors(
         self,
@@ -589,42 +634,57 @@ class TestIntegratedModelSolve:
             from pyomo.opt import SolverStatus, TerminationCondition
             mock_results.solver.status = SolverStatus.ok
             mock_results.solver.termination_condition = TerminationCondition.optimal
-            mock_solver.solve.return_value = mock_results
 
+            # CRITICAL FIX: Mock the solve method to set variable values
+            def mock_solve(pyomo_model, **kwargs):
+                # Set production variables
+                for d in pyomo_model.dates:
+                    for p in pyomo_model.products:
+                        pyomo_model.production[d, p].set_value(500.0)
+
+                # Set shipment variables
+                for r in pyomo_model.routes:
+                    for p in pyomo_model.products:
+                        for d in pyomo_model.dates:
+                            pyomo_model.shipment[r, p, d].set_value(100.0)
+
+                # Set labor variables
+                for d in pyomo_model.dates:
+                    pyomo_model.labor_hours[d].set_value(3.0)
+                    pyomo_model.fixed_hours_used[d].set_value(3.0)
+                    pyomo_model.overtime_hours_used[d].set_value(0.0)
+                    pyomo_model.non_fixed_hours_paid[d].set_value(0.0)
+
+                # Mock load_from to be a no-op (values already set)
+                def load_from(results):
+                    pass
+                pyomo_model.solutions.load_from = load_from
+
+                return mock_results
+
+            mock_solver.solve = mock_solve
             return mock_solver
-
-        def mock_value(var):
-            var_name = str(var.parent_component())
-            if 'production' in var_name:
-                return 500.0
-            elif 'shipment' in var_name:
-                return 100.0
-            elif 'labor_hours' in var_name or 'fixed_hours' in var_name:
-                return 3.0
-            else:
-                return 0.0
 
         with patch('src.optimization.solver_config.SolverFactory',
                    side_effect=solver_factory_side_effect):
-            with patch('src.optimization.integrated_model.value', side_effect=mock_value):
-                model = IntegratedProductionDistributionModel(
-                    forecast=simple_forecast_disaggregated,
-                    labor_calendar=simple_labor_calendar,
-                    manufacturing_site=manufacturing_site,
-                    cost_structure=cost_structure,
-                    locations=simple_network_locations,
-                    routes=simple_network_routes,
-                )
+            model = IntegratedProductionDistributionModel(
+                forecast=simple_forecast_disaggregated,
+                labor_calendar=simple_labor_calendar,
+                manufacturing_site=manufacturing_site,
+                cost_structure=cost_structure,
+                locations=simple_network_locations,
+                routes=simple_network_routes,
+            )
 
-                result = model.solve()
+            result = model.solve()
 
-                # Should not raise errors
-                model.print_solution_summary()
+            # Should not raise errors
+            model.print_solution_summary()
 
-                # Verify some output was produced
-                captured = capsys.readouterr()
-                assert len(captured.out) > 0
-                assert "Integrated Production-Distribution Solution" in captured.out
+            # Verify some output was produced
+            captured = capsys.readouterr()
+            assert len(captured.out) > 0
+            assert "Integrated Production-Distribution Solution" in captured.out
 
 
 if __name__ == "__main__":
