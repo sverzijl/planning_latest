@@ -60,9 +60,12 @@ def generate_routes():
     return pd.DataFrame(routes)
 
 
-def generate_labor_calendar(start_date=date(2025, 6, 2), end_date=date(2025, 12, 22)):
+def generate_labor_calendar(start_date=date(2025, 5, 26), end_date=date(2025, 12, 22)):
     """
-    Generate LaborCalendar sheet data for June 2 - Dec 22, 2025.
+    Generate LaborCalendar sheet data for May 26 - Dec 22, 2025.
+
+    Start date extended to May 26 (7 days before forecast start) to account
+    for planning horizon buffer needed for transit time and route enumeration.
 
     Rules:
     - Monday-Friday: 12h fixed, regular/OT rates
@@ -160,7 +163,7 @@ def main():
     print("Generating Routes sheet...")
     df_routes = generate_routes()
 
-    print("Generating LaborCalendar sheet (204 days)...")
+    print("Generating LaborCalendar sheet (211 days)...")
     df_labor = generate_labor_calendar()
 
     print("Generating TruckSchedules sheet...")
@@ -186,7 +189,7 @@ def main():
     print("\nSummary:")
     print(f"  - Locations: {len(df_locations)} locations")
     print(f"  - Routes: {len(df_routes)} routes")
-    print(f"  - LaborCalendar: {len(df_labor)} days (Jun 2 - Dec 22, 2025)")
+    print(f"  - LaborCalendar: {len(df_labor)} days (May 26 - Dec 22, 2025)")
     print(f"  - TruckSchedules: {len(df_trucks)} weekly truck departures")
     print(f"  - CostParameters: {len(df_costs)} cost types")
 

@@ -23,6 +23,7 @@ Objective:
 from typing import Dict, List, Tuple, Set, Optional, Any
 from datetime import date as Date, timedelta
 from collections import defaultdict
+import warnings
 
 from pyomo.environ import (
     ConcreteModel,
@@ -548,19 +549,42 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                     )
 
         # Check 4: Labor calendar coverage - do we have labor data for all production dates?
-        missing_labor_dates = []
+        # Missing weekday dates are critical errors (production should be possible Mon-Fri)
+        # Missing weekend dates are warnings (optional production, zero capacity if not provided)
+        missing_weekday_dates = []
+        missing_weekend_dates = []
+
         for prod_date in self.production_dates:
             if prod_date not in self.labor_by_date:
-                missing_labor_dates.append(prod_date)
+                # weekday() returns 0=Monday, 6=Sunday
+                if prod_date.weekday() < 5:  # Monday-Friday
+                    missing_weekday_dates.append(prod_date)
+                else:  # Saturday-Sunday
+                    missing_weekend_dates.append(prod_date)
 
-        if missing_labor_dates:
-            if len(missing_labor_dates) <= 5:
-                date_str = ', '.join(str(d) for d in sorted(missing_labor_dates))
+        # Critical error for missing weekdays
+        if missing_weekday_dates:
+            if len(missing_weekday_dates) <= 5:
+                date_str = ', '.join(str(d) for d in sorted(missing_weekday_dates))
             else:
-                date_str = ', '.join(str(d) for d in sorted(missing_labor_dates)[:5]) + f" (and {len(missing_labor_dates) - 5} more)"
+                date_str = ', '.join(str(d) for d in sorted(missing_weekday_dates)[:5]) + f" (and {len(missing_weekday_dates) - 5} more)"
 
             issues.append(
-                f"Labor calendar missing entries for {len(missing_labor_dates)} production date(s): {date_str}"
+                f"Labor calendar missing entries for {len(missing_weekday_dates)} weekday production date(s): {date_str}"
+            )
+
+        # Warning only for missing weekends (model treats as zero capacity)
+        if missing_weekend_dates:
+            if len(missing_weekend_dates) <= 5:
+                date_str = ', '.join(str(d) for d in sorted(missing_weekend_dates))
+            else:
+                date_str = ', '.join(str(d) for d in sorted(missing_weekend_dates)[:5]) + f" (and {len(missing_weekend_dates) - 5} more)"
+
+            warnings.warn(
+                f"Labor calendar missing weekend dates in planning horizon: {date_str}. "
+                f"These dates will have zero production capacity. "
+                f"Add weekend labor entries if weekend production should be available.",
+                UserWarning
             )
 
         # Check 5: Shelf life constraints - are any destinations unreachable within shelf life?
