@@ -9,6 +9,7 @@ from typing import Optional, Dict, Any, List
 from dataclasses import dataclass, field
 from datetime import datetime
 import time
+import math
 
 from pyomo.environ import ConcreteModel, Objective, Constraint, Var, value
 from pyomo.opt import SolverStatus, TerminationCondition
@@ -275,8 +276,9 @@ class BaseOptimizationModel(ABC):
                 # Load solution into model
                 self.model.solutions.load_from(results)
 
-                # Get objective value from model if not already set
-                if result.objective_value is None and hasattr(self.model, 'obj'):
+                # Get objective value from model if not already set or if it's infinity
+                # (results.problem.upper_bound is infinity for minimization problems)
+                if (result.objective_value is None or math.isinf(result.objective_value)) and hasattr(self.model, 'obj'):
                     try:
                         result.objective_value = value(self.model.obj)
                     except:
@@ -324,24 +326,32 @@ class BaseOptimizationModel(ABC):
         objective_value = None
         if success:
             try:
-                # Try to get from results.problem first
-                if hasattr(results, 'problem') and hasattr(results.problem, 'upper_bound'):
-                    objective_value = results.problem.upper_bound
-                # Fallback: try to get from solution
-                elif hasattr(results, 'solution') and len(results.solution) > 0:
+                # Try to get from solution first (more reliable than upper_bound)
+                if hasattr(results, 'solution') and len(results.solution) > 0:
                     sol = results.solution(0)
                     if hasattr(sol, 'objective'):
-                        objective_value = sol.objective.values()[0].value if sol.objective else None
+                        obj_val = sol.objective.values()[0].value if sol.objective else None
+                        if obj_val is not None and math.isfinite(obj_val):
+                            objective_value = obj_val
+
+                # Fallback: try upper_bound only if it's finite (not infinity)
+                if objective_value is None and hasattr(results, 'problem') and hasattr(results.problem, 'upper_bound'):
+                    ub = results.problem.upper_bound
+                    if ub is not None and math.isfinite(ub):
+                        objective_value = ub
             except Exception as e:
                 # If we can't get objective from results, we'll get it after loading
                 objective_value = None
 
-        # Get gap if available
+        # Get gap if available (only if bounds are finite)
         gap = None
         if hasattr(results.problem, 'upper_bound') and hasattr(results.problem, 'lower_bound'):
             ub = results.problem.upper_bound
             lb = results.problem.lower_bound
-            if ub is not None and lb is not None and abs(ub) > 1e-10:
+            # Only calculate gap if both bounds are finite and non-zero
+            if (ub is not None and lb is not None and
+                math.isfinite(ub) and math.isfinite(lb) and
+                abs(ub) > 1e-10):
                 gap = abs((ub - lb) / ub)
 
         # Count variables and constraints

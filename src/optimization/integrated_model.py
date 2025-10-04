@@ -24,6 +24,7 @@ from typing import Dict, List, Tuple, Set, Optional, Any
 from datetime import date as Date, timedelta
 from collections import defaultdict
 import warnings
+import math
 
 from pyomo.environ import (
     ConcreteModel,
@@ -985,9 +986,12 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 labor_day = self.labor_by_date.get(d)
                 if labor_day:
                     if labor_day.is_fixed_day:
+                        # Add defensive checks for None rates
+                        regular_rate = labor_day.regular_rate if labor_day.regular_rate is not None else 0.0
+                        overtime_rate = labor_day.overtime_rate if labor_day.overtime_rate is not None else 0.0
                         labor_cost += (
-                            labor_day.regular_rate * model.fixed_hours_used[d]
-                            + labor_day.overtime_rate * model.overtime_hours_used[d]
+                            regular_rate * model.fixed_hours_used[d]
+                            + overtime_rate * model.overtime_hours_used[d]
                         )
                     else:
                         rate = labor_day.non_fixed_rate or 0.0
@@ -995,14 +999,21 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
 
             # Production cost
             production_cost = 0.0
+            prod_cost_per_unit = self.cost_structure.production_cost_per_unit
+            # Defensive check for None or infinity
+            if prod_cost_per_unit is None or not math.isfinite(prod_cost_per_unit):
+                prod_cost_per_unit = 0.0
             for d in model.dates:
                 for p in model.products:
-                    production_cost += self.cost_structure.production_cost_per_unit * model.production[d, p]
+                    production_cost += prod_cost_per_unit * model.production[d, p]
 
             # Transport cost
             transport_cost = 0.0
             for r in model.routes:
-                route_cost = self.route_cost[r]
+                route_cost = self.route_cost.get(r, 0.0)
+                # Defensive check for None or infinity
+                if route_cost is None or not math.isfinite(route_cost):
+                    route_cost = 0.0
                 for p in model.products:
                     for d in model.dates:
                         transport_cost += route_cost * model.shipment[r, p, d]
@@ -1010,24 +1021,29 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             # Shortage penalty cost (if shortages allowed)
             shortage_cost = 0.0
             if self.allow_shortages:
+                penalty = self.cost_structure.shortage_penalty_per_unit
+                # Defensive check: if penalty is None or infinity, use large finite number
+                if penalty is None or not math.isfinite(penalty):
+                    penalty = 1e6  # Large but finite penalty to discourage shortages
                 for dest, prod, delivery_date in self.demand.keys():
-                    shortage_cost += (
-                        self.cost_structure.shortage_penalty_per_unit
-                        * model.shortage[dest, prod, delivery_date]
-                    )
+                    shortage_cost += penalty * model.shortage[dest, prod, delivery_date]
 
             # Truck fixed costs (if truck schedules provided)
             truck_cost = 0.0
             if self.truck_schedules:
                 for truck_idx in model.trucks:
                     truck = self.truck_by_index[truck_idx]
+                    # Defensive checks for truck costs
+                    fixed_cost = truck.cost_fixed if truck.cost_fixed is not None else 0.0
+                    var_cost = truck.cost_per_unit if truck.cost_per_unit is not None else 0.0
+
                     for d in model.dates:
                         # Fixed cost if truck is used
-                        truck_cost += truck.cost_fixed * model.truck_used[truck_idx, d]
+                        truck_cost += fixed_cost * model.truck_used[truck_idx, d]
                         # Variable cost per unit (sum across all destinations)
                         for dest in model.truck_destinations:
                             for p in model.products:
-                                truck_cost += truck.cost_per_unit * model.truck_load[truck_idx, dest, p, d]
+                                truck_cost += var_cost * model.truck_load[truck_idx, dest, p, d]
 
             return labor_cost + production_cost + transport_cost + shortage_cost + truck_cost
 

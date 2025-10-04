@@ -18,6 +18,7 @@ if str(project_root) not in sys.path:
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+import math
 from ui import session_state
 from ui.components.styling import apply_custom_css, section_header, colored_metric, success_badge, error_badge, warning_badge
 from ui.components.navigation import render_page_header, check_planning_required
@@ -425,8 +426,15 @@ with tab_comparison:
         heuristic_cost = heuristic_results['cost_breakdown'].total_cost
         opt_cost = opt_results['result'].get('objective_value', 0)
 
-        cost_savings = heuristic_cost - opt_cost
-        cost_savings_pct = (cost_savings / heuristic_cost * 100) if heuristic_cost > 0 else 0
+        # Validate opt_cost is finite
+        if opt_cost is None or math.isinf(opt_cost) or math.isnan(opt_cost):
+            st.error("⚠️ Optimization cost is invalid (infinity or NaN). Cannot compare results. Check cost parameters.")
+            opt_cost = 0  # Use 0 as fallback to prevent calculation errors
+            cost_savings = 0
+            cost_savings_pct = 0
+        else:
+            cost_savings = heuristic_cost - opt_cost
+            cost_savings_pct = (cost_savings / heuristic_cost * 100) if heuristic_cost > 0 else 0
 
         # High-level comparison
         col1, col2, col3 = st.columns(3)

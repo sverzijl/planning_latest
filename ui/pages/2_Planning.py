@@ -16,6 +16,7 @@ if str(project_root) not in sys.path:
 
 import streamlit as st
 from datetime import date, timedelta
+import math
 from ui import session_state
 from ui.components.styling import apply_custom_css, section_header, colored_metric, success_badge, warning_badge, info_badge
 from ui.components.navigation import render_page_header, check_data_required
@@ -430,11 +431,27 @@ with tab_optimization:
                     with col1:
                         st.metric("Status", status_str.title())
                     with col2:
-                        st.metric("Total Cost", f"${result.objective_value or 0:,.2f}")
+                        # Validate objective value is finite before displaying
+                        if result.objective_value is None:
+                            cost_display = "$0.00"
+                        elif math.isinf(result.objective_value):
+                            cost_display = "Invalid (∞)"
+                            st.warning("⚠️ Objective value is infinite. Check cost parameters.")
+                        elif math.isnan(result.objective_value):
+                            cost_display = "Invalid (NaN)"
+                            st.warning("⚠️ Objective value is NaN. Check cost parameters.")
+                        else:
+                            cost_display = f"${result.objective_value:,.2f}"
+                        st.metric("Total Cost", cost_display)
                     with col3:
                         st.metric("Solve Time", f"{result.solve_time_seconds or 0:.1f}s")
                     with col4:
-                        if result.gap is not None:
+                        # Validate gap is finite before displaying
+                        if result.gap is None:
+                            pass  # Don't show gap metric
+                        elif math.isnan(result.gap) or math.isinf(result.gap):
+                            st.metric("Gap", "N/A")
+                        else:
                             st.metric("Gap", f"{result.gap * 100:.2f}%")
 
                     # Store optimization results
