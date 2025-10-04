@@ -140,7 +140,7 @@ def _create_truck_plan_from_optimization(model: Any, shipments: List[Shipment]) 
             continue
 
         # Get destination from first shipment's immediate next hop
-        destination_id = shipment_list[0].route[1] if len(shipment_list[0].route) >= 2 else None
+        destination_id = shipment_list[0].first_leg_destination
 
         # Calculate totals
         total_units = sum(s.quantity for s in shipment_list)

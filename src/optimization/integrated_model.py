@@ -1255,22 +1255,21 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             for shipment in shipments:
                 # Only assign trucks for shipments originating from manufacturing
                 if shipment.origin_id == self.manufacturing_site.location_id:
-                    # Get immediate next hop from route (first destination after origin)
-                    if len(shipment.route) >= 2:
-                        immediate_destination = shipment.route[1]
+                    # Get immediate next hop from route (first leg destination)
+                    immediate_destination = shipment.first_leg_destination
 
-                        # Look for truck load matching: destination, product, and departure date
-                        # departure date = delivery_date - transit_days (already calculated as production_date)
-                        departure_date = shipment.production_date
+                    # Look for truck load matching: destination, product, and departure date
+                    # departure date = delivery_date - transit_days (already calculated as production_date)
+                    departure_date = shipment.production_date
 
-                        for (truck_idx, dest, prod, date), quantity in truck_loads.items():
-                            if (dest == immediate_destination and
-                                prod == shipment.product_id and
-                                date == departure_date):
-                                # Found matching truck - assign it
-                                truck = self.truck_by_index[truck_idx]
-                                shipment.assigned_truck_id = truck.id
-                                break
+                    for (truck_idx, dest, prod, date), quantity in truck_loads.items():
+                        if (dest == immediate_destination and
+                            prod == shipment.product_id and
+                            date == departure_date):
+                            # Found matching truck - assign it
+                            truck = self.truck_by_index[truck_idx]
+                            shipment.assigned_truck_id = truck.id
+                            break
 
         return shipments
 
