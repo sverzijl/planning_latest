@@ -938,8 +938,11 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 direct_routes = []
                 for route_idx in self.route_indices:
                     route = self.route_enumerator.get_route(route_idx)
-                    if route and route.origin_id == manufacturing_id and route.destination_id == dest_id:
-                        direct_routes.append(route_idx)
+                    if route and route.origin_id == manufacturing_id:
+                        # Get first leg destination (immediate next hop from manufacturing)
+                        first_leg_dest = route.path[1] if len(route.path) >= 2 else route.destination_id
+                        if first_leg_dest == dest_id:
+                            direct_routes.append(route_idx)
 
                 if not direct_routes:
                     return Constraint.Skip
