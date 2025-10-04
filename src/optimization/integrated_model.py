@@ -1156,8 +1156,19 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                                 truck_loads_by_truck_dest_product_date[(truck_idx, dest, p, d)] = load
                                 total_truck_cost += truck.cost_per_unit * load
 
+        # Convert production_by_date_product to production_batches list format
+        # This format is expected by UI components and matches ProductionSchedule structure
+        production_batches = []
+        for (prod_date, product_id), quantity in production_by_date_product.items():
+            production_batches.append({
+                'date': prod_date,
+                'product': product_id,
+                'quantity': quantity,
+            })
+
         return {
             'production_by_date_product': production_by_date_product,
+            'production_batches': production_batches,  # Add list format for UI
             'labor_hours_by_date': labor_hours_by_date,
             'labor_cost_by_date': labor_cost_by_date,
             'shipments_by_route_product_date': shipments_by_route_product_date,

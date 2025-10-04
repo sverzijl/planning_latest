@@ -492,6 +492,15 @@ class TestIntegratedModelSolve:
             mock_results.solver.status = SolverStatus.ok
             mock_results.solver.termination_condition = TerminationCondition.optimal
 
+            # Mock the solution attribute for objective value extraction
+            mock_solution = Mock()
+            mock_objective = Mock()
+            mock_objective_value = Mock()
+            mock_objective_value.value = 1000.0
+            mock_objective.values = Mock(return_value=[mock_objective_value])
+            mock_solution.objective = mock_objective
+            mock_results.solution = Mock(return_value=mock_solution)
+
             # CRITICAL FIX: Mock the solve method to set variable values
             def mock_solve(pyomo_model, **kwargs):
                 # Set production variables
@@ -538,9 +547,18 @@ class TestIntegratedModelSolve:
 
             assert solution is not None
             assert 'production_by_date_product' in solution
+            assert 'production_batches' in solution  # New list format for UI
             assert 'shipments_by_route_product_date' in solution
             assert 'total_transport_cost' in solution
             assert 'total_cost' in solution
+
+            # Verify production_batches structure
+            assert isinstance(solution['production_batches'], list)
+            if solution['production_batches']:
+                batch = solution['production_batches'][0]
+                assert 'date' in batch
+                assert 'product' in batch
+                assert 'quantity' in batch
 
     def test_get_shipment_plan(
         self,

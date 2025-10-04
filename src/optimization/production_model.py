@@ -379,8 +379,19 @@ class ProductionOptimizationModel(BaseOptimizationModel):
                 qty = value(model.production[d, p])
                 total_production_cost += self.cost_structure.production_cost_per_unit * qty
 
+        # Convert production_by_date_product to production_batches list format
+        # This format is expected by UI components and matches ProductionSchedule structure
+        production_batches = []
+        for (prod_date, product_id), quantity in production_by_date_product.items():
+            production_batches.append({
+                'date': prod_date,
+                'product': product_id,
+                'quantity': quantity,
+            })
+
         return {
             'production_by_date_product': production_by_date_product,
+            'production_batches': production_batches,  # Add list format for UI
             'labor_hours_by_date': labor_hours_by_date,
             'labor_cost_by_date': labor_cost_by_date,
             'total_labor_cost': total_labor_cost,

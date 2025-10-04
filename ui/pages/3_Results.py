@@ -457,9 +457,19 @@ with tab_comparison:
                 total_production = sum(
                     batch['quantity'] for batch in model_solution.get('production_batches', [])
                 ) if 'production_batches' in model_solution else 0
+
+                # Extract cost components
+                opt_production_cost = model_solution.get('total_production_cost', 0)
+                opt_labor_cost = model_solution.get('total_labor_cost', 0)
+                opt_transport_cost = model_solution.get('total_transport_cost', 0)
+                opt_truck_cost = model_solution.get('total_truck_cost', 0)
             else:
                 production_days = 0
                 total_production = 0
+                opt_production_cost = 0
+                opt_labor_cost = 0
+                opt_transport_cost = 0
+                opt_truck_cost = 0
 
             st.markdown(colored_metric("Production Days", str(production_days), "success"), unsafe_allow_html=True)
 
@@ -495,9 +505,9 @@ with tab_comparison:
             ],
             'Optimization': [
                 f"${opt_cost:,.2f}",
-                "N/A",  # Not readily available from optimization model
-                "N/A",
-                "N/A",
+                f"${opt_production_cost:,.2f}",
+                f"${opt_labor_cost:,.2f}",
+                f"${opt_transport_cost:,.2f}",
                 str(production_days),
                 f"{total_production:,.0f}",
                 f"${opt_cost / total_production:.2f}" if total_production > 0 else "N/A"
