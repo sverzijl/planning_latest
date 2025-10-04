@@ -109,12 +109,12 @@ def _create_placeholder_truck_plan() -> TruckLoadPlan:
     This placeholder allows UI components to handle the absence of truck data gracefully.
     """
     return TruckLoadPlan(
-        manufacturing_site_id="optimization",
         loads=[],
-        total_trucks=0,
-        total_units=0,
-        total_cost=0,
+        unassigned_shipments=[],
         infeasibilities=[],
+        total_trucks_used=0,
+        total_shipments=0,
+        average_utilization=0.0,
     )
 
 
