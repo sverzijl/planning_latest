@@ -133,6 +133,20 @@ def _create_cost_breakdown(model: Any, solution: dict) -> TotalCostBreakdown:
     labor_hours_by_date = solution.get('labor_hours_by_date', {})
     labor_cost_by_date = solution.get('labor_cost_by_date', {})
 
+    # Convert flat cost dict to nested format matching LaborCostBreakdown.daily_breakdown type
+    # The UI expects Dict[date, Dict[str, float]] but optimization provides Dict[date, float]
+    daily_breakdown_nested: Dict[Date, Dict[str, float]] = {}
+    for date, total_cost in labor_cost_by_date.items():
+        daily_breakdown_nested[date] = {
+            'total_hours': labor_hours_by_date.get(date, 0),
+            'fixed_hours': 0,  # Not tracked separately in optimization
+            'overtime_hours': 0,
+            'fixed_cost': 0,
+            'overtime_cost': 0,
+            'non_fixed_cost': 0,
+            'total_cost': total_cost,
+        }
+
     # Build labor cost breakdown
     # Note: Optimization doesn't track fixed vs OT breakdown, so we use totals
     labor_breakdown = LaborCostBreakdown(
@@ -144,7 +158,7 @@ def _create_cost_breakdown(model: Any, solution: dict) -> TotalCostBreakdown:
         fixed_hours=0,
         overtime_hours=0,
         non_fixed_hours=0,
-        daily_breakdown=labor_cost_by_date,
+        daily_breakdown=daily_breakdown_nested,  # Use nested dict matching expected structure
     )
 
     # Build production cost breakdown
