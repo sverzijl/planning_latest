@@ -20,6 +20,7 @@ import pandas as pd
 from datetime import datetime
 import math
 from ui import session_state
+from ui.utils import adapt_optimization_results
 from ui.components.styling import apply_custom_css, section_header, colored_metric, success_badge, error_badge, warning_badge
 from ui.components.navigation import render_page_header, check_planning_required
 from ui.components import (
@@ -67,13 +68,387 @@ if not check_planning_required():
 
 st.divider()
 
+# ===========================
+# RESULT SOURCE SELECTION
+# ===========================
+
+# Check which results are available
+has_heuristic = session_state.is_planning_complete()
+has_optimization = session_state.is_optimization_complete()
+
+# Initialize result source in session state if not set
+if 'result_source' not in st.session_state:
+    # Default to most recently completed
+    if has_optimization:
+        st.session_state.result_source = 'optimization'
+    elif has_heuristic:
+        st.session_state.result_source = 'heuristic'
+    else:
+        st.session_state.result_source = 'heuristic'
+
+# Result source selector if both are available
+if has_heuristic and has_optimization:
+    col1, col2 = st.columns([3, 1])
+
+    with col1:
+        st.markdown("""
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    padding: 12px 20px; border-radius: 8px; margin-bottom: 16px;">
+            <div style="color: white; font-weight: 600; font-size: 14px;">
+                📊 SELECT RESULT SOURCE
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col2:
+        pass
+
+    result_source = st.radio(
+        "Choose which results to display:",
+        options=['heuristic', 'optimization'],
+        format_func=lambda x: "🎯 Heuristic Planning" if x == 'heuristic' else "⚡ Optimized Solution",
+        key='result_source',
+        horizontal=True,
+    )
+elif has_optimization:
+    st.session_state.result_source = 'optimization'
+    result_source = 'optimization'
+else:
+    st.session_state.result_source = 'heuristic'
+    result_source = 'heuristic'
+
+# Display result source indicator
+if result_source == 'optimization':
+    opt_results = session_state.get_optimization_results()
+    result_info = opt_results.get('result', {})
+    solver_status = getattr(result_info, 'termination_condition', 'UNKNOWN')
+    solve_time = getattr(result_info, 'solve_time_seconds', 0)
+
+    # Determine status color
+    if solver_status in ['optimal', 'OPTIMAL']:
+        status_color = "#10b981"  # Green
+        status_icon = "✅"
+        status_text = "OPTIMAL"
+    elif solver_status in ['feasible', 'FEASIBLE']:
+        status_color = "#f59e0b"  # Yellow
+        status_icon = "⚠️"
+        status_text = "FEASIBLE"
+    else:
+        status_color = "#ef4444"  # Red
+        status_icon = "❌"
+        status_text = "INFEASIBLE"
+
+    st.markdown(f"""
+    <div style="background: linear-gradient(135deg, {status_color}20 0%, {status_color}10 100%);
+                border-left: 4px solid {status_color};
+                padding: 16px 20px; border-radius: 8px; margin-bottom: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <div style="font-size: 12px; color: #64748b; font-weight: 500; margin-bottom: 4px;">
+                    VIEWING RESULTS FROM
+                </div>
+                <div style="font-size: 18px; font-weight: 700; color: {status_color};">
+                    {status_icon} OPTIMIZATION ({status_text})
+                </div>
+            </div>
+            <div style="text-align: right;">
+                <div style="font-size: 12px; color: #64748b; font-weight: 500; margin-bottom: 4px;">
+                    SOLVE TIME
+                </div>
+                <div style="font-size: 16px; font-weight: 600; color: #1e293b;">
+                    {solve_time:.2f}s
+                </div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+else:
+    st.markdown("""
+    <div style="background: linear-gradient(135deg, #3b82f620 0%, #3b82f610 100%);
+                border-left: 4px solid #3b82f6;
+                padding: 16px 20px; border-radius: 8px; margin-bottom: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <div style="font-size: 12px; color: #64748b; font-weight: 500; margin-bottom: 4px;">
+                    VIEWING RESULTS FROM
+                </div>
+                <div style="font-size: 18px; font-weight: 700; color: #3b82f6;">
+                    🎯 HEURISTIC PLANNING
+                </div>
+            </div>
+            <div style="text-align: right;">
+                <div style="font-size: 12px; color: #64748b; font-weight: 500; margin-bottom: 4px;">
+                    METHOD
+                </div>
+                <div style="font-size: 16px; font-weight: 600; color: #1e293b;">
+                    Rule-Based
+                </div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# Helper function to get current results based on selected source
+def get_current_results():
+    """Get results based on currently selected source."""
+    if st.session_state.result_source == 'optimization':
+        opt_results = session_state.get_optimization_results()
+        adapted_results = adapt_optimization_results(
+            model=opt_results['model'],
+            result=opt_results['result']
+        )
+        if adapted_results is None:
+            st.error("❌ Optimization results are not available. The model may not have been solved yet.")
+            st.stop()
+        return adapted_results
+    else:
+        return session_state.get_planning_results()
+
+st.divider()
+
 # Create tabs for different result views
-tab_production, tab_distribution, tab_costs, tab_comparison = st.tabs([
+tab_overview, tab_production, tab_distribution, tab_costs, tab_comparison = st.tabs([
+    "📊 Overview",
     "📦 Production",
     "🚚 Distribution",
     "💰 Costs",
     "⚖️ Comparison"
 ])
+
+
+# ===========================
+# TAB 0: OVERVIEW
+# ===========================
+
+with tab_overview:
+    st.markdown("""
+    <div class="info-box">
+        <div style="font-weight: 600; margin-bottom: 8px;">📊 Results Overview</div>
+        <div>Key performance indicators, solver diagnostics, and demand satisfaction metrics.</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.divider()
+
+    # Get current results
+    results = get_current_results()
+    production_schedule = results['production_schedule']
+    shipments = results.get('shipments', [])
+    cost_breakdown = results.get('cost_breakdown')
+
+    # Show solver diagnostics if optimization results
+    if st.session_state.result_source == 'optimization':
+        st.markdown(section_header("Solver Diagnostics", level=3, icon="⚙️"), unsafe_allow_html=True)
+
+        opt_results = session_state.get_optimization_results()
+        result_info = opt_results.get('result', {})
+
+        col1, col2, col3, col4, col5 = st.columns(5)
+
+        with col1:
+            solver_status = getattr(result_info, 'termination_condition', 'UNKNOWN')
+            if solver_status in ['optimal', 'OPTIMAL']:
+                st.markdown(success_badge("OPTIMAL"), unsafe_allow_html=True)
+            elif solver_status in ['feasible', 'FEASIBLE']:
+                st.markdown(warning_badge("FEASIBLE"), unsafe_allow_html=True)
+            else:
+                st.markdown(error_badge("INFEASIBLE"), unsafe_allow_html=True)
+            st.caption("**Solver Status**")
+
+        with col2:
+            gap = getattr(result_info, 'gap', 0)
+            gap_pct = gap * 100 if gap is not None and not math.isinf(gap) and not math.isnan(gap) else 0
+            st.markdown(colored_metric("Gap", f"{gap_pct:.2f}%", "secondary"), unsafe_allow_html=True)
+
+        with col3:
+            solve_time = getattr(result_info, 'solve_time_seconds', 0)
+            st.markdown(colored_metric("Solve Time", f"{solve_time:.2f}s", "accent"), unsafe_allow_html=True)
+
+        with col4:
+            num_vars = getattr(result_info, 'num_variables', 0)
+            st.markdown(colored_metric("Variables", f"{num_vars:,}", "primary"), unsafe_allow_html=True)
+
+        with col5:
+            num_constraints = getattr(result_info, 'num_constraints', 0)
+            st.markdown(colored_metric("Constraints", f"{num_constraints:,}", "primary"), unsafe_allow_html=True)
+
+        st.divider()
+
+    # Key Performance Indicators
+    st.markdown(section_header("Key Performance Indicators", level=3, icon="📈"), unsafe_allow_html=True)
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        if cost_breakdown:
+            st.markdown(colored_metric("Total Cost", f"${cost_breakdown.total_cost:,.2f}", "primary"), unsafe_allow_html=True)
+            total_units = sum(s.quantity for s in shipments) if shipments else production_schedule.total_units
+            cost_per_unit = cost_breakdown.total_cost / total_units if total_units > 0 else 0
+            st.markdown(colored_metric("Cost/Unit", f"${cost_per_unit:.2f}", "primary"), unsafe_allow_html=True)
+
+    with col2:
+        st.markdown(colored_metric("Production Days", str(len(production_schedule.daily_totals)), "secondary"), unsafe_allow_html=True)
+        st.markdown(colored_metric("Total Units", f"{production_schedule.total_units:,.0f}", "secondary"), unsafe_allow_html=True)
+
+    with col3:
+        st.markdown(colored_metric("Labor Hours", f"{production_schedule.total_labor_hours:.1f}h", "accent"), unsafe_allow_html=True)
+        avg_daily_hours = production_schedule.total_labor_hours / len(production_schedule.daily_totals) if production_schedule.daily_totals else 0
+        st.markdown(colored_metric("Avg Daily Hours", f"{avg_daily_hours:.1f}h", "accent"), unsafe_allow_html=True)
+
+    with col4:
+        if shipments:
+            destinations = set(s.destination_id for s in shipments)
+            st.markdown(colored_metric("Destinations", str(len(destinations)), "success"), unsafe_allow_html=True)
+            st.markdown(colored_metric("Shipments", str(len(shipments)), "success"), unsafe_allow_html=True)
+
+    st.divider()
+
+    # Demand Satisfaction (if optimization results with demand info)
+    if st.session_state.result_source == 'optimization':
+        st.markdown(section_header("Demand Satisfaction", level=3, icon="✅"), unsafe_allow_html=True)
+
+        opt_results = session_state.get_optimization_results()
+        model = opt_results.get('model')
+        solution = model.get_solution() if model else None
+
+        if solution and 'shortages_by_dest_product_date' in solution:
+            total_shortage = solution.get('total_shortage_units', 0)
+            shortage_cost = solution.get('total_shortage_cost', 0)
+
+            # Calculate total demand (would need to get from model.demand)
+            # For now, show shortage metrics
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                if total_shortage == 0:
+                    st.markdown(colored_metric("Fulfillment", "100%", "success"), unsafe_allow_html=True)
+                else:
+                    # Calculate fulfillment percentage if we have demand info
+                    st.markdown(colored_metric("Shortage Units", f"{total_shortage:,.0f}", "warning"), unsafe_allow_html=True)
+
+            with col2:
+                st.markdown(colored_metric("Shortage Cost", f"${shortage_cost:,.2f}", "warning"), unsafe_allow_html=True)
+
+            with col3:
+                if total_shortage == 0:
+                    st.markdown(success_badge("All Demand Met"), unsafe_allow_html=True)
+                else:
+                    st.markdown(warning_badge("Partial Shortage"), unsafe_allow_html=True)
+
+            # Show shortage details if any
+            if total_shortage > 0:
+                with st.expander("⚠️ Shortage Details", expanded=False):
+                    shortages = solution.get('shortages_by_dest_product_date', {})
+                    shortage_data = []
+                    for (dest, product, date), qty in shortages.items():
+                        if qty > 0:
+                            shortage_data.append({
+                                'Destination': dest,
+                                'Product': product,
+                                'Date': date,
+                                'Shortage': qty
+                            })
+
+                    if shortage_data:
+                        df_shortages = pd.DataFrame(shortage_data)
+                        st.dataframe(df_shortages, use_container_width=True, hide_index=True)
+                    else:
+                        st.info("No shortages detected.")
+        else:
+            st.info("✅ All demand satisfied (no shortage data tracked)")
+
+        st.divider()
+
+    # Cost Breakdown Summary
+    if cost_breakdown:
+        st.markdown(section_header("Cost Breakdown", level=3, icon="💰"), unsafe_allow_html=True)
+
+        col1, col2 = st.columns([2, 1])
+
+        with col1:
+            # Cost breakdown chart
+            fig = render_cost_breakdown_chart(cost_breakdown)
+            st.plotly_chart(fig, use_container_width=True)
+
+        with col2:
+            st.markdown("#### Cost Components")
+
+            # Labor
+            labor_pct = (cost_breakdown.labor.total_cost / cost_breakdown.total_cost * 100) if cost_breakdown.total_cost > 0 else 0
+            st.markdown(f"""
+            <div style="padding: 8px; margin-bottom: 8px; border-left: 3px solid #3b82f6; background: #3b82f610;">
+                <div style="font-size: 12px; color: #64748b;">LABOR</div>
+                <div style="font-size: 18px; font-weight: 600;">${cost_breakdown.labor.total_cost:,.2f}</div>
+                <div style="font-size: 12px; color: #64748b;">{labor_pct:.1f}% of total</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Production
+            prod_pct = (cost_breakdown.production.total_cost / cost_breakdown.total_cost * 100) if cost_breakdown.total_cost > 0 else 0
+            st.markdown(f"""
+            <div style="padding: 8px; margin-bottom: 8px; border-left: 3px solid #10b981; background: #10b98110;">
+                <div style="font-size: 12px; color: #64748b;">PRODUCTION</div>
+                <div style="font-size: 18px; font-weight: 600;">${cost_breakdown.production.total_cost:,.2f}</div>
+                <div style="font-size: 12px; color: #64748b;">{prod_pct:.1f}% of total</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Transport
+            transport_pct = (cost_breakdown.transport.total_cost / cost_breakdown.total_cost * 100) if cost_breakdown.total_cost > 0 else 0
+            st.markdown(f"""
+            <div style="padding: 8px; margin-bottom: 8px; border-left: 3px solid #f59e0b; background: #f59e0b10;">
+                <div style="font-size: 12px; color: #64748b;">TRANSPORT</div>
+                <div style="font-size: 18px; font-weight: 600;">${cost_breakdown.transport.total_cost:,.2f}</div>
+                <div style="font-size: 12px; color: #64748b;">{transport_pct:.1f}% of total</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    st.divider()
+
+    # Quick Insights
+    st.markdown(section_header("Quick Insights", level=3, icon="💡"), unsafe_allow_html=True)
+
+    insights = []
+
+    # Production insights
+    if production_schedule.daily_labor_hours:
+        max_hours_day = max(production_schedule.daily_labor_hours.items(), key=lambda x: x[1])
+        insights.append(f"📅 **Peak production day:** {max_hours_day[0]} with {max_hours_day[1]:.1f} labor hours")
+
+    # Cost insights
+    if cost_breakdown:
+        dominant_cost = max(
+            [('Labor', cost_breakdown.labor.total_cost),
+             ('Production', cost_breakdown.production.total_cost),
+             ('Transport', cost_breakdown.transport.total_cost)],
+            key=lambda x: x[1]
+        )
+        insights.append(f"💰 **Largest cost driver:** {dominant_cost[0]} (${dominant_cost[1]:,.2f})")
+
+    # Shipment insights
+    if shipments:
+        avg_shipment_size = sum(s.quantity for s in shipments) / len(shipments)
+        insights.append(f"📦 **Average shipment size:** {avg_shipment_size:,.0f} units")
+
+    # Optimization insights
+    if st.session_state.result_source == 'optimization' and has_heuristic:
+        heuristic_results = session_state.get_planning_results()
+        heuristic_cost = heuristic_results['cost_breakdown'].total_cost
+        opt_cost = cost_breakdown.total_cost if cost_breakdown else 0
+        if heuristic_cost > 0 and opt_cost > 0:
+            savings = heuristic_cost - opt_cost
+            savings_pct = (savings / heuristic_cost * 100)
+            if savings > 0:
+                insights.append(f"⚡ **Optimization savings:** ${savings:,.2f} ({savings_pct:.1f}%) vs heuristic")
+            elif savings < 0:
+                insights.append(f"⚠️ **Heuristic advantage:** ${abs(savings):,.2f} ({abs(savings_pct):.1f}%) lower cost")
+
+    # Display insights
+    for insight in insights:
+        st.markdown(f"- {insight}")
+
+    if not insights:
+        st.info("No insights available yet.")
 
 
 # ===========================
@@ -90,8 +465,8 @@ with tab_production:
 
     st.divider()
 
-    # Get planning results
-    results = session_state.get_planning_results()
+    # Get current results (heuristic or optimization based on selection)
+    results = get_current_results()
     production_schedule = results['production_schedule']
 
     # Date Range Filter
@@ -241,8 +616,8 @@ with tab_distribution:
 
     st.divider()
 
-    # Get planning results
-    results = session_state.get_planning_results()
+    # Get current results (heuristic or optimization based on selection)
+    results = get_current_results()
     truck_plan = results.get('truck_plan')
     shipments = results.get('shipments', [])
 
@@ -326,8 +701,8 @@ with tab_costs:
 
     st.divider()
 
-    # Get planning results
-    results = session_state.get_planning_results()
+    # Get current results (heuristic or optimization based on selection)
+    results = get_current_results()
     cost_breakdown = results.get('cost_breakdown')
 
     if not cost_breakdown:
