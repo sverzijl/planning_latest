@@ -146,7 +146,7 @@ with tab_visualization:
             highlight_paths=None,  # TODO: Add path highlighting
             height=700,
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, key="network_graph_visualization")
 
         st.caption("""
         **Legend:**
@@ -162,7 +162,7 @@ with tab_visualization:
         st.markdown("Shows which locations can reach which destinations through the network.")
 
         fig = render_connectivity_matrix(graph_builder)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, key="network_connectivity_matrix")
 
         st.caption("✅ Blue cells indicate a route exists between origin and destination")
 

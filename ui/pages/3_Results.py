@@ -368,7 +368,7 @@ with tab_overview:
         with col1:
             # Cost breakdown chart
             fig = render_cost_breakdown_chart(cost_breakdown)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key="overview_cost_breakdown")
 
         with col2:
             st.markdown("#### Cost Components")
@@ -576,21 +576,21 @@ with tab_production:
         with col1:
             st.markdown(section_header("Daily Production", level=4), unsafe_allow_html=True)
             fig = render_daily_production_chart(filtered_schedule)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key="production_daily_production")
 
         with col2:
             st.markdown(section_header("Labor Hours", level=4), unsafe_allow_html=True)
             fig = render_labor_hours_chart(filtered_schedule)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key="production_labor_hours")
 
         st.markdown(section_header("Capacity Utilization", level=4), unsafe_allow_html=True)
         fig = render_capacity_utilization_chart(filtered_schedule)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, key="production_capacity_utilization")
 
     with viz_tab2:
         st.markdown(section_header("Production Gantt Chart", level=4), unsafe_allow_html=True)
         fig = render_production_gantt(filtered_schedule)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, key="production_gantt")
 
     with viz_tab3:
         st.markdown(section_header("Production Batches", level=4), unsafe_allow_html=True)
@@ -666,16 +666,16 @@ with tab_distribution:
             with col1:
                 st.markdown(section_header("Shipments by Destination", level=4), unsafe_allow_html=True)
                 fig = render_shipments_by_destination_chart(truck_plan)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key="distribution_shipments_by_dest")
 
             with col2:
                 st.markdown(section_header("Truck Utilization", level=4), unsafe_allow_html=True)
                 fig = render_truck_utilization_chart(truck_plan)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key="distribution_truck_utilization")
 
             st.markdown(section_header("Truck Loading Timeline", level=4), unsafe_allow_html=True)
             fig = render_truck_loading_timeline(truck_plan)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key="distribution_truck_timeline")
 
         with dist_tab2:
             st.markdown(section_header("Shipments", level=4), unsafe_allow_html=True)
@@ -746,16 +746,16 @@ with tab_costs:
             with col1:
                 st.markdown(section_header("Cost Breakdown", level=4), unsafe_allow_html=True)
                 fig = render_cost_breakdown_chart(cost_breakdown)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key="costs_cost_breakdown")
 
             with col2:
                 st.markdown(section_header("Cost by Category", level=4), unsafe_allow_html=True)
                 fig = render_cost_by_category_chart(cost_breakdown)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key="costs_cost_by_category")
 
             st.markdown(section_header("Daily Costs", level=4), unsafe_allow_html=True)
             fig = render_daily_cost_chart(cost_breakdown)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key="costs_daily_costs")
 
         with cost_tab2:
             st.markdown(section_header("Cost Details", level=4), unsafe_allow_html=True)
