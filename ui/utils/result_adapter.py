@@ -5,8 +5,9 @@ into the same data structures used by heuristic planning, enabling
 the Results UI to display both types of results seamlessly.
 """
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import date as Date
+from collections import defaultdict
 from src.production.scheduler import ProductionSchedule, ProductionBatch
 from src.costs.cost_breakdown import (
     TotalCostBreakdown,
@@ -15,7 +16,8 @@ from src.costs.cost_breakdown import (
     TransportCostBreakdown,
     WasteCostBreakdown,
 )
-from src.distribution.truck_loader import TruckLoadPlan
+from src.distribution.truck_loader import TruckLoadPlan, TruckLoad
+from src.models.shipment import Shipment
 
 
 def adapt_optimization_results(model: Any, result: dict) -> Optional[Dict[str, Any]]:
@@ -40,9 +42,8 @@ def adapt_optimization_results(model: Any, result: dict) -> Optional[Dict[str, A
     # Get shipments (model already has this method)
     shipments = model.get_shipment_plan() or []
 
-    # Truck plan may not be available from optimization
-    # For now, return a minimal placeholder
-    truck_plan = _create_placeholder_truck_plan()
+    # Create truck plan from optimization results
+    truck_plan = _create_truck_plan_from_optimization(model, shipments)
 
     # Convert cost breakdown
     cost_breakdown = _create_cost_breakdown(model, solution)
@@ -68,7 +69,7 @@ def _create_production_schedule(model: Any, solution: dict) -> ProductionSchedul
             production_date=batch_dict['date'],
             quantity=batch_dict['quantity'],
             labor_hours_used=0,  # Will aggregate from daily totals
-            production_cost=0,  # Can calculate if needed
+            production_cost=batch_dict['quantity'] * model.cost_structure.production_cost_per_unit,
         )
         batches.append(batch)
 
@@ -102,19 +103,88 @@ def _create_production_schedule(model: Any, solution: dict) -> ProductionSchedul
     )
 
 
-def _create_placeholder_truck_plan() -> TruckLoadPlan:
-    """Create a minimal truck plan placeholder for optimization results.
+def _create_truck_plan_from_optimization(model: Any, shipments: List[Shipment]) -> TruckLoadPlan:
+    """Create TruckLoadPlan from optimization results.
 
-    The optimization model uses route-based distribution, not truck-based.
-    This placeholder allows UI components to handle the absence of truck data gracefully.
+    Args:
+        model: IntegratedProductionDistributionModel instance
+        shipments: List of Shipment objects with assigned_truck_id set
+
+    Returns:
+        TruckLoadPlan with actual truck loads from optimization
     """
+    # Group shipments by truck and date
+    truck_shipments: Dict[tuple, List[Shipment]] = defaultdict(list)
+    unassigned_shipments: List[Shipment] = []
+
+    for shipment in shipments:
+        if shipment.assigned_truck_id:
+            # Use production_date as the truck departure date
+            key = (shipment.assigned_truck_id, shipment.production_date)
+            truck_shipments[key].append(shipment)
+        else:
+            unassigned_shipments.append(shipment)
+
+    # Create TruckLoad objects
+    loads: List[TruckLoad] = []
+
+    for (truck_id, departure_date), shipment_list in truck_shipments.items():
+        # Find the truck schedule
+        truck_schedule = None
+        for truck in model.truck_schedules.schedules if model.truck_schedules else []:
+            if truck.id == truck_id:
+                truck_schedule = truck
+                break
+
+        if not truck_schedule:
+            continue
+
+        # Get destination from first shipment's immediate next hop
+        destination_id = shipment_list[0].route[1] if len(shipment_list[0].route) >= 2 else None
+
+        # Calculate totals
+        total_units = sum(s.quantity for s in shipment_list)
+
+        # Calculate pallets (accounting for partial pallets)
+        units_per_pallet = truck_schedule.units_per_pallet
+        total_pallets = 0
+        for shipment in shipment_list:
+            pallets = (shipment.quantity + units_per_pallet - 1) // units_per_pallet  # Ceiling division
+            total_pallets += pallets
+
+        # Calculate utilization
+        capacity_pallets = truck_schedule.pallet_capacity
+        capacity_utilization = total_pallets / capacity_pallets if capacity_pallets > 0 else 0
+
+        # Create TruckLoad
+        truck_load = TruckLoad(
+            truck_schedule_id=truck_schedule.id,
+            truck_name=truck_schedule.truck_name,
+            departure_date=departure_date,
+            departure_type=truck_schedule.departure_type.value,
+            departure_time=truck_schedule.departure_time,
+            destination_id=destination_id or "UNKNOWN",
+            shipments=shipment_list,
+            total_units=total_units,
+            total_pallets=total_pallets,
+            capacity_units=truck_schedule.capacity,
+            capacity_pallets=capacity_pallets,
+            capacity_utilization=capacity_utilization,
+            is_full=total_pallets >= capacity_pallets,
+        )
+        loads.append(truck_load)
+
+    # Calculate average utilization
+    total_trucks_used = len(loads)
+    average_utilization = sum(load.capacity_utilization for load in loads) / total_trucks_used if total_trucks_used > 0 else 0.0
+
     return TruckLoadPlan(
-        loads=[],
-        unassigned_shipments=[],
+        loads=loads,
+        unassigned_shipments=unassigned_shipments,
         infeasibilities=[],
-        total_trucks_used=0,
-        total_shipments=0,
-        average_utilization=0.0,
+        total_trucks_used=total_trucks_used,
+        total_shipments=len(shipments),
+        average_utilization=average_utilization,
     )
 
 
