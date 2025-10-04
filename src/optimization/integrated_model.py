@@ -974,8 +974,19 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
 
                 return total_route_shipments == total_truck_loads
 
+            # Get all unique first-leg destinations from routes originating at manufacturing
+            # This ensures we create constraints for ALL destinations that routes actually use,
+            # not just the truck final destinations
+            first_leg_destinations = set()
+            for route_idx in self.route_indices:
+                route = self.route_enumerator.get_route(route_idx)
+                if route and route.origin_id == self.manufacturing_site.id:
+                    # Get first leg destination (immediate next hop from manufacturing)
+                    first_leg_dest = route.path[1] if len(route.path) >= 2 else route.destination_id
+                    first_leg_destinations.add(first_leg_dest)
+
             model.truck_route_linking_con = Constraint(
-                model.truck_destinations,  # Use model.truck_destinations from variable definition
+                list(first_leg_destinations),  # Use actual route first-leg destinations
                 model.dates,
                 rule=truck_route_linking_rule,
                 doc="Link truck loads to route shipments from manufacturing (by destination)"
