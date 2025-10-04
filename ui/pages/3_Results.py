@@ -424,7 +424,7 @@ with tab_comparison:
 
         # Get key metrics
         heuristic_cost = heuristic_results['cost_breakdown'].total_cost
-        opt_cost = opt_results['result'].get('objective_value', 0)
+        opt_cost = opt_results['result'].objective_value or 0
 
         # Validate opt_cost is finite
         if opt_cost is None or math.isinf(opt_cost) or math.isnan(opt_cost):
@@ -447,8 +447,21 @@ with tab_comparison:
         with col2:
             st.markdown(section_header("Optimization", level=4), unsafe_allow_html=True)
             st.markdown(colored_metric("Total Cost", f"${opt_cost:,.2f}", "success"), unsafe_allow_html=True)
-            opt_solution = opt_results['model'].get_solution_summary()
-            st.markdown(colored_metric("Production Days", str(opt_solution.get('production_days', 0)), "success"), unsafe_allow_html=True)
+
+            # Get solution from model
+            model_solution = opt_results['model'].get_solution()
+            if model_solution:
+                production_days = len(set(
+                    batch['date'] for batch in model_solution.get('production_batches', [])
+                )) if 'production_batches' in model_solution else 0
+                total_production = sum(
+                    batch['quantity'] for batch in model_solution.get('production_batches', [])
+                ) if 'production_batches' in model_solution else 0
+            else:
+                production_days = 0
+                total_production = 0
+
+            st.markdown(colored_metric("Production Days", str(production_days), "success"), unsafe_allow_html=True)
 
         with col3:
             st.markdown(section_header("Savings", level=4), unsafe_allow_html=True)
@@ -485,9 +498,9 @@ with tab_comparison:
                 "N/A",  # Not readily available from optimization model
                 "N/A",
                 "N/A",
-                str(opt_solution.get('production_days', 0)),
-                f"{opt_solution.get('total_production', 0):,.0f}",
-                f"${opt_cost / opt_solution.get('total_production', 1):.2f}" if opt_solution.get('total_production', 0) > 0 else "N/A"
+                str(production_days),
+                f"{total_production:,.0f}",
+                f"${opt_cost / total_production:.2f}" if total_production > 0 else "N/A"
             ]
         }
 
