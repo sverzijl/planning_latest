@@ -64,7 +64,7 @@ def _create_production_schedule(model: Any, solution: dict) -> ProductionSchedul
         batch = ProductionBatch(
             id=f"OPT-BATCH-{idx+1:04d}",
             product_id=batch_dict['product'],
-            manufacturing_site_id=model.manufacturing_site.id,
+            manufacturing_site_id=model.manufacturing_site.location_id,
             production_date=batch_dict['date'],
             quantity=batch_dict['quantity'],
             labor_hours_used=0,  # Will aggregate from daily totals
@@ -89,7 +89,7 @@ def _create_production_schedule(model: Any, solution: dict) -> ProductionSchedul
 
     # Build ProductionSchedule
     return ProductionSchedule(
-        manufacturing_site_id=model.manufacturing_site.id,
+        manufacturing_site_id=model.manufacturing_site.location_id,
         schedule_start_date=model.start_date,
         schedule_end_date=model.end_date,
         production_batches=batches,
