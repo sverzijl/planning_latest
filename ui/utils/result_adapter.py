@@ -188,12 +188,13 @@ def _create_cost_breakdown(model: Any, solution: dict) -> TotalCostBreakdown:
     total_shortage_units = solution.get('total_shortage_units', 0)
     waste_breakdown = WasteCostBreakdown(
         total_cost=shortage_cost,
-        expired_units=0,  # Not tracked separately
+        expired_units=0,  # Not tracked separately in optimization
         expired_cost=0,
-        shortage_units=total_shortage_units,
-        shortage_cost=shortage_cost,
+        unmet_demand_units=total_shortage_units,  # Corrected from shortage_units
+        unmet_demand_cost=shortage_cost,          # Corrected from shortage_cost
         waste_by_location={},
         waste_by_product={},
+        waste_details=[],  # Explicit empty list
     )
 
     # Build total cost breakdown
