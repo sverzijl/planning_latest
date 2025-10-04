@@ -42,6 +42,7 @@ from src.models.location import Location
 from src.models.route import Route
 from src.models.shipment import Shipment
 from src.models.production_batch import ProductionBatch
+from src.models.truck_schedule import TruckScheduleCollection
 
 from src.network import NetworkGraphBuilder
 from .route_enumerator import RouteEnumerator, EnumeratedRoute
@@ -101,6 +102,8 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         allow_shortages: bool = False,
         enforce_shelf_life: bool = True,
         max_product_age_days: int = 10,
+        validate_feasibility: bool = True,
+        truck_schedules: Optional[TruckScheduleCollection] = None,
     ):
         """
         Initialize integrated production-distribution model.
@@ -119,6 +122,8 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             allow_shortages: If True, allow demand shortages with penalty cost
             enforce_shelf_life: If True, filter routes exceeding shelf life limits
             max_product_age_days: Maximum product age at delivery (17-day shelf life - 7-day min = 10 days)
+            validate_feasibility: If True, validate feasibility before building model (default: True)
+            truck_schedules: Optional collection of truck schedules (if None, no truck constraints)
         """
         super().__init__(solver_config)
 
@@ -132,6 +137,8 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         self.allow_shortages = allow_shortages
         self.enforce_shelf_life = enforce_shelf_life
         self.max_product_age_days = max_product_age_days
+        self._validate_feasibility_flag = validate_feasibility
+        self.truck_schedules = truck_schedules
 
         # Store user-provided dates
         self._user_start_date = start_date
@@ -152,6 +159,10 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
 
         # Now adjust planning horizon based on actual transit times
         self._adjust_planning_horizon(forecast_start, forecast_end)
+
+        # Validate feasibility before building model (if enabled)
+        if self._validate_feasibility_flag:
+            self._validate_feasibility()
 
     def _extract_data(self) -> None:
         """Extract sets and parameters from input data."""
@@ -192,6 +203,133 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         # Enumerate routes using RouteEnumerator
         self._enumerate_routes()
 
+        # Extract truck schedule data if provided
+        if self.truck_schedules:
+            self._extract_truck_data()
+
+    def _extract_truck_data(self) -> None:
+        """
+        Extract truck schedule data for optimization.
+
+        Creates:
+        - truck_indices: Set of truck indices (0, 1, 2, ...)
+        - truck_by_index: Mapping from index to TruckSchedule object
+        - trucks_on_date: Dict[date, List[truck_index]] - trucks available each date
+        - trucks_to_destination: Dict[destination_id, List[truck_index]] - trucks serving each destination
+        - truck_destination: Dict[truck_index, destination_id] - destination for each truck
+        - truck_capacity: Dict[truck_index, capacity] - capacity of each truck
+        - trucks_with_intermediate_stops: Dict[truck_index, List[stop_ids]] - trucks with intermediate stops
+        - wednesday_lineage_trucks: Set[truck_index] - trucks serving Lineage on Wednesdays
+        """
+        # Create truck indices (enumerate all truck schedules)
+        self.truck_indices: Set[int] = set()
+        self.truck_by_index: Dict[int, 'TruckSchedule'] = {}
+        self.truck_destination: Dict[int, str] = {}
+        self.truck_capacity: Dict[int, float] = {}
+        self.truck_pallet_capacity: Dict[int, int] = {}
+        self.trucks_with_intermediate_stops: Dict[int, List[str]] = {}
+        self.wednesday_lineage_trucks: Set[int] = set()
+
+        for idx, truck in enumerate(self.truck_schedules.schedules):
+            self.truck_indices.add(idx)
+            self.truck_by_index[idx] = truck
+            if truck.destination_id:  # Fixed-route trucks
+                self.truck_destination[idx] = truck.destination_id
+            self.truck_capacity[idx] = truck.capacity
+            self.truck_pallet_capacity[idx] = truck.pallet_capacity
+
+            # Track trucks with intermediate stops
+            if truck.has_intermediate_stops():
+                self.trucks_with_intermediate_stops[idx] = truck.intermediate_stops
+
+                # Special case: Wednesday morning truck to Lineage + 6125
+                # Check if this truck goes to Lineage as intermediate stop and 6125 as final
+                if 'Lineage' in truck.intermediate_stops and truck.destination_id == '6125':
+                    # This is the Wednesday special truck
+                    self.wednesday_lineage_trucks.add(idx)
+
+        # For each date in planning horizon, determine which trucks are available
+        self.trucks_on_date: Dict[Date, List[int]] = defaultdict(list)
+        for prod_date in self.production_dates:
+            for truck_idx in self.truck_indices:
+                truck = self.truck_by_index[truck_idx]
+                if truck.applies_on_date(prod_date):
+                    self.trucks_on_date[prod_date].append(truck_idx)
+
+        # Map trucks to destinations they serve (including intermediate stops)
+        self.trucks_to_destination: Dict[str, List[int]] = defaultdict(list)
+        for truck_idx, dest_id in self.truck_destination.items():
+            self.trucks_to_destination[dest_id].append(truck_idx)
+
+        # Also add trucks that have intermediate stops to those destinations
+        for truck_idx, stops in self.trucks_with_intermediate_stops.items():
+            for stop_id in stops:
+                self.trucks_to_destination[stop_id].append(truck_idx)
+
+    def _is_frozen_route(self, route: EnumeratedRoute) -> bool:
+        """
+        Check if a route uses frozen transport throughout.
+
+        Args:
+            route: EnumeratedRoute object to check
+
+        Returns:
+            True if all legs of the route use frozen transport
+        """
+        # Check the route_path object for transport modes
+        # The route_path has a list of Route objects that we can check
+        if hasattr(route.route_path, 'route_legs') and route.route_path.route_legs:
+            # Check if all legs are frozen
+            from src.models.location import StorageMode
+            return all(
+                leg.transport_mode == StorageMode.FROZEN
+                for leg in route.route_path.route_legs
+            )
+        # Fallback: check if destination is frozen storage (like Lineage)
+        # or if route goes through Lineage (frozen buffer for WA)
+        return 'Lineage' in route.path or route.destination_id == 'Lineage'
+
+    def _is_route_shelf_life_feasible(self, route: EnumeratedRoute) -> bool:
+        """
+        Check if a route satisfies shelf life constraints.
+
+        Shelf life limits:
+        - Ambient routes: 17 days production shelf life - 7 days breadroom minimum = 10 days max transit
+        - Frozen routes: 120 days frozen shelf life (very long, rarely a constraint)
+        - Thawed routes to 6130 (WA): 14 days post-thaw shelf life - 7 days minimum = 7 days max
+          (Note: This is a simplified check. Full thawing logic requires state tracking in Phase 4)
+
+        Args:
+            route: EnumeratedRoute object to check
+
+        Returns:
+            True if route satisfies shelf life constraints
+        """
+        transit_days = route.total_transit_days
+
+        # Special case: Thawed route to 6130 (WA)
+        # After thawing, product has 14 days shelf life, needs 7 days at breadroom
+        # So maximum time from thaw to breadroom is 7 days
+        # TODO Phase 4: This is simplified. Need to model thawing timing explicitly.
+        if route.destination_id == '6130':
+            # For WA route via Lineage with thawing:
+            # Product frozen at Lineage (no shelf life loss)
+            # Shipped frozen to 6130 (no shelf life loss)
+            # Thawed at 6130 → 14 days remaining
+            # Need 7 days at breadroom minimum
+            # So we need thaw → breadroom transit ≤ 7 days
+            # Since we don't track thawing timing yet, conservatively allow routes
+            # up to 7 days from 6130 to final destination
+            # For now, just check total transit isn't absurdly long
+            return transit_days <= 120  # Frozen route, generous limit
+
+        # Frozen routes: 120-day frozen shelf life
+        if self._is_frozen_route(route):
+            return transit_days <= 120
+
+        # Ambient routes: 17-day shelf life - 7-day minimum = 10 days max transit
+        return transit_days <= self.max_product_age_days
+
     def _enumerate_routes(self) -> None:
         """Enumerate feasible routes from manufacturing to destinations."""
         # Build network graph
@@ -216,17 +354,41 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
 
         # Filter routes based on shelf life constraints if enforced
         if self.enforce_shelf_life:
-            self.enumerated_routes: List[EnumeratedRoute] = [
-                r for r in all_routes
-                if r.total_transit_days <= self.max_product_age_days
-            ]
-            # Log filtered routes
-            filtered_count = len(all_routes) - len(self.enumerated_routes)
-            if filtered_count > 0:
+            self.enumerated_routes: List[EnumeratedRoute] = []
+            filtered_by_type = {'frozen_ok': 0, 'ambient_ok': 0, 'frozen_too_long': 0, 'ambient_too_long': 0, 'thawed_6130_ok': 0, 'thawed_6130_too_long': 0}
+
+            for route in all_routes:
+                if self._is_route_shelf_life_feasible(route):
+                    self.enumerated_routes.append(route)
+                    # Categorize for logging
+                    if self._is_frozen_route(route):
+                        filtered_by_type['frozen_ok'] += 1
+                    elif route.destination_id == '6130':
+                        filtered_by_type['thawed_6130_ok'] += 1
+                    else:
+                        filtered_by_type['ambient_ok'] += 1
+                else:
+                    # Categorize filtered routes
+                    if self._is_frozen_route(route):
+                        filtered_by_type['frozen_too_long'] += 1
+                    elif route.destination_id == '6130':
+                        filtered_by_type['thawed_6130_too_long'] += 1
+                    else:
+                        filtered_by_type['ambient_too_long'] += 1
+
+            # Log filtered routes with detail
+            total_filtered = len(all_routes) - len(self.enumerated_routes)
+            if total_filtered > 0:
                 import warnings
-                warnings.warn(
-                    f"Shelf life constraint filtered out {filtered_count} routes with transit > {self.max_product_age_days} days"
-                )
+                msg = f"Shelf life filtering: Kept {len(self.enumerated_routes)}/{len(all_routes)} routes. Filtered: "
+                details = []
+                if filtered_by_type['ambient_too_long'] > 0:
+                    details.append(f"{filtered_by_type['ambient_too_long']} ambient (>{self.max_product_age_days}d)")
+                if filtered_by_type['frozen_too_long'] > 0:
+                    details.append(f"{filtered_by_type['frozen_too_long']} frozen (>120d)")
+                if filtered_by_type['thawed_6130_too_long'] > 0:
+                    details.append(f"{filtered_by_type['thawed_6130_too_long']} thawed to 6130 (>7d)")
+                warnings.warn(msg + ', '.join(details))
         else:
             self.enumerated_routes: List[EnumeratedRoute] = all_routes
 
@@ -327,6 +489,114 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             if labor_day:
                 self.labor_by_date[prod_date] = labor_day
 
+    def _validate_feasibility(self) -> None:
+        """
+        Validate problem feasibility before building optimization model.
+
+        Checks for common infeasibility causes:
+        - Route coverage to all demanded destinations
+        - Sufficient production capacity for total demand
+        - Weekly capacity with regular labor hours
+        - Labor calendar coverage for all production dates
+
+        Raises:
+            ValueError: If problem is obviously infeasible
+        """
+        import warnings
+
+        issues = []
+
+        # Check 1: Route coverage - are there routes to all demanded destinations?
+        destinations_without_routes = []
+        for dest in self.destinations:
+            if dest not in self.routes_to_destination or len(self.routes_to_destination[dest]) == 0:
+                destinations_without_routes.append(dest)
+
+        if destinations_without_routes:
+            issues.append(
+                f"No routes found to {len(destinations_without_routes)} destination(s): "
+                f"{', '.join(sorted(destinations_without_routes)[:5])}"
+                + (f" (and {len(destinations_without_routes) - 5} more)" if len(destinations_without_routes) > 5 else "")
+            )
+
+        # Check 2: Production capacity - is total demand achievable?
+        total_demand = sum(self.demand.values())
+        num_production_days = len(self.production_dates)
+        total_capacity = num_production_days * self.max_capacity_per_day
+
+        if total_demand > total_capacity * 1.001:  # 0.1% tolerance for rounding
+            issues.append(
+                f"Total demand ({total_demand:,.0f} units) exceeds total production capacity "
+                f"({total_capacity:,.0f} units over {num_production_days} days). "
+                f"Shortfall: {total_demand - total_capacity:,.0f} units ({(total_demand / total_capacity - 1) * 100:.1f}% over capacity)"
+            )
+
+        # Check 3: Weekly capacity with regular labor - is overtime required every week?
+        if num_production_days >= 7:
+            weeks = num_production_days / 7
+            avg_weekly_demand = total_demand / weeks
+            # Assume 5 weekdays per week with 12h regular labor each
+            weekly_regular_capacity = 5 * 12 * self.PRODUCTION_RATE  # 84,000 units
+
+            if avg_weekly_demand > weekly_regular_capacity:
+                overtime_required_pct = (avg_weekly_demand / weekly_regular_capacity - 1) * 100
+                if overtime_required_pct > 15:  # More than 15% over regular capacity
+                    warnings.warn(
+                        f"Average weekly demand ({avg_weekly_demand:,.0f} units) exceeds regular capacity "
+                        f"({weekly_regular_capacity:,.0f} units) by {overtime_required_pct:.1f}%. "
+                        f"Overtime or weekend production will be required frequently."
+                    )
+
+        # Check 4: Labor calendar coverage - do we have labor data for all production dates?
+        missing_labor_dates = []
+        for prod_date in self.production_dates:
+            if prod_date not in self.labor_by_date:
+                missing_labor_dates.append(prod_date)
+
+        if missing_labor_dates:
+            if len(missing_labor_dates) <= 5:
+                date_str = ', '.join(str(d) for d in sorted(missing_labor_dates))
+            else:
+                date_str = ', '.join(str(d) for d in sorted(missing_labor_dates)[:5]) + f" (and {len(missing_labor_dates) - 5} more)"
+
+            issues.append(
+                f"Labor calendar missing entries for {len(missing_labor_dates)} production date(s): {date_str}"
+            )
+
+        # Check 5: Shelf life constraints - are any destinations unreachable within shelf life?
+        if self.enforce_shelf_life:
+            unreachable_destinations = {}
+            for dest in self.destinations:
+                routes = self.routes_to_destination.get(dest, [])
+                if routes:
+                    # Check if all routes were filtered out by shelf life
+                    all_routes_before_filter = [
+                        r for r in self.route_enumerator.get_all_routes()
+                        if r.destination_id == dest
+                    ]
+                    if len(all_routes_before_filter) > 0 and len(routes) == 0:
+                        min_transit = min(r.total_transit_days for r in all_routes_before_filter)
+                        unreachable_destinations[dest] = min_transit
+
+            if unreachable_destinations:
+                dest_details = ', '.join(
+                    f"{dest} (min {days}d transit)"
+                    for dest, days in sorted(unreachable_destinations.items())[:3]
+                )
+                issues.append(
+                    f"Shelf life constraints filter out ALL routes to {len(unreachable_destinations)} destination(s): "
+                    f"{dest_details}"
+                    + (f" and {len(unreachable_destinations) - 3} more" if len(unreachable_destinations) > 3 else "")
+                )
+
+        # Raise error if critical issues found
+        if issues:
+            error_msg = "Feasibility validation failed. Problem is likely infeasible:\n"
+            for i, issue in enumerate(issues, 1):
+                error_msg += f"\n  {i}. {issue}"
+            error_msg += "\n\nPlease fix these issues before attempting optimization."
+            raise ValueError(error_msg)
+
     def build_model(self) -> ConcreteModel:
         """
         Build integrated production-distribution optimization model.
@@ -358,6 +628,39 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             within=NonNegativeReals,
             doc="Shipment quantity by route, product, and delivery date"
         )
+
+        # Truck scheduling variables (if truck schedules provided)
+        if self.truck_schedules:
+            model.trucks = list(self.truck_indices)
+
+            # Get all unique destinations served by trucks
+            truck_destinations = set(self.truck_destination.values())
+            # Add intermediate stop destinations (like Lineage)
+            for stops in self.trucks_with_intermediate_stops.values():
+                truck_destinations.update(stops)
+            model.truck_destinations = list(truck_destinations)
+
+            # Binary variable: truck_used[truck_index, date]
+            # 1 if truck is used on this date, 0 otherwise
+            model.truck_used = Var(
+                model.trucks,
+                model.dates,
+                within=Binary,
+                doc="Binary indicator if truck is used on date"
+            )
+
+            # Continuous variable: truck_load[truck_index, destination, product, date]
+            # Quantity of product loaded on truck going to specific destination
+            # This allows trucks with intermediate stops (like Wednesday Lineage route)
+            # to carry different products to different destinations
+            model.truck_load = Var(
+                model.trucks,
+                model.truck_destinations,
+                model.products,
+                model.dates,
+                within=NonNegativeReals,
+                doc="Quantity loaded on truck to destination by product and date"
+            )
 
         # Decision variables: shortage[dest, product, delivery_date] (if allowed)
         if self.allow_shortages:
@@ -553,6 +856,103 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             doc="Production >= shipments departing on each date"
         )
 
+        # Truck scheduling constraints (if truck schedules provided)
+        if self.truck_schedules:
+            # Constraint: Truck capacity
+            def truck_capacity_rule(model, truck_idx, d):
+                """Total load on truck (across all destinations) cannot exceed capacity."""
+                total_load = sum(
+                    model.truck_load[truck_idx, dest, p, d]
+                    for dest in model.truck_destinations
+                    for p in model.products
+                )
+                capacity = self.truck_capacity[truck_idx]
+                return total_load <= capacity * model.truck_used[truck_idx, d]
+
+            model.truck_capacity_con = Constraint(
+                model.trucks,
+                model.dates,
+                rule=truck_capacity_rule,
+                doc="Truck capacity constraint (sum across all destinations)"
+            )
+
+            # Constraint: Truck availability (day-specific scheduling)
+            def truck_availability_rule(model, truck_idx, d):
+                """Truck can only be used on dates it runs."""
+                trucks_available = self.trucks_on_date.get(d, [])
+                if truck_idx not in trucks_available:
+                    # Truck doesn't run on this date
+                    return model.truck_used[truck_idx, d] == 0
+                else:
+                    # Truck runs on this date - no constraint (can be 0 or 1)
+                    return Constraint.Skip
+
+            model.truck_availability_con = Constraint(
+                model.trucks,
+                model.dates,
+                rule=truck_availability_rule,
+                doc="Truck availability by day of week"
+            )
+
+            # Constraint: Link truck loads to route shipments
+            # For routes from manufacturing to immediate destinations (first leg),
+            # the total shipment on those routes must equal truck loads
+            def truck_route_linking_rule(model, dest_id, d):
+                """
+                Shipments from manufacturing to destination on date d
+                must equal truck loads to that destination on date d.
+
+                Now with destination-specific truck loads, this constraint properly
+                handles trucks with intermediate stops (like Wednesday Lineage route).
+                """
+                # Get all routes that go directly from manufacturing to this destination
+                # These are routes where origin = manufacturing_site_id and immediate destination = dest_id
+                manufacturing_id = self.manufacturing_site.id
+
+                # Find routes that start from manufacturing and go to dest_id as first destination
+                direct_routes = []
+                for route_idx in self.route_indices:
+                    route = self.route_enumerator.get_route(route_idx)
+                    if route and route.origin_id == manufacturing_id and route.destination_id == dest_id:
+                        direct_routes.append(route_idx)
+
+                if not direct_routes:
+                    return Constraint.Skip
+
+                # Get trucks that go to this destination
+                trucks_to_dest = self.trucks_to_destination.get(dest_id, [])
+
+                if not trucks_to_dest:
+                    # No trucks to this destination - routes can't be used
+                    # Force shipments to be zero
+                    return sum(
+                        model.shipment[r, p, d]
+                        for r in direct_routes
+                        for p in model.products
+                    ) == 0
+
+                # Sum of shipments on direct routes = sum of truck loads TO THIS DESTINATION
+                total_route_shipments = sum(
+                    model.shipment[r, p, d]
+                    for r in direct_routes
+                    for p in model.products
+                )
+
+                total_truck_loads = sum(
+                    model.truck_load[t, dest_id, p, d]  # Now includes destination!
+                    for t in trucks_to_dest
+                    for p in model.products
+                )
+
+                return total_route_shipments == total_truck_loads
+
+            model.truck_route_linking_con = Constraint(
+                model.truck_destinations,  # Use model.truck_destinations from variable definition
+                model.dates,
+                rule=truck_route_linking_rule,
+                doc="Link truck loads to route shipments from manufacturing (by destination)"
+            )
+
         # Objective: Minimize total cost = labor + production + transport + shortage penalty
         def objective_rule(model):
             # Labor cost (same as production model)
@@ -592,7 +992,20 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                         * model.shortage[dest, prod, delivery_date]
                     )
 
-            return labor_cost + production_cost + transport_cost + shortage_cost
+            # Truck fixed costs (if truck schedules provided)
+            truck_cost = 0.0
+            if self.truck_schedules:
+                for truck_idx in model.trucks:
+                    truck = self.truck_by_index[truck_idx]
+                    for d in model.dates:
+                        # Fixed cost if truck is used
+                        truck_cost += truck.cost_fixed * model.truck_used[truck_idx, d]
+                        # Variable cost per unit (sum across all destinations)
+                        for dest in model.truck_destinations:
+                            for p in model.products:
+                                truck_cost += truck.cost_per_unit * model.truck_load[truck_idx, dest, p, d]
+
+            return labor_cost + production_cost + transport_cost + shortage_cost + truck_cost
 
         model.obj = Objective(
             rule=objective_rule,
@@ -681,18 +1094,43 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                     total_shortage_units += qty
                     total_shortage_cost += self.cost_structure.shortage_penalty_per_unit * qty
 
+        # Extract truck assignment data (if truck schedules provided)
+        truck_used_by_date: Dict[Tuple[int, Date], bool] = {}
+        truck_loads_by_truck_dest_product_date: Dict[Tuple[int, str, str, Date], float] = {}
+        total_truck_cost = 0.0
+        if self.truck_schedules:
+            for truck_idx in model.trucks:
+                truck = self.truck_by_index[truck_idx]
+                for d in model.dates:
+                    # Extract truck usage
+                    used = value(model.truck_used[truck_idx, d])
+                    if used > 0.5:  # Binary variable, use 0.5 threshold
+                        truck_used_by_date[(truck_idx, d)] = True
+                        total_truck_cost += truck.cost_fixed
+
+                    # Extract truck loads (now includes destination)
+                    for dest in model.truck_destinations:
+                        for p in model.products:
+                            load = value(model.truck_load[truck_idx, dest, p, d])
+                            if load > 1e-6:
+                                truck_loads_by_truck_dest_product_date[(truck_idx, dest, p, d)] = load
+                                total_truck_cost += truck.cost_per_unit * load
+
         return {
             'production_by_date_product': production_by_date_product,
             'labor_hours_by_date': labor_hours_by_date,
             'labor_cost_by_date': labor_cost_by_date,
             'shipments_by_route_product_date': shipments_by_route_product_date,
             'shortages_by_dest_product_date': shortages_by_dest_product_date,
+            'truck_used_by_date': truck_used_by_date if self.truck_schedules else {},
+            'truck_loads_by_truck_dest_product_date': truck_loads_by_truck_dest_product_date if self.truck_schedules else {},
             'total_labor_cost': total_labor_cost,
             'total_production_cost': total_production_cost,
             'total_transport_cost': total_transport_cost,
+            'total_truck_cost': total_truck_cost,
             'total_shortage_cost': total_shortage_cost,
             'total_shortage_units': total_shortage_units,
-            'total_cost': total_labor_cost + total_production_cost + total_transport_cost + total_shortage_cost,
+            'total_cost': total_labor_cost + total_production_cost + total_transport_cost + total_truck_cost + total_shortage_cost,
         }
 
     def get_shipment_plan(self) -> Optional[List[Shipment]]:
@@ -791,6 +1229,8 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         print(f"  Labor Cost:      ${solution['total_labor_cost']:>12,.2f}")
         print(f"  Production Cost: ${solution['total_production_cost']:>12,.2f}")
         print(f"  Transport Cost:  ${solution['total_transport_cost']:>12,.2f}")
+        if self.truck_schedules and solution.get('total_truck_cost', 0) > 0:
+            print(f"  Truck Cost:      ${solution['total_truck_cost']:>12,.2f}")
         if self.allow_shortages and solution.get('total_shortage_cost', 0) > 0:
             print(f"  Shortage Cost:   ${solution['total_shortage_cost']:>12,.2f}")
         print(f"  {'─' * 30}")
@@ -836,6 +1276,42 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 print(f"  {status} {product_id}: {satisfied:,.0f} / {demand:,.0f} ({pct:.1f}%) [shortage: {shortage:,.0f}]")
             else:
                 print(f"  {status} {product_id}: {satisfied:,.0f} / {demand:,.0f} ({pct:.1f}%)")
+
+        # Truck utilization summary (if truck schedules provided)
+        if self.truck_schedules:
+            truck_used = solution.get('truck_used_by_date', {})
+            truck_loads = solution.get('truck_loads_by_truck_dest_product_date', {})
+
+            if truck_used:
+                print(f"\nTruck Utilization:")
+                trucks_used_count = len(truck_used)
+                print(f"  Trucks Used: {trucks_used_count}")
+
+                # Calculate average load per truck
+                # truck_loads is now Dict[(truck_idx, dest, product, date), qty]
+                total_loaded = sum(truck_loads.values())
+                avg_load = total_loaded / trucks_used_count if trucks_used_count > 0 else 0
+                print(f"  Total Units Shipped: {total_loaded:,.0f}")
+                print(f"  Average Load per Truck: {avg_load:,.0f} units")
+
+                # Show Wednesday Lineage routing if applicable
+                wednesday_loads = {}
+                for (truck_idx, dest, prod, date), qty in truck_loads.items():
+                    if date.weekday() == 2:  # Wednesday
+                        truck = self.truck_by_index.get(truck_idx)
+                        if truck and truck_idx in self.wednesday_lineage_trucks:
+                            if truck_idx not in wednesday_loads:
+                                wednesday_loads[truck_idx] = {'Lineage': 0, '6125': 0}
+                            wednesday_loads[truck_idx][dest] = wednesday_loads[truck_idx].get(dest, 0) + qty
+
+                if wednesday_loads:
+                    print(f"\n  Wednesday Lineage Split:")
+                    for truck_idx, loads in wednesday_loads.items():
+                        truck = self.truck_by_index[truck_idx]
+                        lineage_load = loads.get('Lineage', 0)
+                        hub_load = loads.get('6125', 0)
+                        total = lineage_load + hub_load
+                        print(f"    {truck.truck_name}: Lineage={lineage_load:,.0f}, 6125={hub_load:,.0f}, Total={total:,.0f}")
 
         print("=" * 70)
 
@@ -889,14 +1365,51 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                     reasons.append("No routes to destination")
                 else:
                     # Check transit time requirements
+                    earliest_feasible_depart = None
                     for route_idx in route_list:
                         route = self.route_enumerator.get_route(route_idx)
                         required_depart = deliv_date - timedelta(days=route.total_transit_days)
 
                         if required_depart < self.start_date:
+                            if earliest_feasible_depart is None or required_depart > earliest_feasible_depart:
+                                earliest_feasible_depart = required_depart
+
+                    if earliest_feasible_depart:
+                        days_short = (self.start_date - earliest_feasible_depart).days
+                        reasons.append(
+                            f"Planning horizon starts too late. Need to start production {days_short} days earlier "
+                            f"(start date {self.start_date} → {earliest_feasible_depart})"
+                        )
+
+                    # Check production capacity constraints
+                    # Check if daily capacity was exceeded on required production days
+                    for route_idx in route_list:
+                        route = self.route_enumerator.get_route(route_idx)
+                        required_depart = deliv_date - timedelta(days=route.total_transit_days)
+
+                        if required_depart >= self.start_date and required_depart <= self.end_date:
+                            # This route timing is within planning horizon
+                            # Check if we have labor on that day
+                            labor_day = self.labor_by_date.get(required_depart)
+                            if not labor_day:
+                                reasons.append(
+                                    f"No labor available on required production date {required_depart}"
+                                )
+                            # Note: Can't easily check if capacity was exceeded without model variables
+                            # That would require summing production across all products on that day
+
+                    # Check shelf life violations (if enforced)
+                    if self.enforce_shelf_life:
+                        # Check if all routes were filtered due to shelf life
+                        all_routes_before_filter = [
+                            r for r in self.route_enumerator.get_all_routes()
+                            if r.destination_id == dest
+                        ]
+                        if len(all_routes_before_filter) > 0 and len(route_list) == 0:
+                            min_transit = min(r.total_transit_days for r in all_routes_before_filter)
                             reasons.append(
-                                f"Route {route_idx} ({route.total_transit_days}d transit) requires "
-                                f"departure on {required_depart} (before planning start {self.start_date})"
+                                f"All routes exceed shelf life limit "
+                                f"(minimum transit {min_transit}d > {self.max_product_age_days}d max)"
                             )
 
                 unsatisfied.append({

@@ -1,7 +1,7 @@
 """Truck schedule data model for daily departures."""
 
 from enum import Enum
-from datetime import time
+from datetime import time, date as Date
 from typing import Optional, List
 from pydantic import BaseModel, Field
 import math
@@ -233,6 +233,43 @@ class TruckSchedule(BaseModel):
         """
         return self.day_of_week is not None
 
+    def applies_on_date(self, check_date: Date) -> bool:
+        """
+        Check if this truck schedule applies on a given date.
+
+        Args:
+            check_date: Date to check
+
+        Returns:
+            True if truck runs on this date (considering day_of_week constraint)
+
+        Example:
+            # Monday-only truck
+            truck = TruckSchedule(day_of_week=DayOfWeek.MONDAY, ...)
+            truck.applies_on_date(date(2025, 1, 6))  # Monday -> True
+            truck.applies_on_date(date(2025, 1, 7))  # Tuesday -> False
+
+            # Daily truck (no day_of_week constraint)
+            truck = TruckSchedule(day_of_week=None, ...)
+            truck.applies_on_date(date(2025, 1, 6))  # True (runs every day)
+        """
+        if not self.day_of_week:
+            # Daily schedule - applies every day
+            return True
+
+        # Map day of week enum to Python's weekday() values (0=Monday, 6=Sunday)
+        day_map = {
+            DayOfWeek.MONDAY: 0,
+            DayOfWeek.TUESDAY: 1,
+            DayOfWeek.WEDNESDAY: 2,
+            DayOfWeek.THURSDAY: 3,
+            DayOfWeek.FRIDAY: 4,
+            DayOfWeek.SATURDAY: 5,
+            DayOfWeek.SUNDAY: 6,
+        }
+
+        return check_date.weekday() == day_map[self.day_of_week]
+
     def __str__(self) -> str:
         """String representation."""
         route_info = f"to {self.destination_id}" if self.destination_id else "flexible route"
@@ -242,3 +279,157 @@ class TruckSchedule(BaseModel):
             f"{self.truck_name} - {self.departure_type.value}{day_info} @ {self.departure_time.strftime('%H:%M')} "
             f"{route_info}{stops_info} [{self.pallet_capacity} pallets = {self.capacity:.0f} units]"
         )
+
+
+class TruckScheduleCollection(BaseModel):
+    """
+    Collection of truck schedules for querying and filtering.
+
+    Provides methods to get trucks departing on specific dates,
+    to specific destinations, and with specific characteristics.
+
+    Attributes:
+        schedules: List of TruckSchedule objects
+    """
+    schedules: List[TruckSchedule] = Field(
+        default_factory=list,
+        description="List of truck schedules"
+    )
+
+    def get_trucks_on_date(
+        self,
+        check_date: Date,
+        departure_type: Optional[DepartureType] = None,
+        destination_id: Optional[str] = None
+    ) -> List[TruckSchedule]:
+        """
+        Get all trucks departing on a specific date.
+
+        Args:
+            check_date: Date to check
+            departure_type: Filter by morning/afternoon (optional)
+            destination_id: Filter by destination (optional)
+
+        Returns:
+            List of TruckSchedule objects that depart on this date
+
+        Example:
+            # Get all trucks on Monday Jan 6, 2025
+            trucks = collection.get_trucks_on_date(date(2025, 1, 6))
+
+            # Get morning trucks only
+            morning_trucks = collection.get_trucks_on_date(
+                date(2025, 1, 6),
+                departure_type=DepartureType.MORNING
+            )
+
+            # Get trucks going to specific destination
+            to_hub = collection.get_trucks_on_date(
+                date(2025, 1, 6),
+                destination_id="6125"
+            )
+        """
+        result = []
+        for truck in self.schedules:
+            # Check if truck runs on this date
+            if not truck.applies_on_date(check_date):
+                continue
+
+            # Filter by departure type if specified
+            if departure_type and truck.departure_type != departure_type:
+                continue
+
+            # Filter by destination if specified
+            if destination_id and truck.destination_id != destination_id:
+                continue
+
+            result.append(truck)
+
+        return result
+
+    def get_available_capacity_on_date(
+        self,
+        check_date: Date,
+        departure_type: Optional[DepartureType] = None,
+        destination_id: Optional[str] = None
+    ) -> float:
+        """
+        Get total available truck capacity on a specific date.
+
+        Args:
+            check_date: Date to check
+            departure_type: Filter by morning/afternoon (optional)
+            destination_id: Filter by destination (optional)
+
+        Returns:
+            Total capacity in units
+        """
+        trucks = self.get_trucks_on_date(check_date, departure_type, destination_id)
+        return sum(t.capacity for t in trucks)
+
+    def get_routes_available_on_date(self, check_date: Date) -> set[str]:
+        """
+        Get set of all destination IDs reachable on a given date.
+
+        Args:
+            check_date: Date to check
+
+        Returns:
+            Set of destination location IDs
+        """
+        trucks = self.get_trucks_on_date(check_date)
+        destinations = set()
+        for truck in trucks:
+            if truck.destination_id:
+                destinations.add(truck.destination_id)
+        return destinations
+
+    def validate_shipment(
+        self,
+        check_date: Date,
+        destination_id: str,
+        units: float
+    ) -> tuple[bool, str]:
+        """
+        Validate if a shipment can be made on a given date.
+
+        Args:
+            check_date: Shipment date
+            destination_id: Destination location ID
+            units: Number of units to ship
+
+        Returns:
+            (is_valid, reason) tuple
+        """
+        # Check if any trucks go to this destination on this date
+        trucks = self.get_trucks_on_date(check_date, destination_id=destination_id)
+
+        if not trucks:
+            return (False, f"No trucks to {destination_id} on {check_date} ({check_date.strftime('%A')})")
+
+        # Check if total capacity is sufficient
+        total_capacity = sum(t.capacity for t in trucks)
+        if units > total_capacity:
+            return (
+                False,
+                f"Units {units:,.0f} exceeds total truck capacity {total_capacity:,.0f} "
+                f"on {check_date} ({len(trucks)} truck(s) to {destination_id})"
+            )
+
+        return (True, "Valid shipment")
+
+    def add_schedule(self, truck: TruckSchedule) -> None:
+        """Add a truck schedule to the collection."""
+        self.schedules.append(truck)
+
+    def __len__(self) -> int:
+        """Return number of truck schedules."""
+        return len(self.schedules)
+
+    def __iter__(self):
+        """Iterate over truck schedules."""
+        return iter(self.schedules)
+
+    def __str__(self) -> str:
+        """String representation."""
+        return f"TruckScheduleCollection with {len(self.schedules)} schedules"
