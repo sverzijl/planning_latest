@@ -137,6 +137,15 @@ class ProductionOptimizationModel(BaseOptimizationModel):
             if labor_day:
                 self.labor_by_date[prod_date] = labor_day
 
+                # Validate: Non-fixed days must have non_fixed_rate specified
+                if not labor_day.is_fixed_day and labor_day.non_fixed_rate is None:
+                    raise ValueError(
+                        f"Labor calendar validation failed: "
+                        f"Non-fixed day {prod_date} ({prod_date.strftime('%A')}) "
+                        f"has no non_fixed_rate specified. "
+                        f"Weekend/holiday rates must be provided in labor calendar."
+                    )
+
         # Max production capacity per day (units)
         self.max_capacity_per_day = self.MAX_HOURS_PER_DAY * self.PRODUCTION_RATE
 
@@ -310,7 +319,13 @@ class ProductionOptimizationModel(BaseOptimizationModel):
                         )
                     else:
                         # Non-fixed day: non_fixed_rate × hours paid
-                        rate = labor_day.non_fixed_rate or 0.0
+                        # Rate must be specified for weekend/holiday days
+                        if labor_day.non_fixed_rate is None:
+                            raise ValueError(
+                                f"Non-fixed labor rate is None for {d}. "
+                                f"Weekend/holiday rates must be specified in labor calendar."
+                            )
+                        rate = labor_day.non_fixed_rate
                         labor_cost += rate * model.non_fixed_hours_paid[d]
 
             # Production cost
@@ -366,7 +381,13 @@ class ProductionOptimizationModel(BaseOptimizationModel):
                     overtime_cost = labor_day.overtime_rate * value(model.overtime_hours_used[d])
                     day_cost = fixed_cost + overtime_cost
                 else:
-                    rate = labor_day.non_fixed_rate or 0.0
+                    # Non-fixed day - rate must be specified
+                    if labor_day.non_fixed_rate is None:
+                        raise ValueError(
+                            f"Non-fixed labor rate is None for {d}. "
+                            f"Weekend/holiday rates must be specified in labor calendar."
+                        )
+                    rate = labor_day.non_fixed_rate
                     day_cost = rate * value(model.non_fixed_hours_paid[d])
 
                 if day_cost > 1e-6:
