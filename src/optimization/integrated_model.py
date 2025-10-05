@@ -757,14 +757,14 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         # Create sparse index set for inventory variables
         # Only create variables for (destination, product, date) combinations with demand
         # This significantly reduces model size
-        inventory_index_set = set()
+        self.inventory_index_set = set()
         for (dest, prod, date) in self.demand.keys():
             # Add all dates from first demand date through end of horizon for this dest-prod
             # This allows inventory to build up before first demand
             for d in sorted_dates:
-                inventory_index_set.add((dest, prod, d))
+                self.inventory_index_set.add((dest, prod, d))
 
-        model.inventory_index = list(inventory_index_set)
+        model.inventory_index = list(self.inventory_index_set)
 
         # Decision variables: production[date, product]
         model.production = Var(
@@ -1056,7 +1056,7 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 prev_inventory = self.initial_inventory.get((dest, prod), 0)
             else:
                 # Check if previous date inventory exists in sparse index
-                if (dest, prod, prev_date) in inventory_index_set:
+                if (dest, prod, prev_date) in self.inventory_index_set:
                     prev_inventory = model.inventory[dest, prod, prev_date]
                 else:
                     # Previous date not in index (shouldn't happen with our construction)
