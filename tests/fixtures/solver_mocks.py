@@ -72,6 +72,11 @@ def create_mock_solver_config():
                     for key in pyomo_model.shortage:
                         pyomo_model.shortage[key].set_value(0.0)
 
+                # Set inventory variables if they exist
+                if hasattr(pyomo_model, 'inventory'):
+                    for key in pyomo_model.inventory:
+                        pyomo_model.inventory[key].set_value(50.0)
+
             # Create successful result
             mock_results = Mock()
             mock_results.solver.status = SolverStatus.ok

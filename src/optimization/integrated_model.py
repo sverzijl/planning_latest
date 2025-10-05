@@ -701,6 +701,32 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         model.products = list(self.products)
         model.routes = list(self.route_indices)
 
+        # INVENTORY TRACKING: Sort dates for sequential processing
+        # This ensures proper inventory balance calculations day-by-day
+        sorted_dates = sorted(model.dates)
+        model.dates_ordered = sorted_dates  # Store ordered list for constraint iteration
+
+        # Create helper index for date sequencing
+        # Maps each date to its previous date (None for first date)
+        self.date_previous = {}
+        for i, current_date in enumerate(sorted_dates):
+            if i == 0:
+                self.date_previous[current_date] = None  # First date has no previous
+            else:
+                self.date_previous[current_date] = sorted_dates[i - 1]
+
+        # Create sparse index set for inventory variables
+        # Only create variables for (destination, product, date) combinations with demand
+        # This significantly reduces model size
+        inventory_index_set = set()
+        for (dest, prod, date) in self.demand.keys():
+            # Add all dates from first demand date through end of horizon for this dest-prod
+            # This allows inventory to build up before first demand
+            for d in sorted_dates:
+                inventory_index_set.add((dest, prod, d))
+
+        model.inventory_index = list(inventory_index_set)
+
         # Decision variables: production[date, product]
         model.production = Var(
             model.dates,
@@ -761,6 +787,16 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 within=NonNegativeReals,
                 doc="Demand shortage by destination, product, and delivery date"
             )
+
+        # Decision variables: inventory[dest, product, date]
+        # Represents inventory level at destination at END of each date
+        # After shipments arrive and demand is satisfied
+        # This enables buffer stock to accumulate and eliminate unnecessary weekend production
+        model.inventory = Var(
+            model.inventory_index,
+            within=NonNegativeReals,
+            doc="Inventory at destination at end of date (after demand satisfaction)"
+        )
 
         # Auxiliary variables for labor cost calculation
         model.labor_hours = Var(
@@ -923,41 +959,81 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             doc="Non-fixed hours >= minimum commitment"
         )
 
-        # NEW CONSTRAINT: Demand satisfaction by location-date-product
-        def demand_satisfaction_rule(model, dest, prod, delivery_date):
-            # Get demand for this location-product-date
-            demand_qty = self.demand.get((dest, prod, delivery_date), 0.0)
+        # INVENTORY BALANCE CONSTRAINT
+        # Replaces simple demand satisfaction with dynamic inventory tracking
+        #
+        # Balance equation: inventory[t] = inventory[t-1] + arrivals[t] - demand[t] - shortage[t]
+        #
+        # This enables:
+        # - Buffer stock to accumulate over time
+        # - Demand satisfaction from inventory + shipments (not just shipments)
+        # - Strategic inventory positioning to minimize weekend production
+        def inventory_balance_rule(model, dest, prod, date):
+            """
+            Inventory balance at destination for each date.
 
-            if demand_qty == 0:
-                # No demand, skip constraint
-                return Constraint.Skip
+            inventory[t] = inventory[t-1] + shipments_arriving[t] - demand[t] - shortage[t]
 
-            # Get all routes to this destination
+            For the first date in planning horizon:
+                inventory[t] = 0 + shipments[t] - demand[t] - shortage[t]
+                (assumes zero initial inventory)
+
+            Args:
+                dest: Destination location ID
+                prod: Product ID
+                date: Date (end of day)
+
+            Returns:
+                Constraint expression
+            """
+            # Get routes to this destination
             route_list = self.routes_to_destination.get(dest, [])
 
             if not route_list:
-                # No routes to destination - will be infeasible if demand > 0
-                return Constraint.Skip
+                # No routes to destination - inventory must be zero
+                # (Will be infeasible if demand > 0 and shortages not allowed)
+                return model.inventory[dest, prod, date] == 0
 
-            # Sum of shipments arriving on delivery_date
-            total_shipments = sum(
-                model.shipment[r, prod, delivery_date]
+            # Sum of shipments arriving on this date
+            arrivals = sum(
+                model.shipment[r, prod, date]
                 for r in route_list
             )
 
-            # If shortages allowed, constraint is: shipments + shortage >= demand
-            # Otherwise, constraint is: shipments >= demand
-            if self.allow_shortages:
-                return total_shipments + model.shortage[dest, prod, delivery_date] >= demand_qty
-            else:
-                return total_shipments >= demand_qty
+            # Demand on this date (0 if no demand)
+            demand_qty = self.demand.get((dest, prod, date), 0.0)
 
-        # Create constraint for all location-product-date combinations with demand
-        demand_keys = list(self.demand.keys())
-        model.demand_satisfaction_con = Constraint(
-            [(dest, prod, deliv_date) for dest, prod, deliv_date in demand_keys],
-            rule=demand_satisfaction_rule,
-            doc="Demand satisfaction by location-date-product"
+            # Shortage on this date (0 if shortages not allowed or no demand on this date)
+            shortage_qty = 0
+            if self.allow_shortages and (dest, prod, date) in self.demand:
+                shortage_qty = model.shortage[dest, prod, date]
+
+            # Previous inventory (0 if first date)
+            prev_date = self.date_previous.get(date)
+            if prev_date is None:
+                # First date: assume zero initial inventory
+                prev_inventory = 0
+            else:
+                # Check if previous date inventory exists in sparse index
+                if (dest, prod, prev_date) in inventory_index_set:
+                    prev_inventory = model.inventory[dest, prod, prev_date]
+                else:
+                    # Previous date not in index (shouldn't happen with our construction)
+                    prev_inventory = 0
+
+            # Balance equation:
+            # inventory[t] = inventory[t-1] + arrivals[t] - demand[t] - shortage[t]
+            #
+            # Rearranged for Pyomo:
+            # inventory[t] = prev_inventory + arrivals - demand - shortage
+            return model.inventory[dest, prod, date] == (
+                prev_inventory + arrivals - demand_qty - shortage_qty
+            )
+
+        model.inventory_balance_con = Constraint(
+            model.inventory_index,
+            rule=inventory_balance_rule,
+            doc="Inventory balance at destinations (daily)"
         )
 
         # NEW CONSTRAINT: Flow conservation (production >= shipments)
@@ -1255,6 +1331,19 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                     for d in model.dates:
                         transport_cost += route_cost * model.shipment[r, p, d]
 
+            # INVENTORY HOLDING COST (NEW)
+            # Cost to hold inventory at destinations (incentivizes JIT while allowing buffering)
+            # Uses ambient storage rate (frozen tracking would require mode-specific variables)
+            inventory_cost = 0.0
+            holding_cost_per_unit_day = self.cost_structure.storage_cost_ambient_per_unit_day
+            # Defensive check for None or infinity
+            if holding_cost_per_unit_day is None or not math.isfinite(holding_cost_per_unit_day):
+                holding_cost_per_unit_day = 0.0
+
+            # Sum inventory costs across all destinations, products, dates
+            for dest, prod, date in model.inventory_index:
+                inventory_cost += holding_cost_per_unit_day * model.inventory[dest, prod, date]
+
             # Shortage penalty cost (if shortages allowed)
             shortage_cost = 0.0
             if self.allow_shortages:
@@ -1282,12 +1371,13 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                             for p in model.products:
                                 truck_cost += var_cost * model.truck_load[truck_idx, dest, p, d]
 
-            return labor_cost + production_cost + transport_cost + shortage_cost + truck_cost
+            # Total cost = labor + production + transport + inventory + truck + shortage
+            return labor_cost + production_cost + transport_cost + inventory_cost + truck_cost + shortage_cost
 
         model.obj = Objective(
             rule=objective_rule,
             sense=minimize,
-            doc="Minimize total cost (labor + production + transport + shortage penalty)"
+            doc="Minimize total cost (labor + production + transport + inventory + truck + shortage penalty)"
         )
 
         return model
@@ -1377,6 +1467,17 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                     total_shortage_units += qty
                     total_shortage_cost += self.cost_structure.shortage_penalty_per_unit * qty
 
+        # Extract inventory levels
+        inventory_by_dest_product_date: Dict[Tuple[str, str, Date], float] = {}
+        total_inventory_cost = 0.0
+        holding_cost_per_unit_day = self.cost_structure.storage_cost_ambient_per_unit_day
+
+        for dest, prod, date in model.inventory_index:
+            qty = value(model.inventory[dest, prod, date])
+            if qty > 1e-6:  # Only include non-zero inventory
+                inventory_by_dest_product_date[(dest, prod, date)] = qty
+                total_inventory_cost += holding_cost_per_unit_day * qty
+
         # Extract truck assignment data (if truck schedules provided)
         truck_used_by_date: Dict[Tuple[int, Date], bool] = {}
         truck_loads_by_truck_dest_product_date: Dict[Tuple[int, str, str, Date], float] = {}
@@ -1416,15 +1517,17 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             'labor_cost_by_date': labor_cost_by_date,
             'shipments_by_route_product_date': shipments_by_route_product_date,
             'shortages_by_dest_product_date': shortages_by_dest_product_date,
+            'inventory_by_dest_product_date': inventory_by_dest_product_date,  # NEW
             'truck_used_by_date': truck_used_by_date if self.truck_schedules else {},
             'truck_loads_by_truck_dest_product_date': truck_loads_by_truck_dest_product_date if self.truck_schedules else {},
             'total_labor_cost': total_labor_cost,
             'total_production_cost': total_production_cost,
             'total_transport_cost': total_transport_cost,
+            'total_inventory_cost': total_inventory_cost,  # NEW
             'total_truck_cost': total_truck_cost,
             'total_shortage_cost': total_shortage_cost,
             'total_shortage_units': total_shortage_units,
-            'total_cost': total_labor_cost + total_production_cost + total_transport_cost + total_truck_cost + total_shortage_cost,
+            'total_cost': total_labor_cost + total_production_cost + total_transport_cost + total_inventory_cost + total_truck_cost + total_shortage_cost,  # Updated
         }
 
     def get_shipment_plan(self) -> Optional[List[Shipment]]:
@@ -1547,6 +1650,8 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         print(f"  Labor Cost:      ${solution['total_labor_cost']:>12,.2f}")
         print(f"  Production Cost: ${solution['total_production_cost']:>12,.2f}")
         print(f"  Transport Cost:  ${solution['total_transport_cost']:>12,.2f}")
+        if solution.get('total_inventory_cost', 0) > 0:
+            print(f"  Inventory Cost:  ${solution['total_inventory_cost']:>12,.2f}")
         if self.truck_schedules and solution.get('total_truck_cost', 0) > 0:
             print(f"  Truck Cost:      ${solution['total_truck_cost']:>12,.2f}")
         if self.allow_shortages and solution.get('total_shortage_cost', 0) > 0:

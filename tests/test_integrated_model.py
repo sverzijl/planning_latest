@@ -335,8 +335,11 @@ class TestIntegratedModelBuild:
         assert hasattr(pyomo_model, 'max_capacity_con')
 
         # Check new routing constraints exist
-        assert hasattr(pyomo_model, 'demand_satisfaction_con')
+        assert hasattr(pyomo_model, 'inventory_balance_con')
         assert hasattr(pyomo_model, 'flow_conservation_con')
+
+        # Check inventory variable exists
+        assert hasattr(pyomo_model, 'inventory')
 
     def test_build_model_creates_objective(
         self,

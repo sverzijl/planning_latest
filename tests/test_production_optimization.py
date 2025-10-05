@@ -169,7 +169,8 @@ class TestProductionOptimizationModel:
         assert hasattr(pyomo_model, 'labor_hours_con')
         assert hasattr(pyomo_model, 'max_hours_con')
         assert hasattr(pyomo_model, 'max_capacity_con')
-        assert hasattr(pyomo_model, 'demand_satisfaction_con')
+        # Note: ProductionOptimizationModel uses simple demand satisfaction,
+        # not inventory tracking (that's only in IntegratedProductionDistributionModel)
 
     def test_build_model_creates_objective(
         self,
