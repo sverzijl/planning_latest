@@ -371,6 +371,42 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         # Ambient routes: 17-day shelf life - 7-day minimum = 10 days max transit
         return transit_days <= self.max_product_age_days
 
+    def _get_truck_transit_days(self, truck_idx: int, dest_id: str) -> int:
+        """
+        Get transit days for truck from manufacturing to first-leg destination.
+
+        This is used to convert between departure dates and delivery dates:
+        - delivery_date = departure_date + transit_days
+        - departure_date = delivery_date - transit_days
+
+        Args:
+            truck_idx: Truck index
+            dest_id: Destination ID (first-leg from manufacturing)
+
+        Returns:
+            Transit time in days (integer, rounded up for fractional days)
+        """
+        import math
+
+        truck = self.truck_by_index[truck_idx]
+
+        # Find routes from manufacturing to this destination
+        for route_idx in self.route_indices:
+            route = self.route_enumerator.get_route(route_idx)
+            if route and route.origin_id == self.manufacturing_site.id:
+                # Check if this route's first leg goes to dest_id
+                first_leg_dest = route.path[1] if len(route.path) >= 2 else route.destination_id
+
+                if first_leg_dest == dest_id:
+                    # Get first leg transit time
+                    # Use ceil() to round up: 1.5 days → 2 days
+                    # This ensures delivery_date accounts for full transit duration
+                    if route.route_path and route.route_path.route_legs:
+                        return math.ceil(route.route_path.route_legs[0].transit_days)
+
+        # Default: 1 day transit if not found (conservative)
+        return 1
+
     def _enumerate_routes(self) -> None:
         """Enumerate feasible routes from manufacturing to destinations."""
         # Build network graph
@@ -765,11 +801,13 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 model.trucks,
                 model.dates,
                 within=Binary,
-                doc="Binary indicator if truck is used on date"
+                doc="Binary indicator if truck is used on DELIVERY DATE"
             )
 
-            # Continuous variable: truck_load[truck_index, destination, product, date]
+            # Continuous variable: truck_load[truck_index, destination, product, delivery_date]
             # Quantity of product loaded on truck going to specific destination
+            # IMPORTANT: Indexed by DELIVERY DATE (not departure date)
+            # delivery_date = departure_date + transit_days
             # This allows trucks with intermediate stops (like Wednesday Lineage route)
             # to carry different products to different destinations
             model.truck_load = Var(
@@ -778,7 +816,7 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 model.products,
                 model.dates,
                 within=NonNegativeReals,
-                doc="Quantity loaded on truck to destination by product and date"
+                doc="Quantity loaded on truck to destination by product and DELIVERY DATE"
             )
 
         # Decision variables: shortage[dest, product, delivery_date] (if allowed)
@@ -1087,14 +1125,36 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             )
 
             # Constraint: Truck availability (day-specific scheduling)
-            def truck_availability_rule(model, truck_idx, d):
-                """Truck can only be used on dates it runs."""
-                trucks_available = self.trucks_on_date.get(d, [])
-                if truck_idx not in trucks_available:
-                    # Truck doesn't run on this date
-                    return model.truck_used[truck_idx, d] == 0
+            def truck_availability_rule(model, truck_idx, delivery_date):
+                """Truck can only be used on delivery dates corresponding to valid departure dates."""
+                # Check if this truck can deliver on delivery_date
+                # Get truck object
+                truck = self.truck_by_index[truck_idx]
+
+                # Check primary destination
+                dest_id = truck.destination_id
+                transit_days = self._get_truck_transit_days(truck_idx, dest_id)
+                departure_date = delivery_date - timedelta(days=transit_days)
+
+                # Check if truck runs on the required departure date
+                trucks_available = self.trucks_on_date.get(departure_date, [])
+                can_deliver = truck_idx in trucks_available
+
+                # Also check intermediate stops if any
+                if not can_deliver and truck_idx in self.trucks_with_intermediate_stops:
+                    for stop_id in self.trucks_with_intermediate_stops[truck_idx]:
+                        transit_days = self._get_truck_transit_days(truck_idx, stop_id)
+                        departure_date = delivery_date - timedelta(days=transit_days)
+                        trucks_available = self.trucks_on_date.get(departure_date, [])
+                        if truck_idx in trucks_available:
+                            can_deliver = True
+                            break
+
+                if not can_deliver:
+                    # Truck cannot deliver on this date (no valid departure date)
+                    return model.truck_used[truck_idx, delivery_date] == 0
                 else:
-                    # Truck runs on this date - no constraint (can be 0 or 1)
+                    # Truck can deliver on this date - no constraint (can be 0 or 1)
                     return Constraint.Skip
 
             model.truck_availability_con = Constraint(
@@ -1185,20 +1245,34 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             # Only create constraints for trucks that:
             # 1. Actually serve each destination
             # 2. Actually run on each date (excluding weekends/holidays)
+            # Build valid (truck, dest, delivery_date) tuples
+            # Convert from departure dates to delivery dates based on transit time
             valid_truck_dest_date_tuples = []
             for departure_date in model.dates:
                 # Only consider trucks that run on this date
                 for truck_idx in self.trucks_on_date.get(departure_date, []):
                     # Only consider destinations this truck serves
                     truck = self.truck_by_index[truck_idx]
+
                     # Primary destination
                     if truck.destination_id in model.truck_destinations:
-                        valid_truck_dest_date_tuples.append((truck_idx, truck.destination_id, departure_date))
+                        transit_days = self._get_truck_transit_days(truck_idx, truck.destination_id)
+                        delivery_date = departure_date + timedelta(days=transit_days)
+
+                        # Only include if delivery_date is within planning horizon
+                        if delivery_date in model.dates:
+                            valid_truck_dest_date_tuples.append((truck_idx, truck.destination_id, delivery_date))
+
                     # Intermediate stop destinations
                     if truck_idx in self.trucks_with_intermediate_stops:
                         for stop_id in self.trucks_with_intermediate_stops[truck_idx]:
                             if stop_id in model.truck_destinations:
-                                valid_truck_dest_date_tuples.append((truck_idx, stop_id, departure_date))
+                                transit_days = self._get_truck_transit_days(truck_idx, stop_id)
+                                delivery_date = departure_date + timedelta(days=transit_days)
+
+                                # Only include if delivery_date is within planning horizon
+                                if delivery_date in model.dates:
+                                    valid_truck_dest_date_tuples.append((truck_idx, stop_id, delivery_date))
 
 
             def truck_production_timing_rule(model, truck_idx, dest, departure_date, prod):
@@ -1240,32 +1314,52 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             # PERFORMANCE OPTIMIZATION: Use aggregated formulation over products
             # This reduces constraints by 5x and breaks dense per-product coupling
 
-            def truck_morning_timing_agg_rule(model, truck_idx, dest, departure_date):
-                """Morning trucks: total load <= total D-1 production (aggregated over products)."""
+            def truck_morning_timing_agg_rule(model, truck_idx, dest, delivery_date):
+                """Morning trucks: load on DELIVERY_DATE <= D-1 production on DEPARTURE_DATE (aggregated over products)."""
                 truck = self.truck_by_index[truck_idx]
                 if truck.departure_type != 'morning':
                     return Constraint.Skip
 
+                # Calculate departure date from delivery date
+                # delivery_date = departure_date + transit_days
+                # Therefore: departure_date = delivery_date - transit_days
+                transit_days = self._get_truck_transit_days(truck_idx, dest)
+                departure_date = delivery_date - timedelta(days=transit_days)
+
+                # Can't depart before planning horizon
+                if departure_date not in model.dates:
+                    return sum(model.truck_load[truck_idx, dest, p, delivery_date] for p in model.products) == 0
+
+                # Morning trucks load D-1 production (relative to departure)
                 d_minus_1 = departure_date - timedelta(days=1)
                 if d_minus_1 not in model.dates:
-                    return sum(model.truck_load[truck_idx, dest, p, departure_date] for p in model.products) == 0
+                    return sum(model.truck_load[truck_idx, dest, p, delivery_date] for p in model.products) == 0
 
                 # Aggregate: sum of loads <= sum of D-1 production
-                return (sum(model.truck_load[truck_idx, dest, p, departure_date] for p in model.products) <=
+                return (sum(model.truck_load[truck_idx, dest, p, delivery_date] for p in model.products) <=
                         sum(model.production[d_minus_1, p] for p in model.products))
 
-            def truck_afternoon_timing_agg_rule(model, truck_idx, dest, departure_date):
-                """Afternoon trucks: total load <= total D-1 + D0 production (aggregated over products)."""
+            def truck_afternoon_timing_agg_rule(model, truck_idx, dest, delivery_date):
+                """Afternoon trucks: load on DELIVERY_DATE <= D-1 + D0 production on DEPARTURE_DATE (aggregated over products)."""
                 truck = self.truck_by_index[truck_idx]
                 if truck.departure_type != 'afternoon':
                     return Constraint.Skip
 
+                # Calculate departure date from delivery date
+                transit_days = self._get_truck_transit_days(truck_idx, dest)
+                departure_date = delivery_date - timedelta(days=transit_days)
+
+                # Can't depart before planning horizon
+                if departure_date not in model.dates:
+                    return sum(model.truck_load[truck_idx, dest, p, delivery_date] for p in model.products) == 0
+
+                # Afternoon trucks can load D-1 OR D0 production (relative to departure)
                 d_minus_1 = departure_date - timedelta(days=1)
                 if d_minus_1 not in model.dates:
-                    return sum(model.truck_load[truck_idx, dest, p, departure_date] for p in model.products) == 0
+                    return sum(model.truck_load[truck_idx, dest, p, delivery_date] for p in model.products) == 0
 
                 # Aggregate: sum of loads <= sum of (D-1 + D0) production
-                return (sum(model.truck_load[truck_idx, dest, p, departure_date] for p in model.products) <=
+                return (sum(model.truck_load[truck_idx, dest, p, delivery_date] for p in model.products) <=
                         sum(model.production[d_minus_1, p] + model.production[departure_date, p] for p in model.products))
 
             # Create separate constraints for morning and afternoon trucks
