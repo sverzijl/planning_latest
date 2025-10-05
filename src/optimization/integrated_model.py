@@ -787,6 +787,14 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             doc="Hours paid on non-fixed days (includes minimum commitment)"
         )
 
+        # Binary variable to track if production happens on each date
+        # Needed for fixed-day labor cost calculation
+        model.production_day = Var(
+            model.dates,
+            within=Binary,
+            doc="Binary indicator: 1 if production happens on this date, 0 otherwise"
+        )
+
         # Constraint: Labor hours = production / production_rate
         def labor_hours_rule(model, d):
             return model.labor_hours[d] == sum(
@@ -819,13 +827,36 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             doc="Maximum production capacity per day"
         )
 
+        # Constraint: Link production_day binary to actual production
+        # If any production happens, production_day = 1
+        def production_day_rule(model, d):
+            total_production = sum(model.production[d, p] for p in model.products)
+            # Big-M constraint: if production > 0, then production_day must be 1
+            # We use max_capacity_per_day as the big-M value
+            return total_production <= self.max_capacity_per_day * model.production_day[d]
+
+        model.production_day_con = Constraint(
+            model.dates,
+            rule=production_day_rule,
+            doc="Link production_day binary to actual production"
+        )
+
         # Constraints: Calculate fixed hours and overtime for fixed days
         def fixed_hours_rule(model, d):
+            """
+            CRITICAL FIX: On fixed days (weekdays), if you produce ANYTHING,
+            you must pay for ALL fixed hours (12 hours), not just the hours used.
+
+            This prevents the optimizer from incorrectly choosing weekend work
+            by under-costing weekday production.
+            """
             labor_day = self.labor_by_date.get(d)
             if not labor_day or not labor_day.is_fixed_day:
                 return model.fixed_hours_used[d] == 0
             else:
-                return model.fixed_hours_used[d] <= labor_day.fixed_hours
+                # If production happens (production_day=1), must pay for all fixed hours
+                # If no production (production_day=0), pay for zero fixed hours
+                return model.fixed_hours_used[d] == labor_day.fixed_hours * model.production_day[d]
 
         model.fixed_hours_rule = Constraint(
             model.dates,
@@ -833,26 +864,36 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             doc="Fixed hours calculation"
         )
 
-        def fixed_hours_upper_rule(model, d):
-            return model.fixed_hours_used[d] <= model.labor_hours[d]
-
-        model.fixed_hours_upper = Constraint(
-            model.dates,
-            rule=fixed_hours_upper_rule,
-            doc="Fixed hours ≤ actual hours"
-        )
-
         def overtime_hours_rule(model, d):
+            """
+            Overtime hours calculation for fixed days.
+
+            Overtime only occurs if labor_hours > fixed_hours.
+            With the new fixed_hours_used = fixed_hours * production_day logic,
+            we need: overtime = max(0, labor_hours - fixed_hours)
+            """
             labor_day = self.labor_by_date.get(d)
             if not labor_day or not labor_day.is_fixed_day:
                 return model.overtime_hours_used[d] == 0
             else:
-                return model.overtime_hours_used[d] == model.labor_hours[d] - model.fixed_hours_used[d]
+                # Overtime is the excess over fixed hours (if any)
+                # Must be >= 0 and >= (labor_hours - fixed_hours)
+                return model.overtime_hours_used[d] >= model.labor_hours[d] - labor_day.fixed_hours
+
+        def overtime_hours_lower_rule(model, d):
+            """Overtime hours must be non-negative."""
+            return model.overtime_hours_used[d] >= 0
 
         model.overtime_hours_rule = Constraint(
             model.dates,
             rule=overtime_hours_rule,
             doc="Overtime hours calculation"
+        )
+
+        model.overtime_hours_lower = Constraint(
+            model.dates,
+            rule=overtime_hours_lower_rule,
+            doc="Overtime hours non-negative"
         )
 
         # Constraints: Non-fixed day labor calculation
