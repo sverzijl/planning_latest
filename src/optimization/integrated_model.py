@@ -986,14 +986,16 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
 
             # Constraint: Link truck loads to route shipments
             # For routes from manufacturing to immediate destinations (first leg),
-            # the total shipment on those routes must equal truck loads
-            def truck_route_linking_rule(model, dest_id, d):
+            # the shipment of each product on those routes must equal truck loads for that product
+            def truck_route_linking_rule(model, dest_id, product_id, d):
                 """
-                Shipments from manufacturing to destination on date d
-                must equal truck loads to that destination on date d.
+                Shipments of a specific product from manufacturing to destination on date d
+                must equal truck loads of that product to that destination on date d.
 
-                Now with destination-specific truck loads, this constraint properly
-                handles trucks with intermediate stops (like Wednesday Lineage route).
+                CRITICAL: This constraint must be indexed by (dest, PRODUCT, date) to ensure
+                that shipments of each product match truck loads of that same product.
+                Without the product dimension, products can be mixed (e.g., shipments of
+                product A "satisfied" by truck loads of product B).
                 """
                 # Get all routes that go directly from manufacturing to this destination
                 # These are routes where origin = manufacturing_site_id and immediate destination = dest_id
@@ -1017,24 +1019,21 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
 
                 if not trucks_to_dest:
                     # No trucks to this destination - routes can't be used
-                    # Force shipments to be zero
+                    # Force shipments of this product to be zero
                     return sum(
-                        model.shipment[r, p, d]
+                        model.shipment[r, product_id, d]
                         for r in direct_routes
-                        for p in model.products
                     ) == 0
 
-                # Sum of shipments on direct routes = sum of truck loads TO THIS DESTINATION
+                # Sum of shipments of THIS PRODUCT on direct routes = sum of truck loads of THIS PRODUCT
                 total_route_shipments = sum(
-                    model.shipment[r, p, d]
+                    model.shipment[r, product_id, d]
                     for r in direct_routes
-                    for p in model.products
                 )
 
                 total_truck_loads = sum(
-                    model.truck_load[t, dest_id, p, d]  # Now includes destination!
+                    model.truck_load[t, dest_id, product_id, d]
                     for t in trucks_to_dest
-                    for p in model.products
                 )
 
                 return total_route_shipments == total_truck_loads
@@ -1052,9 +1051,10 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
 
             model.truck_route_linking_con = Constraint(
                 list(first_leg_destinations),  # Use actual route first-leg destinations
+                model.products,  # CRITICAL: Include product dimension to prevent product mixing
                 model.dates,
                 rule=truck_route_linking_rule,
-                doc="Link truck loads to route shipments from manufacturing (by destination)"
+                doc="Link truck loads to route shipments from manufacturing (by destination, product, and date)"
             )
 
             # NEW CONSTRAINT: Truck loading timing (D-1 vs D0)
