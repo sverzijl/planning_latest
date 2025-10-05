@@ -1460,14 +1460,16 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                     # Get immediate next hop from route (first leg destination)
                     immediate_destination = shipment.first_leg_destination
 
-                    # Look for truck load matching: destination, product, and departure date
-                    # departure date = delivery_date - transit_days (already calculated as production_date)
-                    departure_date = shipment.production_date
+                    # CRITICAL FIX: truck_loads are indexed by DELIVERY date, not departure date!
+                    # The model variables truck_load[truck, dest, prod, d] and shipment[route, prod, d]
+                    # both use the same date index 'd', which is the delivery date (from demand_satisfaction_con).
+                    # So we must match on delivery_date, not production_date/departure_date.
+                    matching_date = shipment.delivery_date
 
                     for (truck_idx, dest, prod, date), quantity in truck_loads.items():
                         if (dest == immediate_destination and
                             prod == shipment.product_id and
-                            date == departure_date):
+                            date == matching_date):
                             # Found matching truck - assign it
                             truck = self.truck_by_index[truck_idx]
                             shipment.assigned_truck_id = truck.id
