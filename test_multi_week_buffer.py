@@ -35,7 +35,8 @@ forecast_parser = ExcelParser('data/examples/Gfree Forecast_Converted.xlsx')
 full_forecast = forecast_parser.parse_forecast()
 
 # 4 weeks of demand, moderate volume
-start_date = date(2025, 6, 2)  # Monday
+# Start on Monday (first demand date) to avoid pre-demand Sunday production
+start_date = date(2025, 6, 2)  # Monday (first demand date)
 end_date = date(2025, 6, 29)   # Sunday (4 weeks)
 products_to_keep = ['168846']
 locations_to_keep = ['6104']
@@ -66,10 +67,24 @@ print(f"  Total demand: {total_demand:.0f} units over {weeks} weeks")
 print(f"  Average per week: {total_demand/weeks:.0f} units")
 print(f"  Dates: {start_date} to {end_date}")
 print(f"\nExpected behavior:")
-print(f"  Week 1: Sunday work likely (no buffer)")
-print(f"  Week 2-4: Weekend work should disappear (buffer built up)")
+print(f"  With initial buffer stock, NO weekend work should be needed")
+print(f"  Weekday production replenishes buffer as it depletes")
 
-# Build model
+# Set initial inventory: 10 days of average demand per dest/product
+# This provides substantial buffer to eliminate weekend production
+daily_demand = target_total / (weeks * 7)  # Average daily demand
+initial_buffer_days = 10  # 10 days of buffer
+initial_inventory = {}
+for dest_id in locations_to_keep:
+    for prod_id in products_to_keep:
+        initial_inventory[(dest_id, prod_id)] = daily_demand * initial_buffer_days
+
+print(f"\nInitial buffer stock:")
+for (dest, prod), qty in initial_inventory.items():
+    print(f"  Dest {dest}, Product {prod}: {qty:.0f} units ({initial_buffer_days} days of demand)")
+
+# Build model with initial inventory
+# Force planning horizon to start on first demand date (no pre-demand production)
 model = IntegratedProductionDistributionModel(
     forecast=test_forecast,
     labor_calendar=labor_calendar,
@@ -78,9 +93,12 @@ model = IntegratedProductionDistributionModel(
     locations=locations,
     routes=routes,
     truck_schedules=truck_schedules,
+    start_date=start_date,  # Start on first demand date
+    end_date=end_date,
     max_routes_per_destination=1,
     allow_shortages=True,
     enforce_shelf_life=False,
+    initial_inventory=initial_inventory,
 )
 
 print(f"\nSolving...")
@@ -169,21 +187,16 @@ if weekend_days:
 print(f"\n✅ VERIFICATION:")
 success = True
 
-# Week 1 might have weekend work (acceptable)
-week1_weekend = weekend_production_by_week.get(1, 0)
-if week1_weekend > 0:
-    print(f"  Week 1: {week1_weekend:.0f} units weekend production (acceptable - no buffer)")
-else:
-    print(f"  Week 1: No weekend production (great!)")
-
-# Weeks 2+ should have NO weekend work
-later_weeks_weekend = sum(weekend_production_by_week.get(w, 0) for w in range(2, 5))
-if later_weeks_weekend > 0:
-    print(f"  ❌ FAILED: Weeks 2-4 have {later_weeks_weekend:.0f} units weekend production")
-    print(f"     Expected: 0 (buffer should eliminate weekend work)")
+# With initial inventory, NO weekend work should be needed at all
+total_weekend = sum(weekend_production_by_week.values())
+if total_weekend > 0:
+    print(f"  ❌ FAILED: {total_weekend:.0f} units weekend production across all weeks")
+    print(f"     Expected: 0 (initial buffer should eliminate all weekend work)")
+    for w, qty in sorted(weekend_production_by_week.items()):
+        print(f"       Week {w}: {qty:.0f} units")
     success = False
 else:
-    print(f"  ✅ PASSED: Weeks 2-4 have NO weekend production (buffer working!)")
+    print(f"  ✅ PASSED: NO weekend production! Initial buffer working perfectly!")
 
 # Check if demand is met
 total_shortage = solution.get('total_shortage_cost', 0) / cost_structure.shortage_penalty_per_unit

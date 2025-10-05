@@ -107,6 +107,7 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         max_product_age_days: int = 10,
         validate_feasibility: bool = True,
         truck_schedules: Optional[TruckScheduleCollection] = None,
+        initial_inventory: Optional[Dict[Tuple[str, str], float]] = None,
     ):
         """
         Initialize integrated production-distribution model.
@@ -127,6 +128,7 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             max_product_age_days: Maximum product age at delivery (17-day shelf life - 7-day min = 10 days)
             validate_feasibility: If True, validate feasibility before building model (default: True)
             truck_schedules: Optional collection of truck schedules (if None, no truck constraints)
+            initial_inventory: Optional dict mapping (dest_id, product_id) to initial inventory quantity
         """
         super().__init__(solver_config)
 
@@ -141,6 +143,7 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         self.enforce_shelf_life = enforce_shelf_life
         self.max_product_age_days = max_product_age_days
         self._validate_feasibility_flag = validate_feasibility
+        self.initial_inventory = initial_inventory or {}
 
         # Validate truck_schedules type
         if truck_schedules is not None:
@@ -1008,11 +1011,11 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             if self.allow_shortages and (dest, prod, date) in self.demand:
                 shortage_qty = model.shortage[dest, prod, date]
 
-            # Previous inventory (0 if first date)
+            # Previous inventory
             prev_date = self.date_previous.get(date)
             if prev_date is None:
-                # First date: assume zero initial inventory
-                prev_inventory = 0
+                # First date: use initial inventory if provided, otherwise 0
+                prev_inventory = self.initial_inventory.get((dest, prod), 0)
             else:
                 # Check if previous date inventory exists in sparse index
                 if (dest, prod, prev_date) in inventory_index_set:
