@@ -77,6 +77,21 @@ def create_mock_solver_config():
             mock_results.solver.status = SolverStatus.ok
             mock_results.solver.termination_condition = TerminationCondition.optimal
 
+            # Set problem bounds to avoid Mock type errors
+            mock_problem = Mock()
+            mock_problem.upper_bound = 1000.0
+            mock_problem.lower_bound = 1000.0
+            mock_results.problem = mock_problem
+
+            # Set solution for objective value extraction
+            mock_solution = Mock()
+            mock_objective = Mock()
+            mock_objective_value = Mock()
+            mock_objective_value.value = 1000.0
+            mock_objective.values = Mock(return_value=[mock_objective_value])
+            mock_solution.objective = mock_objective
+            mock_results.solution = Mock(return_value=mock_solution)
+
             # Mock the load_from method (no-op since values already set)
             def mock_load_from(results):
                 pass

@@ -125,8 +125,8 @@ def labor_calendar():
 
     for i in range(7):
         day_date = start_date + timedelta(days=i)
-        # Weekdays: 12h fixed
-        if i < 5:
+        # Weekdays (Mon-Fri): 12h fixed
+        if day_date.weekday() < 5:  # Use actual weekday, not loop index
             days.append(
                 LaborDay(
                     date=day_date,
@@ -136,7 +136,7 @@ def labor_calendar():
                     is_fixed_day=True,
                 )
             )
-        # Weekends: non-fixed
+        # Weekends (Sat-Sun): non-fixed
         else:
             days.append(
                 LaborDay(

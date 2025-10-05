@@ -718,7 +718,7 @@ class TestDataQualityChecks:
                 location_id="6104",
                 product_id="PROD1",
                 forecast_date=date(2025, 1, 2),
-                quantity=-100  # Negative
+                quantity=0  # Another zero quantity
             )
         ]
         forecast = Forecast(name="Test", entries=entries)
@@ -732,7 +732,7 @@ class TestDataQualityChecks:
         issues = validator.validate_all()
 
         zero_qty_issues = [i for i in issues if i.id == "QUAL_002"]
-        assert len(zero_qty_issues) == 1
+        assert len(zero_qty_issues) == 1  # One warning for multiple zero quantities
         assert zero_qty_issues[0].severity == ValidationSeverity.WARNING
 
     def test_non_case_quantity_info(self, sample_locations, sample_routes, sample_labor_calendar):

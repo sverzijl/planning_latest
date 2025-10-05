@@ -426,16 +426,28 @@ class DataValidator:
         daily_regular_capacity = self.MAX_REGULAR_HOURS * self.PRODUCTION_RATE  # 16,800
         daily_max_capacity = self.MAX_DAILY_HOURS * self.PRODUCTION_RATE  # 19,600
 
-        # Count working days (days with fixed hours > 0)
-        working_days = len([day for day in self.labor_calendar.days
-                           if day.fixed_hours > 0])
-        total_days_in_calendar = len(self.labor_calendar.days)
+        # Count working days WITHIN THE FORECAST PERIOD (not entire calendar)
+        # This ensures capacity validation matches the actual planning horizon
+        working_days = 0
+        weekend_days = 0
+        for day in self.labor_calendar.days:
+            if start_date <= day.date <= end_date:
+                if day.fixed_hours > 0:
+                    working_days += 1
+                else:
+                    weekend_days += 1
+
+        # Fallback: if no calendar coverage for forecast period, estimate from weekday pattern
+        if working_days == 0 and weekend_days == 0:
+            planning_days = (end_date - start_date).days + 1
+            # Estimate 5/7 of days are weekdays (Mon-Fri)
+            working_days = int(planning_days * 5 / 7)
+            weekend_days = planning_days - working_days
 
         regular_capacity = working_days * daily_regular_capacity
         max_capacity_weekdays = working_days * daily_max_capacity
 
         # Absolute max includes weekends (if needed)
-        weekend_days = total_days_in_calendar - working_days
         absolute_max_capacity = max_capacity_weekdays + (weekend_days * daily_max_capacity)
 
         # Check capacity levels

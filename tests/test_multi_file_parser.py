@@ -84,11 +84,11 @@ class TestMultiFileParser:
         parser = MultiFileParser(network_file=network_config_path)
         labor_calendar = parser.parse_labor_calendar()
 
-        assert len(labor_calendar.days) == 204  # Jun 2 - Dec 22, 2025
-        assert labor_calendar.days[0].date.month == 6
-        assert labor_calendar.days[0].date.day == 2
+        assert len(labor_calendar.days) == 211  # May 26 - Dec 22, 2025 (extended by 7 days before forecast)
+        assert labor_calendar.days[0].date.month == 5
+        assert labor_calendar.days[0].date.day == 26
 
-        # Check first day (Monday Jun 2, 2025)
+        # Check first day (Monday May 26, 2025)
         first_day = labor_calendar.days[0]
         assert first_day.fixed_hours == 12.0
         assert first_day.is_fixed_day

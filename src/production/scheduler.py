@@ -316,7 +316,8 @@ class ProductionScheduler:
             direction = 1
             max_search = 7
 
-        check_date = target_date + timedelta(days=direction)
+        # Start from target_date, let the loop increment
+        check_date = target_date
 
         for _ in range(max_search):
             labor_day = self.labor_calendar.get_labor_day(check_date)
