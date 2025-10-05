@@ -1060,7 +1060,28 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             # NEW CONSTRAINT: Truck loading timing (D-1 vs D0)
             # Morning trucks can only load D-1 production (previous day)
             # Afternoon trucks can load D-1 or D0 production (previous day or same day)
-            def truck_production_timing_rule(model, truck_idx, dest, prod, departure_date):
+
+            # Build sparse index set of valid (truck_idx, dest, date) tuples
+            # Only create constraints for trucks that:
+            # 1. Actually serve each destination
+            # 2. Actually run on each date (excluding weekends/holidays)
+            valid_truck_dest_date_tuples = []
+            for departure_date in model.dates:
+                # Only consider trucks that run on this date
+                for truck_idx in self.trucks_on_date.get(departure_date, []):
+                    # Only consider destinations this truck serves
+                    truck = self.truck_by_index[truck_idx]
+                    # Primary destination
+                    if truck.destination_id in model.truck_destinations:
+                        valid_truck_dest_date_tuples.append((truck_idx, truck.destination_id, departure_date))
+                    # Intermediate stop destinations
+                    if truck_idx in self.trucks_with_intermediate_stops:
+                        for stop_id in self.trucks_with_intermediate_stops[truck_idx]:
+                            if stop_id in model.truck_destinations:
+                                valid_truck_dest_date_tuples.append((truck_idx, stop_id, departure_date))
+
+
+            def truck_production_timing_rule(model, truck_idx, dest, departure_date, prod):
                 """
                 Restrict truck loads based on production timing:
                 - Morning trucks (8am): Can only load production from (departure_date - 1)
@@ -1092,14 +1113,60 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                         model.production[d_minus_1, prod] + model.production[departure_date, prod]
                     )
 
-            model.truck_production_timing_con = Constraint(
-                model.trucks,
-                model.truck_destinations,
-                model.products,
-                model.dates,
-                rule=truck_production_timing_rule,
-                doc="Truck loading timing: Morning trucks load D-1, afternoon trucks load D-1 or D0"
-            )
+            # D-1/D0 Timing Constraint: Restrict truck loading based on production timing
+            # Morning trucks can only load D-1 production (previous day)
+            # Afternoon trucks can load D-1 or D0 production (previous or same day)
+            #
+            # PERFORMANCE OPTIMIZATION: Use aggregated formulation over products
+            # This reduces constraints by 5x and breaks dense per-product coupling
+
+            def truck_morning_timing_agg_rule(model, truck_idx, dest, departure_date):
+                """Morning trucks: total load <= total D-1 production (aggregated over products)."""
+                truck = self.truck_by_index[truck_idx]
+                if truck.departure_type != 'morning':
+                    return Constraint.Skip
+
+                d_minus_1 = departure_date - timedelta(days=1)
+                if d_minus_1 not in model.dates:
+                    return sum(model.truck_load[truck_idx, dest, p, departure_date] for p in model.products) == 0
+
+                # Aggregate: sum of loads <= sum of D-1 production
+                return (sum(model.truck_load[truck_idx, dest, p, departure_date] for p in model.products) <=
+                        sum(model.production[d_minus_1, p] for p in model.products))
+
+            def truck_afternoon_timing_agg_rule(model, truck_idx, dest, departure_date):
+                """Afternoon trucks: total load <= total D-1 + D0 production (aggregated over products)."""
+                truck = self.truck_by_index[truck_idx]
+                if truck.departure_type != 'afternoon':
+                    return Constraint.Skip
+
+                d_minus_1 = departure_date - timedelta(days=1)
+                if d_minus_1 not in model.dates:
+                    return sum(model.truck_load[truck_idx, dest, p, departure_date] for p in model.products) == 0
+
+                # Aggregate: sum of loads <= sum of (D-1 + D0) production
+                return (sum(model.truck_load[truck_idx, dest, p, departure_date] for p in model.products) <=
+                        sum(model.production[d_minus_1, p] + model.production[departure_date, p] for p in model.products))
+
+            # Create separate constraints for morning and afternoon trucks
+            morning_tuples = [(t, d, dt) for (t, d, dt) in valid_truck_dest_date_tuples
+                            if self.truck_by_index[t].departure_type == 'morning']
+            afternoon_tuples = [(t, d, dt) for (t, d, dt) in valid_truck_dest_date_tuples
+                              if self.truck_by_index[t].departure_type == 'afternoon']
+
+            if morning_tuples:
+                model.truck_morning_timing_agg_con = Constraint(
+                    morning_tuples,
+                    rule=truck_morning_timing_agg_rule,
+                    doc="Morning trucks load D-1 production (aggregated over products)"
+                )
+
+            if afternoon_tuples:
+                model.truck_afternoon_timing_agg_con = Constraint(
+                    afternoon_tuples,
+                    rule=truck_afternoon_timing_agg_rule,
+                    doc="Afternoon trucks load D-1 or D0 production (aggregated over products)"
+                )
 
         # Objective: Minimize total cost = labor + production + transport + shortage penalty
         def objective_rule(model):
