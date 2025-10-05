@@ -141,6 +141,19 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         self.enforce_shelf_life = enforce_shelf_life
         self.max_product_age_days = max_product_age_days
         self._validate_feasibility_flag = validate_feasibility
+
+        # Validate truck_schedules type
+        if truck_schedules is not None:
+            if isinstance(truck_schedules, list):
+                raise TypeError(
+                    "truck_schedules must be a TruckScheduleCollection, not a list. "
+                    "Wrap your list: TruckScheduleCollection(schedules=your_list)"
+                )
+            if not isinstance(truck_schedules, TruckScheduleCollection):
+                raise TypeError(
+                    f"truck_schedules must be a TruckScheduleCollection, got {type(truck_schedules).__name__}"
+                )
+
         self.truck_schedules = truck_schedules
 
         # Store user-provided dates

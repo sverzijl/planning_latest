@@ -207,7 +207,11 @@ with tab_upload:
                             network_file=network_path
                         )
 
-                        forecast_obj, locations, routes, labor_calendar, truck_schedules, cost_structure = parser.parse_all()
+                        forecast_obj, locations, routes, labor_calendar, truck_schedules_list, cost_structure = parser.parse_all()
+
+                        # Wrap truck_schedules list in TruckScheduleCollection
+                        from src.models.truck_schedule import TruckScheduleCollection
+                        truck_schedules = TruckScheduleCollection(schedules=truck_schedules_list)
 
                         # Find manufacturing site
                         manufacturing_site = None

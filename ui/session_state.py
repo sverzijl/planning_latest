@@ -13,7 +13,7 @@ from src.models.forecast import Forecast
 from src.models.location import Location
 from src.models.route import Route
 from src.models.labor_calendar import LaborCalendar
-from src.models.truck_schedule import TruckSchedule
+from src.models.truck_schedule import TruckSchedule, TruckScheduleCollection
 from src.models.cost_structure import CostStructure
 from src.models.manufacturing import ManufacturingSite
 from src.network import NetworkGraphBuilder, RouteFinder
@@ -116,13 +116,18 @@ def store_parsed_data(
     locations: list[Location],
     routes: list[Route],
     labor_calendar: LaborCalendar,
-    truck_schedules: list[TruckSchedule],
+    truck_schedules: TruckScheduleCollection,
     cost_structure: CostStructure,
     manufacturing_site: ManufacturingSite,
     forecast_filename: str = None,
     network_filename: str = None,
 ):
-    """Store parsed data in session state."""
+    """Store parsed data in session state.
+
+    Note: truck_schedules should be a TruckScheduleCollection, not a list.
+    If you have a list from the parser, wrap it:
+        TruckScheduleCollection(schedules=truck_schedules_list)
+    """
     st.session_state.forecast = forecast
     st.session_state.locations = locations
     st.session_state.routes = routes
