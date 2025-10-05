@@ -157,11 +157,14 @@ def _create_truck_plan_from_optimization(model: Any, shipments: List[Shipment]) 
         capacity_utilization = total_pallets / capacity_pallets if capacity_pallets > 0 else 0
 
         # Create TruckLoad
+        # Handle departure_type - might be DepartureType enum or string
+        departure_type_str = truck_schedule.departure_type.value if hasattr(truck_schedule.departure_type, 'value') else truck_schedule.departure_type
+
         truck_load = TruckLoad(
             truck_schedule_id=truck_schedule.id,
             truck_name=truck_schedule.truck_name,
             departure_date=departure_date,
-            departure_type=truck_schedule.departure_type.value,
+            departure_type=departure_type_str,
             departure_time=truck_schedule.departure_time,
             destination_id=destination_id or "UNKNOWN",
             shipments=shipment_list,

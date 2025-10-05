@@ -183,10 +183,23 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         self.destinations: Set[str] = {e.location_id for e in self.forecast.entries}
 
         # Disaggregate demand by location-date-product
+        # Filter to only include demand within planning horizon
         self.demand: Dict[Tuple[str, str, Date], float] = {}
+        filtered_demand_count = 0
         for entry in self.forecast.entries:
-            key = (entry.location_id, entry.product_id, entry.forecast_date)
-            self.demand[key] = entry.quantity
+            # Only include demand within planning horizon
+            if self.start_date <= entry.forecast_date <= self.end_date:
+                key = (entry.location_id, entry.product_id, entry.forecast_date)
+                self.demand[key] = entry.quantity
+            else:
+                filtered_demand_count += 1
+
+        if filtered_demand_count > 0:
+            warnings.warn(
+                f"Filtered {filtered_demand_count} demand entries outside planning horizon "
+                f"[{self.start_date}, {self.end_date}]. "
+                f"Extend planning horizon to include all forecast demand."
+            )
 
         # Total demand by product (for reporting)
         self.total_demand_by_product: Dict[str, float] = defaultdict(float)
@@ -474,6 +487,17 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 f"  Solution: Extend planning horizon or accept reduced demand satisfaction."
             )
 
+        # Check if user-provided end date is too early
+        if final_end < required_end:
+            days_short = (required_end - final_end).days
+            warnings.warn(
+                f"\nPlanning horizon end date may be insufficient:\n"
+                f"  Current end: {final_end}\n"
+                f"  Required end: {required_end} ({days_short} days later)\n"
+                f"  Late demand (on {forecast_end}) will be filtered out.\n"
+                f"  Solution: Extend planning horizon end date to include all demand."
+            )
+
         # Update planning horizon
         self.start_date = final_start
         self.end_date = final_end
@@ -491,6 +515,24 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             labor_day = self.labor_calendar.get_labor_day(prod_date)
             if labor_day:
                 self.labor_by_date[prod_date] = labor_day
+
+        # Re-filter demand to ensure consistency with adjusted planning horizon
+        # This handles the case where dates were extended after initial demand creation
+        filtered_demand = {}
+        filtered_count = 0
+        for (dest, prod, deliv_date), qty in self.demand.items():
+            if self.start_date <= deliv_date <= self.end_date:
+                filtered_demand[(dest, prod, deliv_date)] = qty
+            else:
+                filtered_count += 1
+
+        if filtered_count > 0:
+            warnings.warn(
+                f"Re-filtered {filtered_count} demand entries after planning horizon adjustment. "
+                f"Adjusted horizon: [{self.start_date}, {self.end_date}]"
+            )
+
+        self.demand = filtered_demand
 
     def _validate_feasibility(self) -> None:
         """
