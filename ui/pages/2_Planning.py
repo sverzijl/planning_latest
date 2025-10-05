@@ -406,6 +406,7 @@ with tab_optimization:
                     cost_structure=data['cost_structure'],
                     locations=data['locations'],
                     routes=data['routes'],
+                    truck_schedules=data['truck_schedules'],
                     max_routes_per_destination=max_routes,
                     allow_shortages=allow_shortages,
                     enforce_shelf_life=enforce_shelf_life,

@@ -32,6 +32,7 @@ from pyomo.environ import (
     Constraint,
     Objective,
     NonNegativeReals,
+    Binary,
     minimize,
     value,
 )
