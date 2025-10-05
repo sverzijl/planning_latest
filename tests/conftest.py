@@ -12,6 +12,7 @@ from src.models import (
     Forecast,
     ForecastEntry,
 )
+from tests.fixtures.solver_mocks import create_mock_solver_config
 
 
 @pytest.fixture
@@ -99,3 +100,18 @@ def sample_forecast():
         ),
     ]
     return Forecast(name="Sample Forecast", entries=entries)
+
+
+@pytest.fixture
+def mock_solver_config():
+    """
+    Fixture for mock solver configuration.
+
+    Provides a mock SolverConfig that bypasses actual solver installation
+    and testing. Useful for optimization model tests that don't need
+    actual solver execution.
+
+    Returns:
+        Mock SolverConfig object with create_solver() method
+    """
+    return create_mock_solver_config()

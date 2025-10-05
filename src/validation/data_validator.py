@@ -211,7 +211,7 @@ class DataValidator:
                     "1. Ensure network configuration file contains 'LaborCalendar' sheet\n"
                     "2. Define daily labor availability for planning horizon\n\n"
                     "**Required columns:**\n"
-                    "- date, fixed_hours, cost_per_fixed_hour, cost_per_overtime_hour, cost_per_non_fixed_hour"
+                    "- date, fixed_hours, regular_rate, overtime_rate, non_fixed_rate"
                 )
             ))
 
@@ -382,8 +382,8 @@ class DataValidator:
                     invalid_truck_destinations.append({
                         'truck_name': schedule.truck_name,
                         'destination_id': schedule.destination_id,
-                        'day_of_week': schedule.day_of_week.name if schedule.day_of_week else None,
-                        'departure_type': schedule.departure_type.name
+                        'day_of_week': schedule.day_of_week.name if (schedule.day_of_week and hasattr(schedule.day_of_week, 'name')) else schedule.day_of_week,
+                        'departure_type': schedule.departure_type.name if hasattr(schedule.departure_type, 'name') else schedule.departure_type
                     })
 
             if invalid_truck_destinations:
@@ -741,7 +741,7 @@ class DataValidator:
                     'origin_id': route.origin_id,
                     'destination_id': route.destination_id,
                     'transit_time_days': route.transit_time_days,
-                    'transport_mode': route.transport_mode.name if route.transport_mode else None,
+                    'transport_mode': route.transport_mode.name if (route.transport_mode and hasattr(route.transport_mode, 'name')) else route.transport_mode,
                     'excess_days': route.transit_time_days - self.MAX_SAFE_TRANSIT_DAYS
                 })
 
@@ -1143,7 +1143,7 @@ class DataValidator:
                             'date': day.date,
                             'day_of_week': ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][day.date.weekday()],
                             'fixed_hours': day.fixed_hours,
-                            'cost_per_hour': day.cost_per_non_fixed_hour or day.cost_per_fixed_hour
+                            'cost_per_hour': day.non_fixed_rate or day.regular_rate
                         })
 
             if weekend_days_with_hours:
@@ -1162,7 +1162,7 @@ class DataValidator:
                     fix_guidance=(
                         "**Standard weekend labor model:**\n"
                         "- fixed_hours = 0 (no standard shift)\n"
-                        "- Use cost_per_non_fixed_hour for premium rate\n"
+                        "- Use non_fixed_rate for premium rate\n"
                         "- 4-hour minimum payment applies\n\n"
                         "**If weekend shifts are standard:**\n"
                         "This is acceptable if regular weekend operations are planned.\n"

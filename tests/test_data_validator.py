@@ -1,7 +1,7 @@
 """Unit tests for data validator."""
 
 import pytest
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, time
 from src.validation import DataValidator, ValidationIssue, ValidationSeverity
 from src.models import (
     Forecast, ForecastEntry, Location, LocationType, StorageMode,
@@ -107,15 +107,27 @@ def sample_truck_schedules():
     """Create sample truck schedules."""
     return [
         TruckSchedule(
+            id="T1",
             truck_name="Morning to VIC",
             departure_type=DepartureType.MORNING,
+            departure_time=time(8, 0),
             destination_id="6125",
+            capacity=14080.0,
+            pallet_capacity=44,
+            units_per_pallet=320,
+            units_per_case=10,
             day_of_week=DayOfWeek.MONDAY
         ),
         TruckSchedule(
+            id="T2",
             truck_name="Afternoon to NSW",
             departure_type=DepartureType.AFTERNOON,
+            departure_time=time(14, 0),
             destination_id="6104",
+            capacity=14080.0,
+            pallet_capacity=44,
+            units_per_pallet=320,
+            units_per_case=10,
             day_of_week=DayOfWeek.MONDAY
         ),
     ]
@@ -331,9 +343,12 @@ class TestConsistencyChecks:
         """Test detection of truck schedule with invalid destination."""
         truck_schedules = [
             TruckSchedule(
+                id="TEST1",
                 truck_name="Test Truck",
                 departure_type=DepartureType.MORNING,
+                departure_time=time(8, 0),
                 destination_id="INVALID_DEST",
+                capacity=14080.0,
                 day_of_week=DayOfWeek.MONDAY
             )
         ]
@@ -917,15 +932,21 @@ class TestTransportCapacityChecks:
         # 2 trucks per week
         truck_schedules = [
             TruckSchedule(
+                id="TRUCK1",
                 truck_name="Truck1",
                 departure_type=DepartureType.MORNING,
+                departure_time=time(8, 0),
                 destination_id="6104",
+                capacity=14080.0,
                 day_of_week=DayOfWeek.MONDAY
             ),
             TruckSchedule(
+                id="TRUCK2",
                 truck_name="Truck2",
                 departure_type=DepartureType.AFTERNOON,
+                departure_time=time(14, 0),
                 destination_id="6104",
+                capacity=14080.0,
                 day_of_week=DayOfWeek.MONDAY
             ),
         ]
