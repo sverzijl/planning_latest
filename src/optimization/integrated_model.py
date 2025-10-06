@@ -494,11 +494,11 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
 
     def _calculate_required_planning_horizon(self) -> Tuple[Date, Date]:
         """
-        Calculate required planning horizon accounting for transit times.
+        Calculate required planning horizon accounting for transit times AND truck loading timing.
 
         To satisfy demand on a given date, production must occur earlier
-        by the transit time. This method calculates the earliest production
-        date needed to satisfy all forecast demands.
+        by the transit time. Additionally, morning trucks require D-1 production
+        (production from the previous day), so we need an extra day at the start.
 
         Returns:
             (earliest_start_date, latest_end_date) tuple
@@ -514,7 +514,8 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
 
         # Production must start (max_transit_days) before earliest delivery
         # to allow time for shipments to reach destinations
-        required_start = earliest_delivery - timedelta(days=int(max_transit_days))
+        # PLUS 1 additional day for D-1 production requirement (morning trucks load previous day's production)
+        required_start = earliest_delivery - timedelta(days=int(max_transit_days) + 1)
 
         return required_start, latest_delivery
 

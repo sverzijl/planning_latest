@@ -106,11 +106,11 @@ class TestTruckAssignmentIntegration:
         """
         # Use a short planning horizon for faster testing
         # Use dates from the forecast range (June - December 2025)
-        start_date = Date(2025, 6, 2)  # First date in forecast
-        end_date = start_date + timedelta(days=13)  # 2 weeks for buffer
+        # Let model calculate start_date (accounts for D-1 production + transit times)
+        end_date = Date(2025, 6, 15)  # 2 weeks from first forecast date
 
         print(f"\n=== Building Optimization Model ===")
-        print(f"Planning horizon: {start_date} to {end_date}")
+        print(f"Planning horizon end: {end_date} (start will be auto-calculated)")
 
         # Build model WITH truck_schedules (critical!)
         model = IntegratedProductionDistributionModel(
@@ -121,13 +121,14 @@ class TestTruckAssignmentIntegration:
             locations=parsed_data['locations'],
             routes=parsed_data['routes'],
             truck_schedules=parsed_data['truck_schedules'],  # CRITICAL: Must pass truck_schedules!
-            start_date=start_date,
-            end_date=end_date,
+            end_date=end_date,  # Only specify end, let model calculate required start
             max_routes_per_destination=1,  # Limit to 1 route for simpler model
             allow_shortages=True,  # Allow shortages for feasibility
             enforce_shelf_life=False,  # Disable shelf life filtering to simplify
             validate_feasibility=False,  # Skip validation for faster testing
         )
+
+        print(f"Actual planning horizon: {min(model.production_dates)} to {max(model.production_dates)} ({len(model.production_dates)} days)")
 
         # Verify truck data was extracted
         assert model.truck_schedules is not None, "Model should have truck_schedules"
