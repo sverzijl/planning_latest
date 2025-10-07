@@ -41,7 +41,7 @@ from src.models.forecast import Forecast
 from src.models.labor_calendar import LaborCalendar, LaborDay
 from src.models.manufacturing import ManufacturingSite
 from src.models.cost_structure import CostStructure
-from src.models.location import Location
+from src.models.location import Location, LocationType, StorageMode
 from src.models.route import Route
 from src.models.shipment import Shipment
 from src.models.production_batch import ProductionBatch
@@ -197,6 +197,29 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
 
         # Set of destination locations (from forecast)
         self.destinations: Set[str] = {e.location_id for e in self.forecast.entries}
+
+        # STATE TRACKING: Location storage mode categorization
+        # Create location lookup dictionary
+        self.location_by_id: Dict[str, Location] = {loc.id: loc for loc in self.locations}
+
+        # Categorize locations by storage capability
+        self.locations_frozen_storage: Set[str] = {
+            loc.id for loc in self.locations
+            if loc.storage_mode in [StorageMode.FROZEN, StorageMode.BOTH]
+        }
+        self.locations_ambient_storage: Set[str] = {
+            loc.id for loc in self.locations
+            if loc.storage_mode in [StorageMode.AMBIENT, StorageMode.BOTH]
+        }
+
+        # Identify intermediate storage locations (storage type, no demand)
+        self.intermediate_storage: Set[str] = {
+            loc.id for loc in self.locations
+            if loc.type == LocationType.STORAGE and loc.id not in self.destinations
+        }
+
+        # All locations that need inventory tracking (destinations + intermediate)
+        self.inventory_locations: Set[str] = self.destinations | self.intermediate_storage
 
         # Disaggregate demand by location-date-product
         # Filter to only include demand within planning horizon
@@ -492,6 +515,26 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         for r in self.enumerated_routes:
             self.routes_to_destination[r.destination_id].append(r.index)
 
+        # STATE TRACKING: Determine arrival state for each route
+        # frozen route + frozen-only destination → frozen
+        # anything else → ambient (thaws if needed)
+        self.route_arrival_state: Dict[int, str] = {}  # route_index -> 'frozen' or 'ambient'
+
+        for route in self.enumerated_routes:
+            dest_loc = self.location_by_id.get(route.destination_id)
+
+            # Check if route is frozen throughout
+            is_frozen_route = self._is_frozen_route(route)
+
+            # Determine arrival state
+            if is_frozen_route and dest_loc and dest_loc.storage_mode == StorageMode.FROZEN:
+                # Frozen route to frozen-only storage → stays frozen
+                self.route_arrival_state[route.index] = 'frozen'
+            else:
+                # Everything else arrives as ambient
+                # (thaws if frozen route to non-frozen destination)
+                self.route_arrival_state[route.index] = 'ambient'
+
     def _calculate_required_planning_horizon(self) -> Tuple[Date, Date]:
         """
         Calculate required planning horizon accounting for transit times AND truck loading timing.
@@ -755,17 +798,28 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             else:
                 self.date_previous[current_date] = sorted_dates[i - 1]
 
-        # Create sparse index set for inventory variables
-        # Only create variables for (destination, product, date) combinations with demand
-        # This significantly reduces model size
-        self.inventory_index_set = set()
-        for (dest, prod, date) in self.demand.keys():
-            # Add all dates from first demand date through end of horizon for this dest-prod
-            # This allows inventory to build up before first demand
-            for d in sorted_dates:
-                self.inventory_index_set.add((dest, prod, d))
+        # STATE TRACKING: Create sparse index sets for state-specific inventory variables
+        # Include both demand locations and intermediate storage (e.g., Lineage)
+        self.inventory_frozen_index_set = set()
+        self.inventory_ambient_index_set = set()
 
-        model.inventory_index = list(self.inventory_index_set)
+        for loc in self.inventory_locations:
+            loc_obj = self.location_by_id.get(loc)
+            if not loc_obj:
+                continue
+
+            for prod in self.products:
+                for date in sorted_dates:
+                    # Add frozen inventory if location supports frozen storage
+                    if loc in self.locations_frozen_storage:
+                        self.inventory_frozen_index_set.add((loc, prod, date))
+
+                    # Add ambient inventory if location supports ambient storage
+                    if loc in self.locations_ambient_storage:
+                        self.inventory_ambient_index_set.add((loc, prod, date))
+
+        model.inventory_frozen_index = list(self.inventory_frozen_index_set)
+        model.inventory_ambient_index = list(self.inventory_ambient_index_set)
 
         # Decision variables: production[date, product]
         model.production = Var(
@@ -830,14 +884,21 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 doc="Demand shortage by destination, product, and delivery date"
             )
 
-        # Decision variables: inventory[dest, product, date]
-        # Represents inventory level at destination at END of each date
+        # STATE TRACKING: Decision variables for frozen and ambient inventory
+        # inventory_frozen[loc, product, date]: Frozen inventory at location (no shelf life decay)
+        # inventory_ambient[loc, product, date]: Ambient inventory at location (subject to shelf life)
+        # Represents inventory level at location at END of each date
         # After shipments arrive and demand is satisfied
-        # This enables buffer stock to accumulate and eliminate unnecessary weekend production
-        model.inventory = Var(
-            model.inventory_index,
+        model.inventory_frozen = Var(
+            model.inventory_frozen_index,
             within=NonNegativeReals,
-            doc="Inventory at destination at end of date (after demand satisfaction)"
+            doc="Frozen inventory at location by product and date (no shelf life decay)"
+        )
+
+        model.inventory_ambient = Var(
+            model.inventory_ambient_index,
+            within=NonNegativeReals,
+            doc="Ambient/thawed inventory at location by product and date (subject to shelf life)"
         )
 
         # Auxiliary variables for labor cost calculation
@@ -1001,81 +1062,150 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             doc="Non-fixed hours >= minimum commitment"
         )
 
-        # INVENTORY BALANCE CONSTRAINT
-        # Replaces simple demand satisfaction with dynamic inventory tracking
+        # STATE TRACKING: INVENTORY BALANCE CONSTRAINTS
+        # Two separate constraints for frozen and ambient inventory states
         #
-        # Balance equation: inventory[t] = inventory[t-1] + arrivals[t] - demand[t] - shortage[t]
+        # FROZEN BALANCE: frozen[t] = frozen[t-1] + frozen_arrivals[t] - frozen_outflows[t]
+        # AMBIENT BALANCE: ambient[t] = ambient[t-1] + ambient_arrivals[t] - demand[t] - shortage[t]
         #
-        # This enables:
-        # - Buffer stock to accumulate over time
-        # - Demand satisfaction from inventory + shipments (not just shipments)
-        # - Strategic inventory positioning to minimize weekend production
-        def inventory_balance_rule(model, dest, prod, date):
+        # Key rule: Frozen routes to non-frozen destinations automatically thaw → arrive as ambient
+
+        def inventory_frozen_balance_rule(model, loc, prod, date):
             """
-            Inventory balance at destination for each date.
+            Frozen inventory balance at location.
 
-            inventory[t] = inventory[t-1] + shipments_arriving[t] - demand[t] - shortage[t]
+            frozen_inv[t] = frozen_inv[t-1] + frozen_arrivals[t] - frozen_outflows[t]
 
-            For the first date in planning horizon:
-                inventory[t] = 0 + shipments[t] - demand[t] - shortage[t]
-                (assumes zero initial inventory)
+            Frozen inventory:
+            - Increases from frozen route arrivals (frozen route + frozen-only destination)
+            - Decreases from outbound shipments on frozen routes (for intermediate storage)
+            - Does NOT satisfy demand directly (must thaw first)
+            - No shelf life decay (120-day limit is generous)
 
             Args:
-                dest: Destination location ID
+                loc: Location ID (destination or intermediate storage)
                 prod: Product ID
                 date: Date (end of day)
-
-            Returns:
-                Constraint expression
             """
-            # Get routes to this destination
-            route_list = self.routes_to_destination.get(dest, [])
+            # Get routes delivering frozen to this location
+            routes_frozen_arrival = [
+                r for r in self.routes_to_destination.get(loc, [])
+                if self.route_arrival_state.get(r) == 'frozen'
+            ]
 
-            if not route_list:
-                # No routes to destination - inventory must be zero
-                # (Will be infeasible if demand > 0 and shortages not allowed)
-                return model.inventory[dest, prod, date] == 0
-
-            # Sum of shipments arriving on this date
-            arrivals = sum(
+            # Frozen arrivals
+            frozen_arrivals = sum(
                 model.shipment[r, prod, date]
-                for r in route_list
+                for r in routes_frozen_arrival
             )
 
-            # Demand on this date (0 if no demand)
-            demand_qty = self.demand.get((dest, prod, date), 0.0)
+            # Frozen outflows (shipments departing from this location)
+            # Only relevant for intermediate storage like Lineage
+            frozen_outflows = 0
+            if loc in self.intermediate_storage:
+                # Find routes originating from this location
+                routes_from_loc = [
+                    r for r in self.route_indices
+                    if self.route_enumerator.get_route(r).origin_id == loc
+                ]
+                # Sum outbound shipments departing on this date
+                for r in routes_from_loc:
+                    route = self.route_enumerator.get_route(r)
+                    # Shipment variable is indexed by delivery_date
+                    # To find shipments departing on 'date', we need delivery_date where:
+                    # departure_date = delivery_date - transit_days = date
+                    # Therefore: delivery_date = date + transit_days
+                    delivery_date = date + timedelta(days=int(route.total_transit_days))
+                    if delivery_date in model.dates:
+                        frozen_outflows += model.shipment[r, prod, delivery_date]
 
-            # Shortage on this date (0 if shortages not allowed or no demand on this date)
-            shortage_qty = 0
-            if self.allow_shortages and (dest, prod, date) in self.demand:
-                shortage_qty = model.shortage[dest, prod, date]
-
-            # Previous inventory
+            # Previous frozen inventory
             prev_date = self.date_previous.get(date)
             if prev_date is None:
                 # First date: use initial inventory if provided, otherwise 0
-                prev_inventory = self.initial_inventory.get((dest, prod), 0)
+                # Note: initial_inventory can be Dict[(loc, prod), qty] or Dict[(loc, prod, state), qty]
+                # Try state-specific first, then fallback to non-state
+                prev_frozen = self.initial_inventory.get((loc, prod, 'frozen'),
+                              self.initial_inventory.get((loc, prod), 0))
             else:
                 # Check if previous date inventory exists in sparse index
-                if (dest, prod, prev_date) in self.inventory_index_set:
-                    prev_inventory = model.inventory[dest, prod, prev_date]
+                if (loc, prod, prev_date) in self.inventory_frozen_index_set:
+                    prev_frozen = model.inventory_frozen[loc, prod, prev_date]
                 else:
-                    # Previous date not in index (shouldn't happen with our construction)
-                    prev_inventory = 0
+                    prev_frozen = 0
 
-            # Balance equation:
-            # inventory[t] = inventory[t-1] + arrivals[t] - demand[t] - shortage[t]
-            #
-            # Rearranged for Pyomo:
-            # inventory[t] = prev_inventory + arrivals - demand - shortage
-            return model.inventory[dest, prod, date] == (
-                prev_inventory + arrivals - demand_qty - shortage_qty
+            # Balance equation
+            return model.inventory_frozen[loc, prod, date] == (
+                prev_frozen + frozen_arrivals - frozen_outflows
             )
 
-        model.inventory_balance_con = Constraint(
-            model.inventory_index,
-            rule=inventory_balance_rule,
-            doc="Inventory balance at destinations (daily)"
+        model.inventory_frozen_balance_con = Constraint(
+            model.inventory_frozen_index,
+            rule=inventory_frozen_balance_rule,
+            doc="Frozen inventory balance at locations (no shelf life decay)"
+        )
+
+        def inventory_ambient_balance_rule(model, loc, prod, date):
+            """
+            Ambient inventory balance at location.
+
+            ambient_inv[t] = ambient_inv[t-1] + ambient_arrivals[t] - demand[t] - shortage[t]
+
+            Ambient inventory:
+            - Increases from ambient route arrivals (includes automatic thawing from frozen routes)
+            - Decreases from demand satisfaction (only at demand locations)
+            - Subject to shelf life constraints (17 days ambient, 14 days post-thaw)
+
+            Args:
+                loc: Location ID (destination or intermediate storage)
+                prod: Product ID
+                date: Date (end of day)
+            """
+            # Get routes delivering ambient to this location
+            # This includes:
+            # - True ambient routes
+            # - Frozen routes that thaw on arrival (frozen route to non-frozen destination)
+            routes_ambient_arrival = [
+                r for r in self.routes_to_destination.get(loc, [])
+                if self.route_arrival_state.get(r) == 'ambient'
+            ]
+
+            # Ambient arrivals (includes automatic thawing)
+            ambient_arrivals = sum(
+                model.shipment[r, prod, date]
+                for r in routes_ambient_arrival
+            )
+
+            # Demand on this date (0 if no demand or intermediate storage)
+            demand_qty = self.demand.get((loc, prod, date), 0.0)
+
+            # Shortage
+            shortage_qty = 0
+            if self.allow_shortages and (loc, prod, date) in self.demand:
+                shortage_qty = model.shortage[loc, prod, date]
+
+            # Previous ambient inventory
+            prev_date = self.date_previous.get(date)
+            if prev_date is None:
+                # First date: use initial inventory if provided, otherwise 0
+                prev_ambient = self.initial_inventory.get((loc, prod, 'ambient'),
+                               self.initial_inventory.get((loc, prod), 0))
+            else:
+                # Check if previous date inventory exists in sparse index
+                if (loc, prod, prev_date) in self.inventory_ambient_index_set:
+                    prev_ambient = model.inventory_ambient[loc, prod, prev_date]
+                else:
+                    prev_ambient = 0
+
+            # Balance equation
+            return model.inventory_ambient[loc, prod, date] == (
+                prev_ambient + ambient_arrivals - demand_qty - shortage_qty
+            )
+
+        model.inventory_ambient_balance_con = Constraint(
+            model.inventory_ambient_index,
+            rule=inventory_ambient_balance_rule,
+            doc="Ambient inventory balance at locations (subject to shelf life)"
         )
 
         # NEW CONSTRAINT: Flow conservation (production >= shipments)
@@ -1429,18 +1559,27 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                     for d in model.dates:
                         transport_cost += route_cost * model.shipment[r, p, d]
 
-            # INVENTORY HOLDING COST (NEW)
-            # Cost to hold inventory at destinations (incentivizes JIT while allowing buffering)
-            # Uses ambient storage rate (frozen tracking would require mode-specific variables)
+            # STATE TRACKING: INVENTORY HOLDING COST (state-specific rates)
+            # Frozen storage typically more expensive than ambient
+            # Cost incentivizes JIT delivery while allowing strategic buffering
             inventory_cost = 0.0
-            holding_cost_per_unit_day = self.cost_structure.storage_cost_ambient_per_unit_day
-            # Defensive check for None or infinity
-            if holding_cost_per_unit_day is None or not math.isfinite(holding_cost_per_unit_day):
-                holding_cost_per_unit_day = 0.0
 
-            # Sum inventory costs across all destinations, products, dates
-            for dest, prod, date in model.inventory_index:
-                inventory_cost += holding_cost_per_unit_day * model.inventory[dest, prod, date]
+            # Get holding cost rates (with defensive checks)
+            frozen_holding_rate = self.cost_structure.storage_cost_frozen_per_unit_day
+            if frozen_holding_rate is None or not math.isfinite(frozen_holding_rate):
+                frozen_holding_rate = 0.0
+
+            ambient_holding_rate = self.cost_structure.storage_cost_ambient_per_unit_day
+            if ambient_holding_rate is None or not math.isfinite(ambient_holding_rate):
+                ambient_holding_rate = 0.0
+
+            # Sum frozen inventory costs
+            for loc, prod, date in model.inventory_frozen_index:
+                inventory_cost += frozen_holding_rate * model.inventory_frozen[loc, prod, date]
+
+            # Sum ambient inventory costs
+            for loc, prod, date in model.inventory_ambient_index:
+                inventory_cost += ambient_holding_rate * model.inventory_ambient[loc, prod, date]
 
             # Shortage penalty cost (if shortages allowed)
             shortage_cost = 0.0
@@ -1565,16 +1704,28 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                     total_shortage_units += qty
                     total_shortage_cost += self.cost_structure.shortage_penalty_per_unit * qty
 
-        # Extract inventory levels
-        inventory_by_dest_product_date: Dict[Tuple[str, str, Date], float] = {}
+        # STATE TRACKING: Extract state-specific inventory levels
+        inventory_frozen_by_loc_product_date: Dict[Tuple[str, str, Date], float] = {}
+        inventory_ambient_by_loc_product_date: Dict[Tuple[str, str, Date], float] = {}
         total_inventory_cost = 0.0
-        holding_cost_per_unit_day = self.cost_structure.storage_cost_ambient_per_unit_day
 
-        for dest, prod, date in model.inventory_index:
-            qty = value(model.inventory[dest, prod, date])
+        # Get holding cost rates
+        frozen_holding_rate = self.cost_structure.storage_cost_frozen_per_unit_day or 0.0
+        ambient_holding_rate = self.cost_structure.storage_cost_ambient_per_unit_day or 0.0
+
+        # Extract frozen inventory
+        for loc, prod, date in model.inventory_frozen_index:
+            qty = value(model.inventory_frozen[loc, prod, date])
             if qty > 1e-6:  # Only include non-zero inventory
-                inventory_by_dest_product_date[(dest, prod, date)] = qty
-                total_inventory_cost += holding_cost_per_unit_day * qty
+                inventory_frozen_by_loc_product_date[(loc, prod, date)] = qty
+                total_inventory_cost += frozen_holding_rate * qty
+
+        # Extract ambient inventory
+        for loc, prod, date in model.inventory_ambient_index:
+            qty = value(model.inventory_ambient[loc, prod, date])
+            if qty > 1e-6:  # Only include non-zero inventory
+                inventory_ambient_by_loc_product_date[(loc, prod, date)] = qty
+                total_inventory_cost += ambient_holding_rate * qty
 
         # Extract truck assignment data (if truck schedules provided)
         truck_used_by_date: Dict[Tuple[int, Date], bool] = {}
@@ -1615,13 +1766,20 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             'labor_cost_by_date': labor_cost_by_date,
             'shipments_by_route_product_date': shipments_by_route_product_date,
             'shortages_by_dest_product_date': shortages_by_dest_product_date,
-            'inventory_by_dest_product_date': inventory_by_dest_product_date,  # NEW
+            # STATE TRACKING: State-specific inventory data
+            'inventory_frozen_by_loc_product_date': inventory_frozen_by_loc_product_date,
+            'inventory_ambient_by_loc_product_date': inventory_ambient_by_loc_product_date,
+            # Backward compatibility: combined inventory (for existing UI code)
+            'inventory_by_dest_product_date': {
+                **{k: v for k, v in inventory_frozen_by_loc_product_date.items()},
+                **{k: v for k, v in inventory_ambient_by_loc_product_date.items()}
+            },
             'truck_used_by_date': truck_used_by_date if self.truck_schedules else {},
             'truck_loads_by_truck_dest_product_date': truck_loads_by_truck_dest_product_date if self.truck_schedules else {},
             'total_labor_cost': total_labor_cost,
             'total_production_cost': total_production_cost,
             'total_transport_cost': total_transport_cost,
-            'total_inventory_cost': total_inventory_cost,  # NEW
+            'total_inventory_cost': total_inventory_cost,
             'total_truck_cost': total_truck_cost,
             'total_shortage_cost': total_shortage_cost,
             'total_shortage_units': total_shortage_units,

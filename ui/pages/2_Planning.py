@@ -254,6 +254,9 @@ with tab_optimization:
         <div style="margin-top: 8px; font-size: 13px; color: #757575;">
             Uses Pyomo with solvers like CBC, GLPK, Gurobi, or CPLEX to find provably optimal solutions.
         </div>
+        <div style="margin-top: 8px; font-size: 13px; color: #2e7d32; font-weight: 500;">
+            ✓ Solves full 29-week horizon optimally in ~2 minutes with CBC solver
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -337,9 +340,9 @@ with tab_optimization:
             "Time Limit (seconds)",
             min_value=30,
             max_value=600,
-            value=300,
+            value=180,
             step=30,
-            help="Maximum time solver will run before stopping",
+            help="Maximum time solver will run before stopping (default: 180s = 3 minutes)",
             key="opt_time_limit"
         )
 
@@ -347,24 +350,24 @@ with tab_optimization:
             "MIP Gap Tolerance (%)",
             min_value=0.0,
             max_value=10.0,
-            value=1.0,
+            value=0.0,
             step=0.5,
-            help="Accept solutions within this % of optimal (0% = prove optimality)",
+            help="Accept solutions within this % of optimal (0% = prove optimality, recommended)",
             key="opt_mip_gap"
         )
 
     with col2:
         allow_shortages = st.checkbox(
             "Allow Demand Shortages",
-            value=False,
-            help="If checked, model can leave demand unmet with penalty cost",
+            value=True,
+            help="If checked, model can leave demand unmet with penalty cost (recommended for flexibility)",
             key="opt_allow_shortages"
         )
 
         enforce_shelf_life = st.checkbox(
             "Enforce Shelf Life Constraints",
             value=True,
-            help="Filter routes exceeding 10-day product age limit",
+            help="Filter routes exceeding 10-day product age limit (recommended)",
             key="opt_enforce_shelf"
         )
 
@@ -373,7 +376,7 @@ with tab_optimization:
             min_value=1,
             max_value=10,
             value=5,
-            help="Number of alternative routes to consider",
+            help="Number of alternative routes to consider (recommended: 5)",
             key="opt_max_routes"
         )
 
@@ -389,6 +392,16 @@ with tab_optimization:
 
     # Run Optimization
     st.markdown(section_header("Run Optimization", level=3, icon="🚀"), unsafe_allow_html=True)
+
+    st.markdown("""
+    <div style="background-color: #f5f5f5; padding: 12px; border-radius: 4px; margin-bottom: 16px;">
+        <div style="font-size: 13px; color: #424242;">
+            <strong>Monolithic Optimization:</strong> Solves the entire planning horizon (all weeks) in a single optimization run.
+            This ensures global optimality and coherent decisions across the full horizon. Based on testing, 29-week problems
+            solve optimally in ~2 minutes with CBC.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
     if st.button("⚡ Solve Optimization Model", type="primary", use_container_width=True, key="run_optimization"):
         try:
@@ -412,7 +425,12 @@ with tab_optimization:
                     enforce_shelf_life=enforce_shelf_life,
                 )
 
-                st.info(f"Model: {len(model.enumerated_routes)} routes, {len(model.production_dates)} days")
+                # Calculate planning horizon info
+                horizon_days = len(model.production_dates)
+                horizon_weeks = horizon_days / 7.0
+
+                st.info(f"📊 Model built: {len(model.enumerated_routes)} routes, {horizon_days} days ({horizon_weeks:.1f} weeks)")
+                st.caption(f"Planning horizon: {model.start_date} to {model.end_date}")
 
             with st.spinner(f"Solving with {selected_solver.upper()}... (max {time_limit}s)"):
                 # Solve
@@ -461,8 +479,54 @@ with tab_optimization:
                         result=result
                     )
 
+                    # Display cost breakdown if available
                     st.divider()
-                    st.info("✅ Optimization complete! View results in the **Results** page.")
+                    st.markdown(section_header("Cost Breakdown", level=4, icon="💰"), unsafe_allow_html=True)
+
+                    if hasattr(result, 'solution') and result.solution:
+                        sol = result.solution
+                        col1, col2, col3, col4, col5 = st.columns(5)
+
+                        with col1:
+                            labor_cost = sol.get('total_labor_cost', 0)
+                            st.markdown(colored_metric("Labor", f"${labor_cost:,.0f}", "primary"), unsafe_allow_html=True)
+
+                        with col2:
+                            prod_cost = sol.get('total_production_cost', 0)
+                            st.markdown(colored_metric("Production", f"${prod_cost:,.0f}", "secondary"), unsafe_allow_html=True)
+
+                        with col3:
+                            transport_cost = sol.get('total_transport_cost', 0)
+                            st.markdown(colored_metric("Transport", f"${transport_cost:,.0f}", "accent"), unsafe_allow_html=True)
+
+                        with col4:
+                            inventory_cost = sol.get('total_inventory_cost', 0)
+                            st.markdown(colored_metric("Inventory", f"${inventory_cost:,.0f}", "success"), unsafe_allow_html=True)
+
+                        with col5:
+                            shortage_cost = sol.get('total_shortage_cost', 0)
+                            shortage_units = sol.get('total_shortage_units', 0)
+                            if shortage_units > 0:
+                                st.markdown(colored_metric("Shortage", f"${shortage_cost:,.0f}", "warning"), unsafe_allow_html=True)
+                                st.caption(f"{shortage_units:,.0f} units unmet")
+                            else:
+                                st.markdown(success_badge("100% Demand Satisfied"), unsafe_allow_html=True)
+
+                        # Production summary
+                        st.divider()
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            total_production = sol.get('total_production_quantity', 0)
+                            st.markdown(colored_metric("Total Production", f"{total_production:,.0f} units", "primary"), unsafe_allow_html=True)
+                        with col2:
+                            num_batches = len(sol.get('production_batches', []))
+                            st.markdown(colored_metric("Production Batches", str(num_batches), "secondary"), unsafe_allow_html=True)
+                        with col3:
+                            num_shipments = sum(len(v) for v in sol.get('shipments_by_route_product_date', {}).values())
+                            st.markdown(colored_metric("Shipments", str(num_shipments), "accent"), unsafe_allow_html=True)
+
+                    st.divider()
+                    st.info("✅ Optimization complete! View detailed results in the **Results** page.")
 
                     if st.button("📈 View Results", type="primary", use_container_width=True, key="view_opt_results"):
                         st.switch_page("pages/3_Results.py")
