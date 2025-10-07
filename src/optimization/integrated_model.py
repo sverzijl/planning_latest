@@ -983,19 +983,22 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         # Constraints: Calculate fixed hours and overtime for fixed days
         def fixed_hours_rule(model, d):
             """
-            CRITICAL FIX: On fixed days (weekdays), if you produce ANYTHING,
-            you must pay for ALL fixed hours (12 hours), not just the hours used.
+            CRITICAL FIX: On fixed days (weekdays), workers are salaried and paid
+            for fixed hours REGARDLESS of production volume. This is a sunk cost.
 
-            This prevents the optimizer from incorrectly choosing weekend work
-            by under-costing weekday production.
+            Business Rule:
+            - Weekdays: Pay 12 fixed hours whether production = 0 or production > 0
+            - Weekends/Holidays: No fixed hours (only pay if production occurs)
+
+            This ensures the model prefers weekday production (effectively "free"
+            since labor is already paid) over weekend production ($40/hr + 4h minimum).
             """
             labor_day = self.labor_by_date.get(d)
             if not labor_day or not labor_day.is_fixed_day:
                 return model.fixed_hours_used[d] == 0
             else:
-                # If production happens (production_day=1), must pay for all fixed hours
-                # If no production (production_day=0), pay for zero fixed hours
-                return model.fixed_hours_used[d] == labor_day.fixed_hours * model.production_day[d]
+                # Weekdays: ALWAYS pay for fixed hours (sunk cost)
+                return model.fixed_hours_used[d] == labor_day.fixed_hours
 
         model.fixed_hours_rule = Constraint(
             model.dates,
