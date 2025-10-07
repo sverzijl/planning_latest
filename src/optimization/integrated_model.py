@@ -218,8 +218,9 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             if loc.type == LocationType.STORAGE and loc.id not in self.destinations
         }
 
-        # All locations that need inventory tracking (destinations + intermediate)
-        self.inventory_locations: Set[str] = self.destinations | self.intermediate_storage
+        # All locations that need inventory tracking (manufacturing + destinations + intermediate)
+        # Manufacturing site needs finished goods inventory for truck loading
+        self.inventory_locations: Set[str] = {self.manufacturing_site.location_id} | self.destinations | self.intermediate_storage
 
         # Disaggregate demand by location-date-product
         # Filter to only include demand within planning horizon
@@ -1189,58 +1190,96 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             """
             Ambient inventory balance at location.
 
+            MANUFACTURING SITE (6122):
+            ambient_inv[t] = ambient_inv[t-1] + production[t] - truck_loads_departing[t]
+
+            OTHER LOCATIONS (breadrooms, intermediate storage):
             ambient_inv[t] = ambient_inv[t-1] + ambient_arrivals[t] - demand[t] - shortage[t]
 
             Ambient inventory:
-            - Increases from ambient route arrivals (includes automatic thawing from frozen routes)
-            - Decreases from demand satisfaction (only at demand locations)
+            - At manufacturing: Increases from production, decreases from truck loading
+            - At destinations: Increases from route arrivals, decreases from demand
             - Subject to shelf life constraints (17 days ambient, 14 days post-thaw)
 
             Args:
-                loc: Location ID (destination or intermediate storage)
+                loc: Location ID (manufacturing, destination, or intermediate storage)
                 prod: Product ID
                 date: Date (end of day)
             """
-            # Get routes delivering ambient to this location
-            # This includes:
-            # - True ambient routes
-            # - Frozen routes that thaw on arrival (frozen route to non-frozen destination)
-            routes_ambient_arrival = [
-                r for r in self.routes_to_destination.get(loc, [])
-                if self.route_arrival_state.get(r) == 'ambient'
-            ]
+            # SPECIAL CASE: Manufacturing site finished goods inventory
+            if loc == self.manufacturing_site.location_id:
+                # Production adds to inventory
+                production_qty = model.production[date, prod]
 
-            # Ambient arrivals (includes automatic thawing)
-            ambient_arrivals = sum(
-                model.shipment[r, prod, date]
-                for r in routes_ambient_arrival
-            )
+                # Truck loading subtracts from inventory
+                # Trucks are indexed by delivery_date, but we need loads departing on 'date'
+                # For each truck, departure_date = delivery_date - transit_days
+                # So we need to find trucks where delivery_date - transit_days == date
+                truck_outflows = 0
+                if self.truck_schedules:
+                    for truck_idx in model.trucks:
+                        truck = self.truck_by_index[truck_idx]
+                        # For each delivery date, check if this truck departs on 'date'
+                        for delivery_date in model.dates:
+                            departure_date = delivery_date - timedelta(days=int(truck.transit_days))
+                            if departure_date == date:
+                                # Sum loads across all destinations for this product
+                                for dest in model.truck_destinations:
+                                    truck_outflows += model.truck_load[truck_idx, dest, prod, delivery_date]
 
-            # Demand on this date (0 if no demand or intermediate storage)
-            demand_qty = self.demand.get((loc, prod, date), 0.0)
-
-            # Shortage
-            shortage_qty = 0
-            if self.allow_shortages and (loc, prod, date) in self.demand:
-                shortage_qty = model.shortage[loc, prod, date]
-
-            # Previous ambient inventory
-            prev_date = self.date_previous.get(date)
-            if prev_date is None:
-                # First date: use initial inventory if provided, otherwise 0
-                prev_ambient = self.initial_inventory.get((loc, prod, 'ambient'),
-                               self.initial_inventory.get((loc, prod), 0))
-            else:
-                # Check if previous date inventory exists in sparse index
-                if (loc, prod, prev_date) in self.inventory_ambient_index_set:
-                    prev_ambient = model.inventory_ambient[loc, prod, prev_date]
+                # Previous inventory
+                prev_date = self.date_previous.get(date)
+                if prev_date is None:
+                    prev_ambient = self.initial_inventory.get((loc, prod, 'ambient'),
+                                   self.initial_inventory.get((loc, prod), 0))
                 else:
-                    prev_ambient = 0
+                    if (loc, prod, prev_date) in self.inventory_ambient_index_set:
+                        prev_ambient = model.inventory_ambient[loc, prod, prev_date]
+                    else:
+                        prev_ambient = 0
 
-            # Balance equation
-            return model.inventory_ambient[loc, prod, date] == (
-                prev_ambient + ambient_arrivals - demand_qty - shortage_qty
-            )
+                # Balance: inventory[t] = inventory[t-1] + production[t] - truck_loads[t]
+                return model.inventory_ambient[loc, prod, date] == (
+                    prev_ambient + production_qty - truck_outflows
+                )
+
+            # NORMAL CASE: Destination or intermediate storage
+            else:
+                # Get routes delivering ambient to this location
+                routes_ambient_arrival = [
+                    r for r in self.routes_to_destination.get(loc, [])
+                    if self.route_arrival_state.get(r) == 'ambient'
+                ]
+
+                # Ambient arrivals (includes automatic thawing)
+                ambient_arrivals = sum(
+                    model.shipment[r, prod, date]
+                    for r in routes_ambient_arrival
+                )
+
+                # Demand on this date (0 if no demand or intermediate storage)
+                demand_qty = self.demand.get((loc, prod, date), 0.0)
+
+                # Shortage
+                shortage_qty = 0
+                if self.allow_shortages and (loc, prod, date) in self.demand:
+                    shortage_qty = model.shortage[loc, prod, date]
+
+                # Previous ambient inventory
+                prev_date = self.date_previous.get(date)
+                if prev_date is None:
+                    prev_ambient = self.initial_inventory.get((loc, prod, 'ambient'),
+                                   self.initial_inventory.get((loc, prod), 0))
+                else:
+                    if (loc, prod, prev_date) in self.inventory_ambient_index_set:
+                        prev_ambient = model.inventory_ambient[loc, prod, prev_date]
+                    else:
+                        prev_ambient = 0
+
+                # Balance equation
+                return model.inventory_ambient[loc, prod, date] == (
+                    prev_ambient + ambient_arrivals - demand_qty - shortage_qty
+                )
 
         model.inventory_ambient_balance_con = Constraint(
             model.inventory_ambient_index,
@@ -1446,112 +1485,61 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                                     valid_truck_dest_date_tuples.append((truck_idx, stop_id, delivery_date))
 
 
-            def truck_production_timing_rule(model, truck_idx, dest, departure_date, prod):
-                """
-                Restrict truck loads based on production timing:
-                - Morning trucks (8am): Can only load production from (departure_date - 1)
-                - Afternoon trucks: Can load production from (departure_date - 1) or departure_date
+            # INVENTORY-BASED TRUCK LOADING CONSTRAINTS
+            # Trucks can only load from available finished goods inventory at manufacturing site
+            # Morning trucks (8am): Can only load from inventory at start of day (= end of previous day)
+            # Afternoon trucks: Can load from inventory at end of day (= previous + same-day production)
 
-                This prevents the physically impossible scenario of morning trucks loading
-                same-day production that hasn't been produced yet.
+            def truck_inventory_constraint_rule(model, truck_idx, dest, delivery_date, prod):
+                """
+                Truck loading constrained by available finished goods inventory at manufacturing site.
+
+                Timing rules:
+                - Morning trucks: load <= inventory[departure_date - 1] (previous day's ending inventory)
+                - Afternoon trucks: load <= inventory[departure_date] (today's ending inventory)
+
+                This ensures:
+                - Morning trucks can't load same-day production (not ready by 8am)
+                - Afternoon trucks CAN load same-day production (ready by afternoon)
+                - All trucks can load from accumulated inventory (Friday production available Monday)
                 """
                 truck = self.truck_by_index[truck_idx]
 
-                # Check if production dates are in range
-                d_minus_1 = departure_date - timedelta(days=1)
+                # Calculate departure date from delivery date
+                transit_days = self._get_truck_transit_days(truck_idx, dest)
+                departure_date = delivery_date - timedelta(days=transit_days)
 
-                # Skip if D-1 is not in production dates (departure_date is first day)
-                if d_minus_1 not in model.dates:
-                    # Force truck load to zero (can't load nonexistent production)
-                    return model.truck_load[truck_idx, dest, prod, departure_date] == 0
+                # Can't depart before planning horizon
+                if departure_date not in model.dates:
+                    return model.truck_load[truck_idx, dest, prod, delivery_date] == 0
 
-                # Morning trucks: Can ONLY use D-1 production
+                # Determine which inventory snapshot to use
                 if truck.departure_type == 'morning':
-                    # truck_load <= production from previous day
-                    return model.truck_load[truck_idx, dest, prod, departure_date] <= model.production[d_minus_1, prod]
+                    # Morning trucks: Use inventory at start of departure day (= end of previous day)
+                    inventory_date = departure_date - timedelta(days=1)
+                    if inventory_date not in model.dates:
+                        # First day morning truck - no previous inventory
+                        return model.truck_load[truck_idx, dest, prod, delivery_date] == 0
+                else:
+                    # Afternoon trucks: Use inventory at end of departure day (includes D0 production)
+                    inventory_date = departure_date
 
-                # Afternoon trucks: Can use D-1 OR D0 production
-                else:  # departure_type == 'afternoon'
-                    # truck_load <= production from D-1 + production from D0
-                    # Both dates are guaranteed to be in model.dates (D0 = departure_date, D-1 checked above)
-                    return model.truck_load[truck_idx, dest, prod, departure_date] <= (
-                        model.production[d_minus_1, prod] + model.production[departure_date, prod]
-                    )
+                # Constraint: truck_load <= available_inventory at manufacturing site
+                mfg_loc = self.manufacturing_site.location_id
+                if (mfg_loc, prod, inventory_date) in self.inventory_ambient_index_set:
+                    return model.truck_load[truck_idx, dest, prod, delivery_date] <= model.inventory_ambient[mfg_loc, prod, inventory_date]
+                else:
+                    # No inventory tracked for this product/date - force load to zero
+                    return model.truck_load[truck_idx, dest, prod, delivery_date] == 0
 
-            # D-1/D0 Timing Constraint: Restrict truck loading based on production timing
-            # Morning trucks can only load D-1 production (previous day)
-            # Afternoon trucks can load D-1 or D0 production (previous or same day)
-            #
-            # PERFORMANCE OPTIMIZATION: Use aggregated formulation over products
-            # This reduces constraints by 5x and breaks dense per-product coupling
-
-            def truck_morning_timing_agg_rule(model, truck_idx, dest, delivery_date):
-                """Morning trucks: load on DELIVERY_DATE <= D-1 production on DEPARTURE_DATE (aggregated over products)."""
-                truck = self.truck_by_index[truck_idx]
-                if truck.departure_type != 'morning':
-                    return Constraint.Skip
-
-                # Calculate departure date from delivery date
-                # delivery_date = departure_date + transit_days
-                # Therefore: departure_date = delivery_date - transit_days
-                transit_days = self._get_truck_transit_days(truck_idx, dest)
-                departure_date = delivery_date - timedelta(days=transit_days)
-
-                # Can't depart before planning horizon
-                if departure_date not in model.dates:
-                    return sum(model.truck_load[truck_idx, dest, p, delivery_date] for p in model.products) == 0
-
-                # Morning trucks load D-1 production (relative to departure)
-                d_minus_1 = departure_date - timedelta(days=1)
-                if d_minus_1 not in model.dates:
-                    return sum(model.truck_load[truck_idx, dest, p, delivery_date] for p in model.products) == 0
-
-                # Aggregate: sum of loads <= sum of D-1 production
-                return (sum(model.truck_load[truck_idx, dest, p, delivery_date] for p in model.products) <=
-                        sum(model.production[d_minus_1, p] for p in model.products))
-
-            def truck_afternoon_timing_agg_rule(model, truck_idx, dest, delivery_date):
-                """Afternoon trucks: load on DELIVERY_DATE <= D-1 + D0 production on DEPARTURE_DATE (aggregated over products)."""
-                truck = self.truck_by_index[truck_idx]
-                if truck.departure_type != 'afternoon':
-                    return Constraint.Skip
-
-                # Calculate departure date from delivery date
-                transit_days = self._get_truck_transit_days(truck_idx, dest)
-                departure_date = delivery_date - timedelta(days=transit_days)
-
-                # Can't depart before planning horizon
-                if departure_date not in model.dates:
-                    return sum(model.truck_load[truck_idx, dest, p, delivery_date] for p in model.products) == 0
-
-                # Afternoon trucks can load D-1 OR D0 production (relative to departure)
-                d_minus_1 = departure_date - timedelta(days=1)
-                if d_minus_1 not in model.dates:
-                    return sum(model.truck_load[truck_idx, dest, p, delivery_date] for p in model.products) == 0
-
-                # Aggregate: sum of loads <= sum of (D-1 + D0) production
-                return (sum(model.truck_load[truck_idx, dest, p, delivery_date] for p in model.products) <=
-                        sum(model.production[d_minus_1, p] + model.production[departure_date, p] for p in model.products))
-
-            # Create separate constraints for morning and afternoon trucks
-            morning_tuples = [(t, d, dt) for (t, d, dt) in valid_truck_dest_date_tuples
-                            if self.truck_by_index[t].departure_type == 'morning']
-            afternoon_tuples = [(t, d, dt) for (t, d, dt) in valid_truck_dest_date_tuples
-                              if self.truck_by_index[t].departure_type == 'afternoon']
-
-            if morning_tuples:
-                model.truck_morning_timing_agg_con = Constraint(
-                    morning_tuples,
-                    rule=truck_morning_timing_agg_rule,
-                    doc="Morning trucks load D-1 production (aggregated over products)"
-                )
-
-            if afternoon_tuples:
-                model.truck_afternoon_timing_agg_con = Constraint(
-                    afternoon_tuples,
-                    rule=truck_afternoon_timing_agg_rule,
-                    doc="Afternoon trucks load D-1 or D0 production (aggregated over products)"
-                )
+            model.truck_inventory_con = Constraint(
+                model.trucks,
+                model.truck_destinations,
+                model.dates,
+                model.products,
+                rule=truck_inventory_constraint_rule,
+                doc="Truck loading constrained by finished goods inventory at manufacturing"
+            )
 
         # Objective: Minimize total cost = labor + production + transport + shortage penalty
         def objective_rule(model):
