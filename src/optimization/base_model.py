@@ -191,6 +191,7 @@ class BaseOptimizationModel(ABC):
         tee: bool = False,
         time_limit_seconds: Optional[float] = None,
         mip_gap: Optional[float] = None,
+        use_aggressive_heuristics: bool = False,
     ) -> OptimizationResult:
         """
         Build and solve the optimization model.
@@ -201,6 +202,9 @@ class BaseOptimizationModel(ABC):
             tee: If True, print solver output
             time_limit_seconds: Maximum solve time in seconds
             mip_gap: MIP gap tolerance (e.g., 0.01 for 1% gap)
+            use_aggressive_heuristics: If True, enable aggressive heuristics for CBC
+                (feasibility pump, RINS, proximity search, diving, etc.)
+                Recommended for large problems (21+ day windows)
 
         Returns:
             OptimizationResult with solve status and objective value
@@ -210,6 +214,7 @@ class BaseOptimizationModel(ABC):
                 solver_name='cbc',
                 time_limit_seconds=300,
                 mip_gap=0.01,
+                use_aggressive_heuristics=True,  # For large problems
                 tee=True
             )
         """
@@ -221,24 +226,48 @@ class BaseOptimizationModel(ABC):
         # Prepare solver options
         options = solver_options or {}
 
-        # For CBC 2.10.12+, avoid passing options that may not be recognized
-        # Only set options if explicitly provided or for commercial solvers
-        if solver_name not in ['cbc', 'asl:cbc', None]:
+        # Configure solver-specific options
+        if solver_name in ['cbc', 'asl:cbc'] or (solver_name is None and self.solver_config.get_best_available_solver() in ['cbc', 'asl:cbc']):
+            # CBC-specific options
+            if use_aggressive_heuristics:
+                # Aggressive heuristics for large problems (e.g., 21+ day windows)
+                # These settings enable TABU-like search, proximity search, and other heuristics
+                aggressive_options = {
+                    'seconds': time_limit_seconds if time_limit_seconds else 120,
+                    'ratio': mip_gap if mip_gap else 0.01,
+                    # Preprocessing
+                    'preprocess': 'sos',
+                    'passPresolve': 10,
+                    # Heuristics (THE KEY!)
+                    'heuristics': 'on',
+                    'feaspump': 'on',     # Feasibility pump
+                    'rins': 'on',         # RINS (TABU-like)
+                    'diving': 'on',       # Diving
+                    'proximity': 'on',    # Proximity search (TABU-like!)
+                    'combine': 'on',      # Combine solutions
+                    # Cuts
+                    'cuts': 'on',
+                    'gomory': 'on',
+                    'knapsack': 'on',
+                    'probing': 'on',
+                    'clique': 'on',
+                    # Strategy
+                    'strategy': 1,        # Aggressive
+                    'tune': 2,            # Maximum auto-tune
+                }
+                options.update(aggressive_options)
+            # For CBC without aggressive heuristics, let it run with defaults
+            # Time limit and gap can still be passed via solver_options
+        elif solver_name == 'gurobi':
             if time_limit_seconds is not None:
-                # Set time limit (solver-specific parameter names)
-                if solver_name == 'gurobi':
-                    options['TimeLimit'] = time_limit_seconds
-                elif solver_name == 'cplex':
-                    options['timelimit'] = time_limit_seconds
-
+                options['TimeLimit'] = time_limit_seconds
             if mip_gap is not None:
-                # Set MIP gap (solver-specific parameter names)
-                if solver_name == 'gurobi':
-                    options['MIPGap'] = mip_gap
-                elif solver_name == 'cplex':
-                    options['mip_tolerances_mipgap'] = mip_gap
-        # For CBC, let it run with defaults to avoid option compatibility issues
-        # Time limit and gap can still be passed via solver_options if needed
+                options['MIPGap'] = mip_gap
+        elif solver_name == 'cplex':
+            if time_limit_seconds is not None:
+                options['timelimit'] = time_limit_seconds
+            if mip_gap is not None:
+                options['mip_tolerances_mipgap'] = mip_gap
 
         # Create solver
         try:

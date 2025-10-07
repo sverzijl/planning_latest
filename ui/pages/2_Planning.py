@@ -438,6 +438,7 @@ with tab_optimization:
                     solver_name=selected_solver,
                     time_limit_seconds=time_limit,
                     mip_gap=mip_gap / 100.0,  # Convert % to fraction
+                    use_aggressive_heuristics=True,  # Enable CBC performance features
                     tee=show_solver_output,
                 )
 
