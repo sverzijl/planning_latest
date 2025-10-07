@@ -1080,16 +1080,26 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         )
 
         def non_fixed_hours_minimum_rule(model, d):
+            """
+            CRITICAL FIX: Weekend/holiday minimum payment should only apply when production occurs.
+
+            Business Rule:
+            - If production_day = 1 (production occurs): Pay at least minimum_hours (4h × $40 = $160)
+            - If production_day = 0 (no production): Pay nothing
+
+            Without production_day factor, the model pays $160 on idle weekends (e.g., Nov 8, Nov 9).
+            """
             labor_day = self.labor_by_date.get(d)
             if not labor_day or labor_day.is_fixed_day:
                 return Constraint.Skip
             else:
-                return model.non_fixed_hours_paid[d] >= labor_day.minimum_hours
+                # Minimum payment only when production_day = 1
+                return model.non_fixed_hours_paid[d] >= labor_day.minimum_hours * model.production_day[d]
 
         model.non_fixed_hours_minimum = Constraint(
             model.dates,
             rule=non_fixed_hours_minimum_rule,
-            doc="Non-fixed hours >= minimum commitment"
+            doc="Non-fixed hours >= minimum commitment (only when producing)"
         )
 
         # STATE TRACKING: INVENTORY BALANCE CONSTRAINTS
