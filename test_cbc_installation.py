@@ -24,7 +24,7 @@ try:
     model.con = Constraint(expr=model.x >= 1)
 
     solver = SolverFactory('cbc')
-    result = solver.solve(model, tee=False)
+    result = solver.solve(model, tee=False, symbolic_solver_labels=False)
 
     x_val = model.x.value
     print(f"   ✓ Solved successfully: x = {x_val:.6f} (expected: 1.0)")
@@ -46,7 +46,7 @@ try:
     solver.options['seconds'] = 10
     solver.options['ratio'] = 0.01
 
-    result = solver.solve(model, tee=False)
+    result = solver.solve(model, tee=False, symbolic_solver_labels=False)
     x_val = model.x.value
     print(f"   ✓ Solved with options: x = {x_val:.6f}")
 except Exception as e:
@@ -79,7 +79,7 @@ try:
     solver.options['strategy'] = 1
     solver.options['tune'] = 2
 
-    result = solver.solve(model, tee=False)
+    result = solver.solve(model, tee=False, symbolic_solver_labels=False)
     x_val = model.x.value
     print(f"   ✓ Solved with aggressive options: x = {x_val:.6f}")
 except Exception as e:
