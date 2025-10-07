@@ -1218,13 +1218,14 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 truck_outflows = 0
                 if self.truck_schedules:
                     for truck_idx in model.trucks:
-                        truck = self.truck_by_index[truck_idx]
-                        # For each delivery date, check if this truck departs on 'date'
-                        for delivery_date in model.dates:
-                            departure_date = delivery_date - timedelta(days=int(truck.transit_days))
-                            if departure_date == date:
-                                # Sum loads across all destinations for this product
-                                for dest in model.truck_destinations:
+                        for dest in model.truck_destinations:
+                            # Get transit days for this truck-destination pair
+                            transit_days = self._get_truck_transit_days(truck_idx, dest)
+                            # For each delivery date, check if this truck departs on 'date'
+                            for delivery_date in model.dates:
+                                departure_date = delivery_date - timedelta(days=int(transit_days))
+                                if departure_date == date:
+                                    # This truck-dest-product departs on 'date', so subtract from inventory
                                     truck_outflows += model.truck_load[truck_idx, dest, prod, delivery_date]
 
                 # Previous inventory
