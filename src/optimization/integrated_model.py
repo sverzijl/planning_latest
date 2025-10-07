@@ -977,7 +977,34 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         model.production_day_con = Constraint(
             model.dates,
             rule=production_day_rule,
-            doc="Link production_day binary to actual production"
+            doc="Link production_day binary to actual production (forward direction)"
+        )
+
+        # CRITICAL FIX: Add reverse direction to prevent production_day=1 with zero production
+        # Without this, solver can set production_day=1 even with no production,
+        # causing idle labor costs (weekdays) or minimum payments (weekends: 4h × $40 = $160)
+        def production_day_minimum_rule(model, d):
+            """
+            Enforce reverse direction: if production_day = 1, then production must be > 0.
+
+            Together with production_day_rule, creates bi-directional enforcement:
+            - production_day_rule: production > 0 => production_day = 1 (forward)
+            - production_day_minimum_rule: production_day = 1 => production > 0 (reverse)
+
+            This prevents:
+            - Weekends showing $160 labor cost (4h minimum) with zero production
+            - Production_day binary being "loose" and not tied to actual production
+
+            Result: production_day = 1 if and only if production > 0
+            """
+            epsilon = 1.0  # Minimum production quantity (at least 1 unit)
+            total_production = sum(model.production[d, p] for p in model.products)
+            return total_production >= epsilon * model.production_day[d]
+
+        model.production_day_minimum_con = Constraint(
+            model.dates,
+            rule=production_day_minimum_rule,
+            doc="Link production_day binary to actual production (reverse direction)"
         )
 
         # Constraints: Calculate fixed hours and overtime for fixed days
