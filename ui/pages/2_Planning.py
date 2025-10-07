@@ -423,6 +423,7 @@ with tab_optimization:
                     max_routes_per_destination=max_routes,
                     allow_shortages=allow_shortages,
                     enforce_shelf_life=enforce_shelf_life,
+                    initial_inventory={},  # No starting inventory
                 )
 
                 # Calculate planning horizon info
