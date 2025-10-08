@@ -4,7 +4,7 @@ This module provides utilities to enumerate and manage feasible routes
 from manufacturing to destinations for use in optimization models.
 """
 
-from typing import List, Dict, Set, Optional, Tuple
+from typing import List, Dict, Set, Optional, Tuple, Any
 from dataclasses import dataclass
 from collections import defaultdict
 
@@ -246,6 +246,57 @@ class RouteEnumerator:
             # Returns: [0, 1, 2] (up to max_routes_per_destination)
         """
         return self._routes_by_destination.get(destination_id, [])
+
+    def enumerate_network_legs(self) -> Dict[Tuple[str, str], Dict[str, Any]]:
+        """
+        Enumerate all network legs (edges) as potential shipping decisions.
+
+        This method extracts all edges from the network graph, enabling leg-by-leg
+        routing decisions instead of atomic multi-leg routes. This allows:
+        - Strategic buffering at intermediate hubs (Lineage, 6104, 6125)
+        - Independent timing decisions for each leg
+        - Full flexibility to hold inventory at any network location
+
+        Returns:
+            Dictionary mapping (origin_id, destination_id) to leg attributes:
+            {
+                (origin_id, dest_id): {
+                    'origin_id': str,
+                    'destination_id': str,
+                    'transit_days': int,
+                    'cost_per_unit': float,
+                    'transport_mode': str,
+                }
+            }
+
+        Example:
+            legs = enumerator.enumerate_network_legs()
+            # legs[('6122', '6104')] = {
+            #     'origin_id': '6122',
+            #     'destination_id': '6104',
+            #     'transit_days': 2,
+            #     'cost_per_unit': 0.50,
+            #     'transport_mode': 'ambient',
+            # }
+        """
+        graph = self.graph_builder.get_graph()
+        legs: Dict[Tuple[str, str], Dict[str, Any]] = {}
+
+        # Extract all edges from the network graph
+        for origin_id, dest_id, edge_data in graph.edges(data=True):
+            # Create leg tuple key
+            leg_key = (origin_id, dest_id)
+
+            # Extract edge attributes
+            legs[leg_key] = {
+                'origin_id': origin_id,
+                'destination_id': dest_id,
+                'transit_days': int(edge_data.get('transit_days', 1)),
+                'cost_per_unit': float(edge_data.get('cost', 0.0)),
+                'transport_mode': edge_data.get('transport_mode', 'ambient'),
+            }
+
+        return legs
 
     def get_all_routes(self) -> List[EnumeratedRoute]:
         """

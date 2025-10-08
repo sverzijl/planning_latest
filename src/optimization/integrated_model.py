@@ -536,6 +536,54 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 # (thaws if frozen route to non-frozen destination)
                 self.route_arrival_state[route.index] = 'ambient'
 
+        # LEG-BASED ROUTING: Enumerate all network legs for flexible hub buffering
+        # This enables strategic inventory decisions at intermediate locations (hubs, Lineage)
+        self.network_legs = self.route_enumerator.enumerate_network_legs()
+
+        # Create leg-based index structures
+        self.leg_keys: Set[Tuple[str, str]] = set(self.network_legs.keys())
+
+        # Mapping: (origin, destination) -> leg attributes
+        self.leg_transit_days: Dict[Tuple[str, str], int] = {
+            leg_key: leg_data['transit_days']
+            for leg_key, leg_data in self.network_legs.items()
+        }
+
+        self.leg_cost: Dict[Tuple[str, str], float] = {
+            leg_key: leg_data['cost_per_unit']
+            for leg_key, leg_data in self.network_legs.items()
+        }
+
+        self.leg_transport_mode: Dict[Tuple[str, str], str] = {
+            leg_key: leg_data['transport_mode']
+            for leg_key, leg_data in self.network_legs.items()
+        }
+
+        # Mappings for efficient lookup:
+        # legs_from_location: origin -> list of (origin, destination) tuples
+        # legs_to_location: destination -> list of (origin, destination) tuples
+        self.legs_from_location: Dict[str, List[Tuple[str, str]]] = defaultdict(list)
+        self.legs_to_location: Dict[str, List[Tuple[str, str]]] = defaultdict(list)
+
+        for (origin, destination) in self.leg_keys:
+            self.legs_from_location[origin].append((origin, destination))
+            self.legs_to_location[destination].append((origin, destination))
+
+        # Determine arrival state for each leg (similar to routes)
+        self.leg_arrival_state: Dict[Tuple[str, str], str] = {}
+
+        for leg_key in self.leg_keys:
+            origin, destination = leg_key
+            dest_loc = self.location_by_id.get(destination)
+            transport_mode = self.leg_transport_mode[leg_key]
+
+            # Frozen transport mode + frozen-only destination → stays frozen
+            if transport_mode == 'frozen' and dest_loc and dest_loc.storage_mode == StorageMode.FROZEN:
+                self.leg_arrival_state[leg_key] = 'frozen'
+            else:
+                # Everything else arrives as ambient
+                self.leg_arrival_state[leg_key] = 'ambient'
+
     def _calculate_required_planning_horizon(self) -> Tuple[Date, Date]:
         """
         Calculate required planning horizon accounting for transit times AND truck loading timing.
@@ -783,7 +831,8 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         # Sets
         model.dates = list(self.production_dates)
         model.products = list(self.products)
-        model.routes = list(self.route_indices)
+        model.routes = list(self.route_indices)  # LEGACY: Keep for backward compatibility
+        model.legs = list(self.leg_keys)  # LEG-BASED ROUTING: (origin, destination) tuples
 
         # INVENTORY TRACKING: Sort dates for sequential processing
         # This ensures proper inventory balance calculations day-by-day
@@ -839,14 +888,26 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             doc="Production quantity by date and product"
         )
 
-        # Decision variables: shipment[route_index, product, delivery_date]
+        # LEG-BASED ROUTING: Decision variables shipment[origin, dest, product, delivery_date]
+        # Each network leg is an independent shipping decision
+        # This enables strategic buffering at intermediate hubs (Lineage, 6104, 6125)
         # delivery_date = date when product arrives at destination
+        model.shipment_leg = Var(
+            model.legs,  # (origin, destination) tuples
+            model.products,
+            model.dates,
+            within=NonNegativeReals,
+            doc="Shipment quantity by network leg, product, and delivery date"
+        )
+
+        # LEGACY: Keep route-based shipment for backward compatibility (DEPRECATED)
+        # TODO: Remove after full migration to leg-based routing
         model.shipment = Var(
             model.routes,
             model.products,
-            model.dates,  # Use all dates as potential delivery dates
+            model.dates,
             within=NonNegativeReals,
-            doc="Shipment quantity by route, product, and delivery date"
+            doc="[DEPRECATED] Route-based shipment - use shipment_leg instead"
         )
 
         # Truck scheduling variables (if truck schedules provided)
