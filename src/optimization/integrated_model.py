@@ -900,6 +900,27 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             doc="Shipment quantity by network leg, product, and delivery date"
         )
 
+        # Prevent phantom shipments: shipment_leg must be zero if departure would be before horizon
+        def no_phantom_shipments_rule(model, origin, dest, prod, delivery_date):
+            """Prevent shipments that would depart before planning horizon starts."""
+            leg = (origin, dest)
+            transit_days = self.leg_transit_days.get(leg, 0)
+            departure_date = delivery_date - timedelta(days=transit_days)
+
+            if departure_date < self.start_date:
+                # This shipment would require departure before planning horizon
+                return model.shipment_leg[leg, prod, delivery_date] == 0
+            else:
+                return Constraint.Skip
+
+        model.no_phantom_shipments_con = Constraint(
+            model.legs,
+            model.products,
+            model.dates,
+            rule=no_phantom_shipments_rule,
+            doc="Prevent shipments with departure before planning horizon"
+        )
+
         # LEGACY: Keep route-based shipment for backward compatibility (DEPRECATED)
         # TODO: Remove after full migration to leg-based routing
         model.shipment = Var(
@@ -953,6 +974,18 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 [(dest, prod, deliv_date) for dest, prod, deliv_date in demand_keys],
                 within=NonNegativeReals,
                 doc="Demand shortage by destination, product, and delivery date"
+            )
+
+            # Shortage upper bound constraint: shortage cannot exceed demand
+            def shortage_bound_rule(model, dest, prod, date):
+                """Shortage cannot exceed demand quantity."""
+                demand_qty = self.demand.get((dest, prod, date), 0)
+                return model.shortage[dest, prod, date] <= demand_qty
+
+            model.shortage_bound_con = Constraint(
+                [(dest, prod, date) for dest, prod, date in self.demand.keys()],
+                rule=shortage_bound_rule,
+                doc="Shortage cannot exceed demand"
             )
 
         # STATE TRACKING: Decision variables for frozen and ambient inventory
@@ -1258,7 +1291,11 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             """
             Ambient inventory balance at location.
 
-            ambient_inv[t] = ambient_inv[t-1] + ambient_arrivals[t] - demand[t] - shortage[t]
+            ambient_inv[t] = ambient_inv[t-1] + ambient_arrivals[t] - demand[t] + shortage[t]
+
+            Note: shortage represents UNSATISFIED demand. Actual consumption = demand - shortage.
+            Therefore: inventory = prev + arrivals - (demand - shortage) - outflows
+                                 = prev + arrivals - demand + shortage - outflows
 
             Special case for 6122_Storage (virtual manufacturing storage):
             - Arrivals = production on that date
@@ -1365,8 +1402,12 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                     prev_ambient = 0
 
             # Balance equation
+            # Correct formulation: shortage represents UNSATISFIED demand
+            # Actual consumption from inventory = demand - shortage
+            # Therefore: inventory[t] = prev + arrivals - (demand - shortage) - outflows
+            #                          = prev + arrivals - demand + shortage - outflows
             return model.inventory_ambient[loc, prod, date] == (
-                prev_ambient + ambient_arrivals - demand_qty - shortage_qty - ambient_outflows
+                prev_ambient + ambient_arrivals - demand_qty + shortage_qty - ambient_outflows
             )
 
         model.inventory_ambient_balance_con = Constraint(
@@ -1586,16 +1627,24 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
 
                 # Morning trucks load from 6122_Storage inventory at D-1 (relative to departure)
                 d_minus_1 = departure_date - timedelta(days=1)
-                if d_minus_1 not in model.dates:
-                    return sum(model.truck_load[truck_idx, dest, p, delivery_date] for p in model.products) == 0
 
-                # Aggregate: sum of loads <= sum of 6122_Storage inventory at D-1
-                # Use inventory from 6122_Storage if available in sparse index
-                storage_inventory = sum(
-                    model.inventory_ambient['6122_Storage', p, d_minus_1]
-                    if ('6122_Storage', p, d_minus_1) in self.inventory_ambient_index_set else 0
-                    for p in model.products
-                )
+                # Calculate storage inventory available at D-1
+                # BUG FIX: Use initial_inventory when d_minus_1 is before planning horizon
+                if d_minus_1 not in model.dates:
+                    # d_minus_1 is before planning horizon - use initial inventory
+                    storage_inventory = sum(
+                        self.initial_inventory.get(('6122_Storage', p, 'ambient'),
+                                                   self.initial_inventory.get(('6122_Storage', p), 0))
+                        for p in model.products
+                    )
+                else:
+                    # d_minus_1 is within planning horizon - use inventory variable
+                    storage_inventory = sum(
+                        model.inventory_ambient['6122_Storage', p, d_minus_1]
+                        if ('6122_Storage', p, d_minus_1) in self.inventory_ambient_index_set else 0
+                        for p in model.products
+                    )
+
                 return (sum(model.truck_load[truck_idx, dest, p, delivery_date] for p in model.products) <=
                         storage_inventory)
 
@@ -1615,15 +1664,24 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
 
                 # Afternoon trucks can load from 6122_Storage inventory at D-1 + same-day production
                 d_minus_1 = departure_date - timedelta(days=1)
-                if d_minus_1 not in model.dates:
-                    return sum(model.truck_load[truck_idx, dest, p, delivery_date] for p in model.products) == 0
 
-                # Aggregate: sum of loads <= sum of (6122_Storage inventory at D-1 + D0 production)
-                storage_inventory = sum(
-                    model.inventory_ambient['6122_Storage', p, d_minus_1]
-                    if ('6122_Storage', p, d_minus_1) in self.inventory_ambient_index_set else 0
-                    for p in model.products
-                )
+                # Calculate storage inventory available at D-1
+                # BUG FIX: Use initial_inventory when d_minus_1 is before planning horizon
+                if d_minus_1 not in model.dates:
+                    # d_minus_1 is before planning horizon - use initial inventory
+                    storage_inventory = sum(
+                        self.initial_inventory.get(('6122_Storage', p, 'ambient'),
+                                                   self.initial_inventory.get(('6122_Storage', p), 0))
+                        for p in model.products
+                    )
+                else:
+                    # d_minus_1 is within planning horizon - use inventory variable
+                    storage_inventory = sum(
+                        model.inventory_ambient['6122_Storage', p, d_minus_1]
+                        if ('6122_Storage', p, d_minus_1) in self.inventory_ambient_index_set else 0
+                        for p in model.products
+                    )
+
                 same_day_production = sum(model.production[departure_date, p] for p in model.products)
 
                 return (sum(model.truck_load[truck_idx, dest, p, delivery_date] for p in model.products) <=
