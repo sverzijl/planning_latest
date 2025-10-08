@@ -55,27 +55,27 @@ class SapIbpParser:
             Sheet name if SAP IBP format detected, None otherwise
         """
         try:
-            xl = pd.ExcelFile(file_path, engine="openpyxl")
+            # Use context manager to ensure file handle is closed (Windows compatibility)
+            with pd.ExcelFile(file_path, engine="openpyxl") as xl:
+                # Check each sheet for SAP IBP patterns
+                for sheet_name in xl.sheet_names:
+                    # Skip internal Excel sheets
+                    if sheet_name.startswith("_"):
+                        continue
 
-            # Check each sheet for SAP IBP patterns
-            for sheet_name in xl.sheet_names:
-                # Skip internal Excel sheets
-                if sheet_name.startswith("_"):
-                    continue
+                    # Check if sheet name contains any SAP IBP pattern
+                    for pattern in SapIbpParser.SAP_IBP_PATTERNS:
+                        if pattern in sheet_name:
+                            # Verify structure by reading first few rows
+                            df = pd.read_excel(file_path, sheet_name=sheet_name, header=None, nrows=6, engine="openpyxl")
 
-                # Check if sheet name contains any SAP IBP pattern
-                for pattern in SapIbpParser.SAP_IBP_PATTERNS:
-                    if pattern in sheet_name:
-                        # Verify structure by reading first few rows
-                        df = pd.read_excel(file_path, sheet_name=sheet_name, header=None, nrows=6, engine="openpyxl")
+                            # Check if row 4 looks like headers (should have "Product ID", "Location ID", dates)
+                            if len(df) > 4:
+                                row_4 = df.iloc[4].astype(str)
+                                if "Product ID" in row_4.values and "Location ID" in row_4.values:
+                                    return sheet_name
 
-                        # Check if row 4 looks like headers (should have "Product ID", "Location ID", dates)
-                        if len(df) > 4:
-                            row_4 = df.iloc[4].astype(str)
-                            if "Product ID" in row_4.values and "Location ID" in row_4.values:
-                                return sheet_name
-
-            return None
+                return None
         except Exception:
             return None
 

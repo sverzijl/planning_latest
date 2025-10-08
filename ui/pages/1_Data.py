@@ -192,9 +192,28 @@ with tab_upload:
                             st.write(f"**SAP IBP detection error:** {e2}")
                         st.info("**Supported formats:**\n- **Standard:** Forecast sheet with columns: location_id, product_id, date, quantity\n- **SAP IBP:** Wide format export with dates as columns")
                     finally:
-                        # Clean up temp file
+                        # Clean up temp file with retry logic for Windows file locking
                         if temp_path and temp_path.exists():
-                            temp_path.unlink()
+                            import gc
+                            import time
+
+                            # Force garbage collection to close any lingering file handles
+                            gc.collect()
+
+                            # Retry deletion with delays (Windows compatibility)
+                            max_retries = 3
+                            for attempt in range(max_retries):
+                                try:
+                                    temp_path.unlink()
+                                    break  # Success
+                                except PermissionError as e:
+                                    if attempt < max_retries - 1:
+                                        # Wait and try again
+                                        time.sleep(0.1)
+                                        gc.collect()
+                                    else:
+                                        # Log warning but don't fail the preview
+                                        st.warning(f"⚠️ Could not delete temporary file (will be cleaned by system): {temp_path.name}")
             tab_idx += 1
 
         # Network config tabs
