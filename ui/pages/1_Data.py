@@ -308,6 +308,37 @@ with tab_upload:
                                     Path(path).unlink()
                             raise
 
+                        # Pre-validate network configuration for common issues
+                        if network_path:
+                            try:
+                                import pandas as pd
+                                df_locs = pd.read_excel(network_path, sheet_name="Locations", engine="openpyxl")
+                                mfg_locations = df_locs[df_locs['type'].str.lower() == 'manufacturing']
+
+                                if not mfg_locations.empty:
+                                    missing_prod_rate = []
+                                    if 'production_rate' not in df_locs.columns:
+                                        missing_prod_rate = mfg_locations['id'].tolist()
+                                    else:
+                                        missing_prod_rate = mfg_locations[
+                                            pd.isna(mfg_locations['production_rate'])
+                                        ]['id'].tolist()
+
+                                    if missing_prod_rate:
+                                        st.error(
+                                            f"❌ **Missing Required Parameter: production_rate**\n\n"
+                                            f"Manufacturing location(s) **{', '.join(str(x) for x in missing_prod_rate)}** "
+                                            f"are missing the required `production_rate` column.\n\n"
+                                            f"**To fix:**\n"
+                                            f"1. Add a `production_rate` column to the Locations sheet\n"
+                                            f"2. Set the value to **1400.0** (units per hour)\n\n"
+                                            f"See `NETWORK_CONFIG_UPDATE_INSTRUCTIONS.md` for detailed guidance."
+                                        )
+                                        st.stop()
+                            except Exception as e:
+                                # If pre-validation fails, let normal parsing show the error
+                                pass
+
                         parser = MultiFileParser(
                             forecast_file=forecast_path,
                             network_file=network_path,
@@ -335,25 +366,12 @@ with tab_upload:
                         from src.models.truck_schedule import TruckScheduleCollection
                         truck_schedules = TruckScheduleCollection(schedules=truck_schedules_list)
 
-                        # Find manufacturing site
-                        manufacturing_site = None
-                        for loc in locations:
-                            if loc.type == LocationType.MANUFACTURING:
-                                # Convert Location to ManufacturingSite
-                                from src.models.manufacturing import ManufacturingSite
-                                manufacturing_site = ManufacturingSite(
-                                    id=loc.id,
-                                    name=loc.name,
-                                    type=loc.type,
-                                    storage_mode=loc.storage_mode,
-                                    capacity=loc.capacity,
-                                    latitude=loc.latitude,
-                                    longitude=loc.longitude,
-                                    production_rate=1400.0,  # Default
-                                    labor_calendar=labor_calendar,
-                                    changeover_time_hours=0.5,  # Default
-                                )
-                                break
+                        # Find manufacturing site (parser returns ManufacturingSite objects directly)
+                        from src.models.manufacturing import ManufacturingSite
+                        manufacturing_site = next(
+                            (loc for loc in locations if isinstance(loc, ManufacturingSite)),
+                            None
+                        )
 
                         if manufacturing_site is None:
                             st.error("❌ No manufacturing location found in network configuration")

@@ -158,7 +158,34 @@ class ExcelParser:
             if loc_type == LocationType.MANUFACTURING:
                 # Manufacturing-specific parameters
                 if "production_rate" not in row or pd.isna(row["production_rate"]):
-                    raise ValueError(f"Manufacturing location {row['id']} missing required 'production_rate' parameter")
+                    location_name = row.get('name', 'Unknown')
+                    raise ValueError(
+                        f"\n{'='*70}\n"
+                        f"MISSING REQUIRED PARAMETER: production_rate\n"
+                        f"{'='*70}\n"
+                        f"\n"
+                        f"Manufacturing location '{location_name}' (ID: {row['id']}) is missing\n"
+                        f"the required 'production_rate' column.\n"
+                        f"\n"
+                        f"REQUIRED ACTION:\n"
+                        f"  1. Open your Network Configuration Excel file\n"
+                        f"  2. Go to the 'Locations' sheet\n"
+                        f"  3. Add a 'production_rate' column (if not present)\n"
+                        f"  4. For location {row['id']}, set production_rate = 1400.0\n"
+                        f"\n"
+                        f"EXPLANATION:\n"
+                        f"  - production_rate = units produced per labor hour\n"
+                        f"  - Standard QBA manufacturing rate: 1400.0 units/hour\n"
+                        f"  - This parameter is required for production scheduling\n"
+                        f"    and optimization model constraints\n"
+                        f"\n"
+                        f"DOCUMENTATION:\n"
+                        f"  - Template spec: data/examples/EXCEL_TEMPLATE_SPEC.md\n"
+                        f"  - Migration guide: NETWORK_CONFIG_UPDATE_INSTRUCTIONS.md\n"
+                        f"  - Example file: data/examples/Network_Config.xlsx\n"
+                        f"\n"
+                        f"{'='*70}\n"
+                    )
 
                 mfg_params = {
                     **base_params,
