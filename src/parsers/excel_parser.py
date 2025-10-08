@@ -35,6 +35,8 @@ class ExcelParser:
     - Sheet 'LaborCalendar': columns [date, fixed_hours, regular_rate, overtime_rate, non_fixed_rate?, minimum_hours?, is_fixed_day?]
     - Sheet 'TruckSchedules': columns [id, truck_name, departure_type, departure_time, destination_id?, capacity, cost_fixed?, cost_per_unit?, day_of_week?, intermediate_stops?, pallet_capacity?, units_per_pallet?, units_per_case?]
     - Sheet 'CostParameters': columns [cost_type, value, unit?]
+
+    Also supports SAP IBP export format (wide format with dates as columns).
     """
 
     def __init__(self, file_path: Path | str):
@@ -58,8 +60,11 @@ class ExcelParser:
         """
         Parse forecast data from Excel sheet.
 
+        Supports both standard long format and SAP IBP wide format.
+        If sheet_name="Forecast" doesn't exist, auto-detects SAP IBP format.
+
         Args:
-            sheet_name: Name of the sheet containing forecast data
+            sheet_name: Name of the sheet containing forecast data (default: "Forecast")
 
         Returns:
             Forecast object with entries
@@ -67,32 +72,46 @@ class ExcelParser:
         Raises:
             ValueError: If sheet is missing or malformed
         """
-        df = pd.read_excel(
-            self.file_path,
-            sheet_name=sheet_name,
-            engine="openpyxl"
-        )
-
-        # Validate required columns
-        required_cols = {"location_id", "product_id", "date", "quantity"}
-        if not required_cols.issubset(df.columns):
-            missing = required_cols - set(df.columns)
-            raise ValueError(f"Missing required columns: {missing}")
-
-        # Parse entries
-        entries = []
-        for _, row in df.iterrows():
-            entry = ForecastEntry(
-                location_id=str(row["location_id"]),
-                product_id=str(row["product_id"]),
-                forecast_date=pd.to_datetime(row["date"]).date(),
-                quantity=float(row["quantity"]),
-                confidence=float(row["confidence"]) if "confidence" in row and pd.notna(row["confidence"]) else None,
+        # Try standard format first
+        try:
+            df = pd.read_excel(
+                self.file_path,
+                sheet_name=sheet_name,
+                engine="openpyxl"
             )
-            entries.append(entry)
 
-        forecast_name = f"Forecast from {self.file_path.name}"
-        return Forecast(name=forecast_name, entries=entries)
+            # Validate required columns
+            required_cols = {"location_id", "product_id", "date", "quantity"}
+            if required_cols.issubset(df.columns):
+                # Standard format - use existing parsing logic
+                entries = []
+                for _, row in df.iterrows():
+                    entry = ForecastEntry(
+                        location_id=str(row["location_id"]),
+                        product_id=str(row["product_id"]),
+                        forecast_date=pd.to_datetime(row["date"]).date(),
+                        quantity=float(row["quantity"]),
+                        confidence=float(row["confidence"]) if "confidence" in row and pd.notna(row["confidence"]) else None,
+                    )
+                    entries.append(entry)
+
+                forecast_name = f"Forecast from {self.file_path.name}"
+                return Forecast(name=forecast_name, entries=entries)
+        except Exception:
+            # Sheet doesn't exist or isn't standard format
+            pass
+
+        # Try SAP IBP format detection
+        from .sap_ibp_parser import SapIbpParser
+        sap_sheet = SapIbpParser.detect_sap_ibp_format(self.file_path)
+        if sap_sheet:
+            return SapIbpParser.parse_sap_ibp_forecast(self.file_path, sap_sheet)
+
+        # Neither format found
+        raise ValueError(
+            f"Could not find valid forecast data. "
+            f"Tried: standard format in sheet '{sheet_name}', SAP IBP format auto-detection"
+        )
 
     def parse_locations(self, sheet_name: str = "Locations") -> list[Location]:
         """

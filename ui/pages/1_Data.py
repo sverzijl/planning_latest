@@ -69,7 +69,7 @@ with tab_upload:
             <div style="font-weight: 600; margin-bottom: 8px;">📋 Required Files</div>
             <div>Upload TWO separate Excel files:</div>
             <ol style="margin-top: 8px; padding-left: 20px;">
-                <li><strong>Forecast File:</strong> Sales demand by location and date</li>
+                <li><strong>Forecast File:</strong> Sales demand by location and date (supports SAP IBP format)</li>
                 <li><strong>Network Configuration File:</strong> Locations, routes, labor, trucks, and costs</li>
             </ol>
             <div style="margin-top: 12px; font-size: 13px; color: #757575;">
@@ -80,15 +80,15 @@ with tab_upload:
         unsafe_allow_html=True
     )
 
-    # Two-column layout for file uploads
-    col1, col2 = st.columns(2)
+    # Three-column layout for file uploads
+    col1, col2, col3 = st.columns(3)
 
     with col1:
         st.markdown(section_header("1️⃣ Forecast File", level=3), unsafe_allow_html=True)
         forecast_file = st.file_uploader(
             "Choose forecast file",
             type=["xlsm", "xlsx"],
-            help="Excel file containing Forecast sheet with demand data",
+            help="Excel file with standard Forecast sheet or SAP IBP export format",
             key="forecast_uploader",
         )
         if forecast_file:
@@ -99,11 +99,22 @@ with tab_upload:
         network_file = st.file_uploader(
             "Choose network config file",
             type=["xlsm", "xlsx"],
-            help="Excel file with Locations, Routes, LaborCalendar, TruckSchedules, and CostParameters sheets",
+            help="Excel file with Locations, Routes, LaborCalendar, TruckSchedules, CostParameters, and Alias sheets",
             key="network_uploader",
         )
         if network_file:
             st.markdown(success_badge(network_file.name), unsafe_allow_html=True)
+
+    with col3:
+        st.markdown(section_header("3️⃣ Inventory File (Optional)", level=3), unsafe_allow_html=True)
+        inventory_file = st.file_uploader(
+            "Choose inventory file",
+            type=["xlsm", "xlsx", "XLSX"],
+            help="Optional: Excel file with current inventory snapshot",
+            key="inventory_uploader",
+        )
+        if inventory_file:
+            st.markdown(success_badge(inventory_file.name), unsafe_allow_html=True)
 
     # Display file contents if uploaded
     if forecast_file is not None or network_file is not None:
@@ -120,16 +131,63 @@ with tab_upload:
 
         tab_idx = 0
 
-        # Forecast tab
+        # Forecast tab with SAP IBP support
         if forecast_file:
             with preview_tabs[tab_idx]:
                 try:
+                    # Try standard format first
                     df_forecast = pd.read_excel(forecast_file, sheet_name="Forecast", engine="openpyxl")
+                    st.markdown(info_badge("Format: Standard"), unsafe_allow_html=True)
                     st.dataframe(df_forecast.head(100), use_container_width=True)
                     st.caption(f"📊 {len(df_forecast)} forecast entries (showing first 100)")
-                except Exception as e:
-                    st.error(f"Error reading Forecast sheet: {e}")
-                    st.info("If you have a SAP IBP file, use the SAP IBP converter (coming soon)")
+                except Exception as e1:
+                    # Try SAP IBP format
+                    try:
+                        from src.parsers.sap_ibp_parser import SapIbpParser
+
+                        # Save to temp file for parsing
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsm") as f:
+                            f.write(forecast_file.getvalue())
+                            temp_path = Path(f.name)
+
+                        # Detect SAP IBP format
+                        sap_sheet = SapIbpParser.detect_sap_ibp_format(temp_path)
+                        if sap_sheet:
+                            st.markdown(success_badge(f"Format: SAP IBP ({sap_sheet})"), unsafe_allow_html=True)
+
+                            # Parse and show preview
+                            forecast = SapIbpParser.parse_sap_ibp_forecast(temp_path, sap_sheet)
+
+                            # Convert to dataframe for preview
+                            preview_data = {
+                                "location_id": [e.location_id for e in forecast.entries[:100]],
+                                "product_id": [e.product_id for e in forecast.entries[:100]],
+                                "date": [e.forecast_date for e in forecast.entries[:100]],
+                                "quantity": [e.quantity for e in forecast.entries[:100]],
+                            }
+                            df_preview = pd.DataFrame(preview_data)
+                            st.dataframe(df_preview, use_container_width=True)
+                            st.caption(f"📊 {len(forecast.entries)} forecast entries (transformed from wide format, showing first 100)")
+
+                            # Show some stats
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                st.metric("Products", len(set(e.product_id for e in forecast.entries)))
+                            with col2:
+                                st.metric("Locations", len(set(e.location_id for e in forecast.entries)))
+                            with col3:
+                                st.metric("Date Range (days)", len(set(e.forecast_date for e in forecast.entries)))
+                        else:
+                            raise ValueError("No valid forecast format detected")
+
+                        # Clean up temp file
+                        Path(temp_path).unlink()
+                    except Exception as e2:
+                        st.error(f"Error reading forecast data")
+                        with st.expander("Error Details"):
+                            st.write(f"**Standard format error:** {e1}")
+                            st.write(f"**SAP IBP detection error:** {e2}")
+                        st.info("**Supported formats:**\n- **Standard:** Forecast sheet with columns: location_id, product_id, date, quantity\n- **SAP IBP:** Wide format export with dates as columns")
             tab_idx += 1
 
         # Network config tabs
@@ -202,12 +260,35 @@ with tab_upload:
                             network_path = f_network.name
 
                         # Parse files
+                        # Save inventory file if uploaded
+                        inventory_path = None
+                        if inventory_file:
+                            with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as f_inventory:
+                                f_inventory.write(inventory_file.getvalue())
+                                inventory_path = f_inventory.name
+
                         parser = MultiFileParser(
                             forecast_file=forecast_path,
-                            network_file=network_path
+                            network_file=network_path,
+                            inventory_file=inventory_path
                         )
 
                         forecast_obj, locations, routes, labor_calendar, truck_schedules_list, cost_structure = parser.parse_all()
+
+                        # Parse product aliases (optional)
+                        product_aliases = None
+                        try:
+                            product_aliases = parser.parse_product_aliases()
+                        except Exception:
+                            pass  # Alias sheet is optional
+
+                        # Parse inventory if provided
+                        inventory_snapshot = None
+                        if inventory_path:
+                            try:
+                                inventory_snapshot = parser.parse_inventory()
+                            except Exception as e:
+                                st.warning(f"⚠️ Error parsing inventory: {e}")
 
                         # Wrap truck_schedules list in TruckScheduleCollection
                         from src.models.truck_schedule import TruckScheduleCollection
@@ -250,6 +331,9 @@ with tab_upload:
                                 manufacturing_site=manufacturing_site,
                                 forecast_filename=forecast_file.name,
                                 network_filename=network_file.name,
+                                initial_inventory=inventory_snapshot,
+                                product_aliases=product_aliases,
+                                inventory_filename=inventory_file.name if inventory_file else None,
                             )
 
                             # Clear any previous planning results
@@ -284,6 +368,8 @@ with tab_upload:
                         # Clean up temp files
                         Path(forecast_path).unlink()
                         Path(network_path).unlink()
+                        if inventory_path:
+                            Path(inventory_path).unlink()
 
                     except Exception as e:
                         st.error(f"❌ Error parsing files: {e}")
@@ -299,11 +385,19 @@ with tab_upload:
         st.markdown("""
         ### 📄 Required File Formats
 
-        **Forecast File** should contain a sheet named "Forecast" with columns:
-        - `location_id`: Destination location ID
-        - `product_id`: Product identifier
-        - `date`: Forecast date (YYYY-MM-DD)
-        - `quantity`: Forecasted demand (units)
+        **Forecast File** can be in one of two formats:
+
+        1. **Standard Format** - sheet named "Forecast" with columns:
+           - `location_id`: Destination location ID
+           - `product_id`: Product identifier
+           - `date`: Forecast date (YYYY-MM-DD)
+           - `quantity`: Forecasted demand (units)
+
+        2. **SAP IBP Format** - Wide format export with:
+           - Sheet name containing patterns like "RET", "IBP", "G610", etc.
+           - Dates as columns (DD.MM.YYYY format)
+           - Product ID and Location ID columns
+           - Automatically detected and converted to standard format
 
         **Network Configuration File** should contain 5 sheets:
         - `Locations`: Location definitions (id, name, type, storage_mode)
