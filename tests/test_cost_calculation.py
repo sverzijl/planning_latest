@@ -333,6 +333,295 @@ class TestLaborCostCalculator:
         assert result["overtime_cost"] == 75.0
         assert result["total_cost"] == 675.0
 
+    def test_labor_cost_with_missing_dates_before_calendar(self, cost_structure, labor_calendar):
+        """Test labor cost with production dates before calendar start."""
+        # Labor calendar starts Jan 6, production on Jan 3 (Friday)
+        batches = [
+            ProductionBatch(
+                id="BATCH-001",
+                product_id="PROD1",
+                manufacturing_site_id="6122",
+                quantity=5600.0,  # 4 hours
+                production_date=date(2025, 1, 3),  # Before calendar start (Friday)
+            )
+        ]
+        schedule = ProductionSchedule(
+            manufacturing_site_id="6122",
+            production_batches=batches,
+            requirements=[],
+            total_units=5600.0,
+            schedule_start_date=date(2025, 1, 3),
+            schedule_end_date=date(2025, 1, 3),
+            daily_totals={},
+            daily_labor_hours={},
+            infeasibilities=[],
+            total_labor_hours=0.0,
+        )
+
+        calculator = LaborCostCalculator(labor_calendar)
+
+        # Should use default weekday rates (Friday = weekday)
+        with pytest.warns(UserWarning, match="Labor calendar missing date"):
+            breakdown = calculator.calculate_labor_cost(schedule)
+
+        # Should use default 12h fixed hours at $50/h regular rate
+        assert breakdown.total_hours == 4.0
+        assert breakdown.fixed_hours == 4.0
+        assert breakdown.overtime_hours == 0.0
+        assert breakdown.fixed_hours_cost == 200.0  # 4h × $50
+        assert breakdown.total_cost == 200.0
+
+    def test_labor_cost_with_missing_dates_after_calendar(self, cost_structure, labor_calendar):
+        """Test labor cost with production dates after calendar end."""
+        # Labor calendar ends Jan 11, production on Jan 13 (Monday)
+        batches = [
+            ProductionBatch(
+                id="BATCH-001",
+                product_id="PROD1",
+                manufacturing_site_id="6122",
+                quantity=8400.0,  # 6 hours
+                production_date=date(2025, 1, 13),  # After calendar end
+            )
+        ]
+        schedule = ProductionSchedule(
+            manufacturing_site_id="6122",
+            production_batches=batches,
+            requirements=[],
+            total_units=8400.0,
+            schedule_start_date=date(2025, 1, 13),
+            schedule_end_date=date(2025, 1, 13),
+            daily_totals={},
+            daily_labor_hours={},
+            infeasibilities=[],
+            total_labor_hours=0.0,
+        )
+
+        calculator = LaborCostCalculator(labor_calendar)
+
+        # Should use default weekday rates
+        with pytest.warns(UserWarning, match="Labor calendar missing date"):
+            breakdown = calculator.calculate_labor_cost(schedule)
+
+        assert breakdown.total_hours == 6.0
+        assert breakdown.fixed_hours == 6.0
+        assert breakdown.fixed_hours_cost == 300.0  # 6h × $50
+        assert breakdown.total_cost == 300.0
+
+    def test_labor_cost_with_calendar_gaps(self, cost_structure):
+        """Test labor cost with missing dates in middle of calendar."""
+        # Calendar with gap: Jan 6, Jan 7, missing Jan 8, Jan 9 present
+        days = [
+            LaborDay(
+                date=date(2025, 1, 6),
+                fixed_hours=12.0,
+                regular_rate=50.0,
+                overtime_rate=75.0,
+                non_fixed_rate=100.0,
+                is_fixed_day=True,
+            ),
+            LaborDay(
+                date=date(2025, 1, 7),
+                fixed_hours=12.0,
+                regular_rate=50.0,
+                overtime_rate=75.0,
+                non_fixed_rate=100.0,
+                is_fixed_day=True,
+            ),
+            # Jan 8 missing (Wednesday)
+            LaborDay(
+                date=date(2025, 1, 9),
+                fixed_hours=12.0,
+                regular_rate=50.0,
+                overtime_rate=75.0,
+                non_fixed_rate=100.0,
+                is_fixed_day=True,
+            ),
+        ]
+        calendar_with_gaps = LaborCalendar(name="Gapped Calendar", days=days)
+
+        # Production on missing day (Jan 8)
+        batches = [
+            ProductionBatch(
+                id="BATCH-001",
+                product_id="PROD1",
+                manufacturing_site_id="6122",
+                quantity=5600.0,  # 4 hours
+                production_date=date(2025, 1, 8),  # Gap in calendar
+            )
+        ]
+        schedule = ProductionSchedule(
+            manufacturing_site_id="6122",
+            production_batches=batches,
+            requirements=[],
+            total_units=5600.0,
+            schedule_start_date=date(2025, 1, 8),
+            schedule_end_date=date(2025, 1, 8),
+            daily_totals={},
+            daily_labor_hours={},
+            infeasibilities=[],
+            total_labor_hours=0.0,
+        )
+
+        calculator = LaborCostCalculator(calendar_with_gaps)
+
+        with pytest.warns(UserWarning, match="Labor calendar missing date"):
+            breakdown = calculator.calculate_labor_cost(schedule)
+
+        # Wednesday is weekday, should use default
+        assert breakdown.total_hours == 4.0
+        assert breakdown.fixed_hours == 4.0
+        assert breakdown.total_cost == 200.0
+
+    def test_labor_cost_with_partial_coverage(self, cost_structure, labor_calendar):
+        """Test labor cost with mix of valid and invalid dates."""
+        # Production on Jan 6 (in calendar) and Jan 8 (missing)
+        batches = [
+            ProductionBatch(
+                id="BATCH-001",
+                product_id="PROD1",
+                manufacturing_site_id="6122",
+                quantity=5600.0,  # 4 hours
+                production_date=date(2025, 1, 6),  # In calendar
+            ),
+            ProductionBatch(
+                id="BATCH-002",
+                product_id="PROD2",
+                manufacturing_site_id="6122",
+                quantity=8400.0,  # 6 hours
+                production_date=date(2025, 1, 8),  # Missing from calendar
+            ),
+        ]
+        schedule = ProductionSchedule(
+            manufacturing_site_id="6122",
+            production_batches=batches,
+            requirements=[],
+            total_units=14000.0,
+            schedule_start_date=date(2025, 1, 6),
+            schedule_end_date=date(2025, 1, 8),
+            daily_totals={},
+            daily_labor_hours={},
+            infeasibilities=[],
+            total_labor_hours=0.0,
+        )
+
+        calculator = LaborCostCalculator(labor_calendar)
+
+        # Should warn only about missing date
+        with pytest.warns(UserWarning, match="2025-01-08"):
+            breakdown = calculator.calculate_labor_cost(schedule)
+
+        # Jan 6: 4h at $50 = $200
+        # Jan 8: 6h at $50 (default) = $300
+        # Total: 10h, $500
+        assert breakdown.total_hours == 10.0
+        assert breakdown.fixed_hours == 10.0
+        assert breakdown.total_cost == 500.0
+
+    def test_labor_cost_validation_error(self, cost_structure, labor_calendar):
+        """Test labor cost validation in strict mode."""
+        # Production on missing date
+        batches = [
+            ProductionBatch(
+                id="BATCH-001",
+                product_id="PROD1",
+                manufacturing_site_id="6122",
+                quantity=5600.0,
+                production_date=date(2025, 1, 8),  # Missing from calendar
+            )
+        ]
+        schedule = ProductionSchedule(
+            manufacturing_site_id="6122",
+            production_batches=batches,
+            requirements=[],
+            total_units=5600.0,
+            schedule_start_date=date(2025, 1, 8),
+            schedule_end_date=date(2025, 1, 8),
+            daily_totals={},
+            daily_labor_hours={},
+            infeasibilities=[],
+            total_labor_hours=0.0,
+        )
+
+        # Strict validation should raise error
+        calculator = LaborCostCalculator(labor_calendar, strict_validation=True)
+
+        with pytest.raises(ValueError, match="Labor calendar missing 1 production dates"):
+            calculator.calculate_labor_cost(schedule)
+
+    def test_labor_cost_default_weekday_rates(self, cost_structure, labor_calendar):
+        """Test default rate application for weekday."""
+        # Thursday Jan 9 (missing from calendar)
+        batches = [
+            ProductionBatch(
+                id="BATCH-001",
+                product_id="PROD1",
+                manufacturing_site_id="6122",
+                quantity=16800.0,  # 12 hours (at capacity)
+                production_date=date(2025, 1, 9),  # Thursday
+            )
+        ]
+        schedule = ProductionSchedule(
+            manufacturing_site_id="6122",
+            production_batches=batches,
+            requirements=[],
+            total_units=16800.0,
+            schedule_start_date=date(2025, 1, 9),
+            schedule_end_date=date(2025, 1, 9),
+            daily_totals={},
+            daily_labor_hours={},
+            infeasibilities=[],
+            total_labor_hours=0.0,
+        )
+
+        calculator = LaborCostCalculator(labor_calendar)
+
+        with pytest.warns(UserWarning, match="weekday default rates"):
+            breakdown = calculator.calculate_labor_cost(schedule)
+
+        # Should use 12h fixed hours at regular rate
+        assert breakdown.total_hours == 12.0
+        assert breakdown.fixed_hours == 12.0
+        assert breakdown.overtime_hours == 0.0
+        assert breakdown.fixed_hours_cost == 600.0  # 12h × $50
+        assert breakdown.total_cost == 600.0
+
+    def test_labor_cost_default_weekend_rates(self, cost_structure, labor_calendar):
+        """Test default rate application for weekend."""
+        # Sunday Jan 12 (missing from calendar)
+        batches = [
+            ProductionBatch(
+                id="BATCH-001",
+                product_id="PROD1",
+                manufacturing_site_id="6122",
+                quantity=4200.0,  # 3 hours
+                production_date=date(2025, 1, 12),  # Sunday
+            )
+        ]
+        schedule = ProductionSchedule(
+            manufacturing_site_id="6122",
+            production_batches=batches,
+            requirements=[],
+            total_units=4200.0,
+            schedule_start_date=date(2025, 1, 12),
+            schedule_end_date=date(2025, 1, 12),
+            daily_totals={},
+            daily_labor_hours={},
+            infeasibilities=[],
+            total_labor_hours=0.0,
+        )
+
+        calculator = LaborCostCalculator(labor_calendar)
+
+        with pytest.warns(UserWarning, match="weekend default rates"):
+            breakdown = calculator.calculate_labor_cost(schedule)
+
+        # Should use weekend non-fixed rates with 4h minimum
+        assert breakdown.total_hours == 4.0  # 3h needed, but 4h minimum
+        assert breakdown.fixed_hours == 0.0
+        assert breakdown.non_fixed_hours == 4.0
+        assert breakdown.non_fixed_labor_cost == 400.0  # 4h × $100
+        assert breakdown.total_cost == 400.0
+
 
 # ProductionCostCalculator Tests
 

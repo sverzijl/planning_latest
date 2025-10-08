@@ -148,6 +148,32 @@ date        fixed_hours  regular_rate  overtime_rate  non_fixed_rate  minimum_ho
 
 **Note:** For public holidays in 2025 and 2026, use weekend labor rules.
 
+#### Date Coverage Requirements
+
+⚠️ **IMPORTANT:** The labor calendar must cover all production dates in your schedule.
+
+**Coverage Guidelines:**
+- **Minimum:** Cover all forecast dates
+- **Recommended:** Extend 7 days before forecast start (for production lead time)
+- **For Optimization:** Extend 7-10 days before forecast start and to forecast end
+
+**What happens if dates are missing:**
+- **Default mode:** System uses weekday/weekend defaults with warnings
+  - Weekdays (Mon-Fri): 12h fixed hours at regular rates
+  - Weekends (Sat-Sun): Non-fixed hours at premium rates with 4h minimum
+- **Strict validation mode:** System fails with clear error message indicating missing dates
+
+**Example:**
+```
+Forecast period: 2025-06-15 to 2025-07-15
+Recommended labor calendar: 2025-06-08 to 2025-07-15 (7 days before forecast start)
+```
+
+**Common Scenarios Requiring Extended Coverage:**
+- Heuristic planning: Production scheduled before delivery dates
+- Optimization: Planning horizon extended backward for production lead time
+- Multi-echelon network: Transit times require early production
+
 ---
 
 ### 5. TruckSchedules Sheet

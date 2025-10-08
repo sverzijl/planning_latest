@@ -8,10 +8,11 @@ Calculates labor costs from production schedule and labor calendar, accounting f
 IMPORTANT: Uses actual rates from LaborCalendar, not CostStructure defaults.
 """
 
-from typing import Dict
+from typing import Dict, List, Optional
 from datetime import date
+import warnings
 
-from src.models.labor_calendar import LaborCalendar
+from src.models.labor_calendar import LaborCalendar, LaborDay
 from src.production.scheduler import ProductionSchedule
 from .cost_breakdown import LaborCostBreakdown
 
@@ -34,14 +35,20 @@ class LaborCostCalculator:
     # Production rate constant
     UNITS_PER_HOUR = 1400
 
-    def __init__(self, labor_calendar: LaborCalendar):
+    def __init__(self, labor_calendar: LaborCalendar, strict_validation: bool = False):
         """
         Initialize labor cost calculator.
 
         Args:
             labor_calendar: Labor calendar with daily rates and fixed hours
+            strict_validation: If True, raise error on missing dates. If False, use defaults with warning.
         """
         self.labor_calendar = labor_calendar
+        self.strict_validation = strict_validation
+        self._missing_dates_logged: set[date] = set()  # Track logged warnings
+
+        # Extract default rates from first available labor day
+        self._default_rates = self._get_default_rates()
 
     def calculate_labor_cost(self, schedule: ProductionSchedule) -> LaborCostBreakdown:
         """
@@ -59,7 +66,14 @@ class LaborCostCalculator:
 
         Returns:
             Detailed labor cost breakdown
+
+        Raises:
+            ValueError: If strict_validation=True and labor calendar missing dates
         """
+        # Validate labor coverage if strict mode enabled
+        if self.strict_validation:
+            self._validate_labor_coverage(schedule)
+
         breakdown = LaborCostBreakdown()
 
         # Group batches by production date
@@ -73,6 +87,18 @@ class LaborCostCalculator:
         # Calculate cost for each date
         for prod_date, quantity in daily_production.items():
             labor_day = self.labor_calendar.get_labor_day(prod_date)
+
+            # Handle missing labor day with smart default
+            if labor_day is None:
+                labor_day = self._get_default_labor_day(prod_date)
+                if prod_date not in self._missing_dates_logged:
+                    warnings.warn(
+                        f"Labor calendar missing date {prod_date}. "
+                        f"Using {'weekday' if labor_day.is_fixed_day else 'weekend'} default rates. "
+                        f"Extend labor calendar to avoid approximations.",
+                        UserWarning
+                    )
+                    self._missing_dates_logged.add(prod_date)
 
             # Calculate hours needed
             hours_needed = quantity / self.UNITS_PER_HOUR
@@ -150,8 +176,27 @@ class LaborCostCalculator:
                 - non_fixed_cost
                 - hours_needed
                 - hours_paid
+
+        Raises:
+            ValueError: If strict_validation=True and labor date missing
         """
         labor_day = self.labor_calendar.get_labor_day(prod_date)
+
+        # Handle missing labor day
+        if labor_day is None:
+            if self.strict_validation:
+                raise ValueError(
+                    f"Labor calendar missing date {prod_date}. "
+                    f"Extend calendar to cover all production dates."
+                )
+            labor_day = self._get_default_labor_day(prod_date)
+            if prod_date not in self._missing_dates_logged:
+                warnings.warn(
+                    f"Labor calendar missing date {prod_date}. Using defaults.",
+                    UserWarning
+                )
+                self._missing_dates_logged.add(prod_date)
+
         hours_needed = quantity / self.UNITS_PER_HOUR
 
         if labor_day.is_fixed_day:
@@ -183,3 +228,93 @@ class LaborCostCalculator:
                 "hours_needed": hours_needed,
                 "hours_paid": hours_paid,
             }
+
+    def _get_default_rates(self) -> Dict[str, float]:
+        """
+        Extract default rates from labor calendar for use when dates are missing.
+
+        Returns:
+            Dictionary with default rates:
+                - regular_rate
+                - overtime_rate
+                - non_fixed_rate
+                - minimum_hours
+
+        Raises:
+            ValueError: If labor calendar is empty
+        """
+        if not self.labor_calendar.days:
+            raise ValueError("Labor calendar is empty. Cannot calculate costs.")
+
+        # Use first labor day as source for default rates
+        first_day = self.labor_calendar.days[0]
+        return {
+            "regular_rate": first_day.regular_rate,
+            "overtime_rate": first_day.overtime_rate,
+            "non_fixed_rate": first_day.non_fixed_rate or first_day.overtime_rate,
+            "minimum_hours": 4.0,  # Standard minimum for non-fixed days
+        }
+
+    def _get_default_labor_day(self, target_date: date) -> LaborDay:
+        """
+        Create a default labor day for a missing date.
+
+        Uses weekday to determine if fixed or non-fixed day:
+        - Monday-Friday: Fixed day with 12h fixed hours
+        - Saturday-Sunday: Non-fixed day with 4h minimum
+
+        Args:
+            target_date: Date to create default for
+
+        Returns:
+            Default LaborDay with appropriate rates
+        """
+        is_weekday = target_date.weekday() < 5  # 0=Monday, 4=Friday
+
+        if is_weekday:
+            # Weekday: Fixed labor day
+            return LaborDay(
+                date=target_date,
+                fixed_hours=12.0,  # Standard fixed hours
+                regular_rate=self._default_rates["regular_rate"],
+                overtime_rate=self._default_rates["overtime_rate"],
+                non_fixed_rate=self._default_rates["non_fixed_rate"],
+                minimum_hours=0.0,
+                is_fixed_day=True,
+            )
+        else:
+            # Weekend: Non-fixed labor day
+            return LaborDay(
+                date=target_date,
+                fixed_hours=0.0,
+                regular_rate=self._default_rates["regular_rate"],
+                overtime_rate=self._default_rates["overtime_rate"],
+                non_fixed_rate=self._default_rates["non_fixed_rate"],
+                minimum_hours=self._default_rates["minimum_hours"],
+                is_fixed_day=False,
+            )
+
+    def _validate_labor_coverage(self, schedule: ProductionSchedule) -> None:
+        """
+        Validate that labor calendar covers all production dates.
+
+        Args:
+            schedule: Production schedule to validate
+
+        Raises:
+            ValueError: If labor calendar missing critical dates
+        """
+        missing_dates: List[date] = []
+
+        for batch in schedule.production_batches:
+            if self.labor_calendar.get_labor_day(batch.production_date) is None:
+                missing_dates.append(batch.production_date)
+
+        if missing_dates:
+            missing_dates.sort()
+            raise ValueError(
+                f"Labor calendar missing {len(missing_dates)} production dates. "
+                f"Date range: {missing_dates[0]} to {missing_dates[-1]}. "
+                f"First 5 missing: {missing_dates[:5]}. "
+                f"Extend labor calendar to cover {schedule.schedule_start_date} to {schedule.schedule_end_date}."
+            )
