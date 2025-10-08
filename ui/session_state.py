@@ -63,6 +63,7 @@ def initialize_session_state():
         'forecast_filename': None,
         'network_filename': None,
         'inventory_filename': None,
+        'inventory_snapshot_date': None,
     }
 
     for key, default_value in defaults.items():
@@ -127,6 +128,7 @@ def store_parsed_data(
     initial_inventory: Optional[Any] = None,
     product_aliases: Optional[Any] = None,
     inventory_filename: str = None,
+    inventory_snapshot_date: Optional[Any] = None,
 ):
     """Store parsed data in session state.
 
@@ -146,6 +148,7 @@ def store_parsed_data(
     st.session_state.forecast_filename = forecast_filename
     st.session_state.network_filename = network_filename
     st.session_state.inventory_filename = inventory_filename
+    st.session_state.inventory_snapshot_date = inventory_snapshot_date
     st.session_state.data_uploaded = True
 
 

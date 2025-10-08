@@ -356,6 +356,33 @@ with tab_optimization:
             key="opt_mip_gap"
         )
 
+        # Planning Horizon Start Date Override
+        override_start_date = st.checkbox(
+            "Override Planning Start Date",
+            value=False,
+            help="Override the auto-calculated planning start date (normally based on inventory snapshot date and transit times)",
+            key="opt_override_start"
+        )
+
+        planning_start_date = None
+        if override_start_date:
+            # Get inventory snapshot date as default if available
+            default_start = st.session_state.get('inventory_snapshot_date')
+            if default_start is None:
+                # Fall back to earliest forecast date
+                data = session_state.get_parsed_data()
+                if data and data.get('forecast') and data['forecast'].entries:
+                    default_start = min(e.forecast_date for e in data['forecast'].entries)
+                else:
+                    default_start = date.today()
+
+            planning_start_date = st.date_input(
+                "Planning Start Date",
+                value=default_start,
+                help="Set custom planning horizon start date (must be on/before inventory snapshot date)",
+                key="opt_planning_start_date"
+            )
+
     with col2:
         allow_shortages = st.checkbox(
             "Allow Demand Shortages",
@@ -427,6 +454,7 @@ with tab_optimization:
                     allow_shortages=allow_shortages,
                     enforce_shelf_life=enforce_shelf_life,
                     initial_inventory=initial_inventory,
+                    start_date=planning_start_date,  # Use override if specified, else None (auto-calculate)
                 )
 
                 # Calculate planning horizon info

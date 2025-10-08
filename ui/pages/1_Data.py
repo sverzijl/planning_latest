@@ -116,6 +116,50 @@ with tab_upload:
         if inventory_file:
             st.markdown(success_badge(inventory_file.name), unsafe_allow_html=True)
 
+        # Inventory snapshot date selector (shown if inventory file is uploaded)
+        inventory_snapshot_date = None
+        if inventory_file:
+            st.markdown("**Inventory Snapshot Date**")
+            # Try to get earliest forecast date as smart default
+            default_date = date.today()
+            if forecast_file:
+                try:
+                    import pandas as pd
+                    # Quick peek at forecast to get earliest date
+                    try:
+                        df_forecast = pd.read_excel(forecast_file, sheet_name="Forecast", engine="openpyxl")
+                        if 'date' in df_forecast.columns:
+                            earliest = pd.to_datetime(df_forecast['date']).min().date()
+                            default_date = earliest
+                    except:
+                        # If standard format fails, try SAP IBP format
+                        from src.parsers.sap_ibp_parser import SapIbpParser
+                        import tempfile
+                        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsm")
+                        try:
+                            temp_file.write(forecast_file.getvalue())
+                            temp_path = Path(temp_file.name)
+                        finally:
+                            temp_file.close()
+
+                        sap_sheet = SapIbpParser.detect_sap_ibp_format(temp_path)
+                        if sap_sheet:
+                            forecast_obj = SapIbpParser.parse_sap_ibp_forecast(temp_path, sap_sheet)
+                            if forecast_obj.entries:
+                                default_date = min(e.forecast_date for e in forecast_obj.entries)
+
+                        if temp_path.exists():
+                            temp_path.unlink()
+                except:
+                    pass  # Use today as default if we can't determine from forecast
+
+            inventory_snapshot_date = st.date_input(
+                "Select the date this inventory was recorded",
+                value=default_date,
+                help="This is the date when the inventory snapshot was taken. The planning horizon will start from this date (or earlier based on transit times).",
+                key="inventory_snapshot_date_input"
+            )
+
     # Display file contents if uploaded
     if forecast_file is not None or network_file is not None:
         st.divider()
@@ -358,7 +402,9 @@ with tab_upload:
                         inventory_snapshot = None
                         if inventory_path:
                             try:
-                                inventory_snapshot = parser.parse_inventory()
+                                inventory_snapshot = parser.parse_inventory(
+                                    snapshot_date=inventory_snapshot_date
+                                )
                             except Exception as e:
                                 st.warning(f"⚠️ Error parsing inventory: {e}")
 
@@ -393,6 +439,7 @@ with tab_upload:
                                 initial_inventory=inventory_snapshot,
                                 product_aliases=product_aliases,
                                 inventory_filename=inventory_file.name if inventory_file else None,
+                                inventory_snapshot_date=inventory_snapshot_date if inventory_file else None,
                             )
 
                             # Clear any previous planning results
