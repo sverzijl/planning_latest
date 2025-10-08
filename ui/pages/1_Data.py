@@ -142,15 +142,20 @@ with tab_upload:
                     st.caption(f"📊 {len(df_forecast)} forecast entries (showing first 100)")
                 except Exception as e1:
                     # Try SAP IBP format
+                    temp_path = None
                     try:
                         from src.parsers.sap_ibp_parser import SapIbpParser
 
                         # Save to temp file for parsing
-                        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsm") as f:
-                            f.write(forecast_file.getvalue())
-                            temp_path = Path(f.name)
+                        # Create and write file, then close handle immediately (Windows fix)
+                        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsm")
+                        try:
+                            temp_file.write(forecast_file.getvalue())
+                            temp_path = Path(temp_file.name)
+                        finally:
+                            temp_file.close()  # Close handle before accessing file
 
-                        # Detect SAP IBP format
+                        # Detect SAP IBP format (file is now closed, can be accessed)
                         sap_sheet = SapIbpParser.detect_sap_ibp_format(temp_path)
                         if sap_sheet:
                             st.markdown(success_badge(f"Format: SAP IBP ({sap_sheet})"), unsafe_allow_html=True)
@@ -180,14 +185,16 @@ with tab_upload:
                         else:
                             raise ValueError("No valid forecast format detected")
 
-                        # Clean up temp file
-                        Path(temp_path).unlink()
                     except Exception as e2:
                         st.error(f"Error reading forecast data")
                         with st.expander("Error Details"):
                             st.write(f"**Standard format error:** {e1}")
                             st.write(f"**SAP IBP detection error:** {e2}")
                         st.info("**Supported formats:**\n- **Standard:** Forecast sheet with columns: location_id, product_id, date, quantity\n- **SAP IBP:** Wide format export with dates as columns")
+                    finally:
+                        # Clean up temp file
+                        if temp_path and temp_path.exists():
+                            temp_path.unlink()
             tab_idx += 1
 
         # Network config tabs
@@ -251,21 +258,36 @@ with tab_upload:
                         from src.models.location import LocationType
 
                         # Save uploaded files to temp locations
-                        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as f_forecast:
+                        # Close file handles immediately for Windows compatibility
+                        forecast_path = None
+                        network_path = None
+                        inventory_path = None
+
+                        try:
+                            # Forecast file
+                            f_forecast = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
                             f_forecast.write(forecast_file.getvalue())
                             forecast_path = f_forecast.name
+                            f_forecast.close()  # Close handle immediately
 
-                        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as f_network:
+                            # Network file
+                            f_network = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
                             f_network.write(network_file.getvalue())
                             network_path = f_network.name
+                            f_network.close()  # Close handle immediately
 
-                        # Parse files
-                        # Save inventory file if uploaded
-                        inventory_path = None
-                        if inventory_file:
-                            with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as f_inventory:
+                            # Inventory file (optional)
+                            if inventory_file:
+                                f_inventory = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
                                 f_inventory.write(inventory_file.getvalue())
                                 inventory_path = f_inventory.name
+                                f_inventory.close()  # Close handle immediately
+                        except Exception:
+                            # If file creation fails, clean up any created files
+                            for path in [forecast_path, network_path, inventory_path]:
+                                if path and Path(path).exists():
+                                    Path(path).unlink()
+                            raise
 
                         parser = MultiFileParser(
                             forecast_file=forecast_path,
