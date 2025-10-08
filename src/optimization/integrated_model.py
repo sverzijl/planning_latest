@@ -1198,37 +1198,35 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 prod: Product ID
                 date: Date (end of day)
             """
-            # Get routes delivering frozen to this location
-            routes_frozen_arrival = [
-                r for r in self.routes_to_destination.get(loc, [])
-                if self.route_arrival_state.get(r) == 'frozen'
+            # LEG-BASED ROUTING: Get legs delivering frozen to this location
+            legs_frozen_arrival = [
+                (o, d) for (o, d) in self.legs_to_location.get(loc, [])
+                if self.leg_arrival_state.get((o, d)) == 'frozen'
             ]
 
             # Frozen arrivals
             frozen_arrivals = sum(
-                model.shipment[r, prod, date]
-                for r in routes_frozen_arrival
+                model.shipment_leg[(o, d), prod, date]
+                for (o, d) in legs_frozen_arrival
             )
 
-            # Frozen outflows (shipments departing from this location)
+            # LEG-BASED ROUTING: Frozen outflows (shipments departing from this location)
             # Only relevant for intermediate storage like Lineage
             frozen_outflows = 0
             if loc in self.intermediate_storage:
-                # Find routes originating from this location
-                routes_from_loc = [
-                    r for r in self.route_indices
-                    if self.route_enumerator.get_route(r).origin_id == loc
-                ]
+                # Find legs originating from this location
+                legs_from_loc = self.legs_from_location.get(loc, [])
+
                 # Sum outbound shipments departing on this date
-                for r in routes_from_loc:
-                    route = self.route_enumerator.get_route(r)
+                for (origin, dest) in legs_from_loc:
                     # Shipment variable is indexed by delivery_date
                     # To find shipments departing on 'date', we need delivery_date where:
                     # departure_date = delivery_date - transit_days = date
                     # Therefore: delivery_date = date + transit_days
-                    delivery_date = date + timedelta(days=int(route.total_transit_days))
+                    transit_days = self.leg_transit_days[(origin, dest)]
+                    delivery_date = date + timedelta(days=transit_days)
                     if delivery_date in model.dates:
-                        frozen_outflows += model.shipment[r, prod, delivery_date]
+                        frozen_outflows += model.shipment_leg[(origin, dest), prod, delivery_date]
 
             # Previous frozen inventory
             prev_date = self.date_previous.get(date)
@@ -1316,19 +1314,19 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 )
 
             # Standard inventory balance for other locations
-            # Get routes delivering ambient to this location
+            # LEG-BASED ROUTING: Get legs delivering ambient to this location
             # This includes:
-            # - True ambient routes
-            # - Frozen routes that thaw on arrival (frozen route to non-frozen destination)
-            routes_ambient_arrival = [
-                r for r in self.routes_to_destination.get(loc, [])
-                if self.route_arrival_state.get(r) == 'ambient'
+            # - True ambient legs
+            # - Frozen legs that thaw on arrival (frozen leg to non-frozen destination)
+            legs_ambient_arrival = [
+                (o, d) for (o, d) in self.legs_to_location.get(loc, [])
+                if self.leg_arrival_state.get((o, d)) == 'ambient'
             ]
 
             # Ambient arrivals (includes automatic thawing)
             ambient_arrivals = sum(
-                model.shipment[r, prod, date]
-                for r in routes_ambient_arrival
+                model.shipment_leg[(o, d), prod, date]
+                for (o, d) in legs_ambient_arrival
             )
 
             # Demand on this date (0 if no demand or intermediate storage)
@@ -1338,6 +1336,20 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             shortage_qty = 0
             if self.allow_shortages and (loc, prod, date) in self.demand:
                 shortage_qty = model.shortage[loc, prod, date]
+
+            # LEG-BASED ROUTING: Calculate ambient outflows from this location
+            # Similar to frozen outflows at Lineage, we need to account for shipments
+            # departing from hub locations (6104, 6125) to their spoke destinations
+            ambient_outflows = 0
+            legs_from_loc = self.legs_from_location.get(loc, [])
+            for (origin, dest) in legs_from_loc:
+                if self.leg_arrival_state.get((origin, dest)) == 'ambient':
+                    # Shipments are indexed by delivery date
+                    # To get outflows on current date, find shipments that deliver in the future
+                    transit_days = self.leg_transit_days[(origin, dest)]
+                    delivery_date = date + timedelta(days=transit_days)
+                    if delivery_date in model.dates:
+                        ambient_outflows += model.shipment_leg[(origin, dest), prod, delivery_date]
 
             # Previous ambient inventory
             prev_date = self.date_previous.get(date)
@@ -1354,7 +1366,7 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
 
             # Balance equation
             return model.inventory_ambient[loc, prod, date] == (
-                prev_ambient + ambient_arrivals - demand_qty - shortage_qty
+                prev_ambient + ambient_arrivals - demand_qty - shortage_qty - ambient_outflows
             )
 
         model.inventory_ambient_balance_con = Constraint(
@@ -1440,64 +1452,43 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 Without the product dimension, products can be mixed (e.g., shipments of
                 product A "satisfied" by truck loads of product B).
                 """
-                # Get all routes that go directly from manufacturing to this destination
-                # These are routes where origin = manufacturing_site_id and immediate destination = dest_id
+                # LEG-BASED ROUTING: Check if leg exists from manufacturing to this destination
                 manufacturing_id = self.manufacturing_site.id
+                leg_key = (manufacturing_id, dest_id)
 
-                # Find routes that start from manufacturing and go to dest_id as first destination
-                direct_routes = []
-                for route_idx in self.route_indices:
-                    route = self.route_enumerator.get_route(route_idx)
-                    if route and route.origin_id == manufacturing_id:
-                        # Get first leg destination (immediate next hop from manufacturing)
-                        first_leg_dest = route.path[1] if len(route.path) >= 2 else route.destination_id
-                        if first_leg_dest == dest_id:
-                            direct_routes.append(route_idx)
-
-                if not direct_routes:
+                if leg_key not in self.leg_keys:
                     return Constraint.Skip
 
                 # Get trucks that go to this destination
                 trucks_to_dest = self.trucks_to_destination.get(dest_id, [])
 
                 if not trucks_to_dest:
-                    # No trucks to this destination - routes can't be used
-                    # Force shipments of this product to be zero
-                    return sum(
-                        model.shipment[r, product_id, d]
-                        for r in direct_routes
-                    ) == 0
+                    # No trucks to this destination - leg shipments must be zero
+                    return model.shipment_leg[leg_key, product_id, d] == 0
 
-                # Sum of shipments of THIS PRODUCT on direct routes = sum of truck loads of THIS PRODUCT
-                total_route_shipments = sum(
-                    model.shipment[r, product_id, d]
-                    for r in direct_routes
-                )
+                # Shipment on this leg of THIS PRODUCT = sum of truck loads
+                leg_shipment = model.shipment_leg[leg_key, product_id, d]
 
                 total_truck_loads = sum(
                     model.truck_load[t, dest_id, product_id, d]
                     for t in trucks_to_dest
                 )
 
-                return total_route_shipments == total_truck_loads
+                return leg_shipment == total_truck_loads
 
-            # Get all unique first-leg destinations from routes originating at manufacturing
-            # This ensures we create constraints for ALL destinations that routes actually use,
-            # not just the truck final destinations
-            first_leg_destinations = set()
-            for route_idx in self.route_indices:
-                route = self.route_enumerator.get_route(route_idx)
-                if route and route.origin_id == self.manufacturing_site.id:
-                    # Get first leg destination (immediate next hop from manufacturing)
-                    first_leg_dest = route.path[1] if len(route.path) >= 2 else route.destination_id
-                    first_leg_destinations.add(first_leg_dest)
+            # LEG-BASED ROUTING: Get all destinations that have legs from manufacturing
+            # Create constraints for ALL leg destinations from manufacturing
+            leg_destinations = set()
+            for (origin, dest) in self.leg_keys:
+                if origin == self.manufacturing_site.id:
+                    leg_destinations.add(dest)
 
-            model.truck_route_linking_con = Constraint(
-                list(first_leg_destinations),  # Use actual route first-leg destinations
+            model.truck_leg_linking_con = Constraint(
+                list(leg_destinations),  # Destinations reachable via legs from manufacturing
                 model.products,  # CRITICAL: Include product dimension to prevent product mixing
                 model.dates,
                 rule=truck_route_linking_rule,
-                doc="Link truck loads to route shipments from manufacturing (by destination, product, and date)"
+                doc="Link truck loads to leg shipments from manufacturing (by destination, product, and date)"
             )
 
             # NEW CONSTRAINT: Truck loading timing (D-1 vs D0)
@@ -1693,16 +1684,16 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 for p in model.products:
                     production_cost += prod_cost_per_unit * model.production[d, p]
 
-            # Transport cost
+            # LEG-BASED ROUTING: Transport cost (sum of leg costs)
             transport_cost = 0.0
-            for r in model.routes:
-                route_cost = self.route_cost.get(r, 0.0)
+            for (origin, dest) in model.legs:
+                leg_cost_value = self.leg_cost.get((origin, dest), 0.0)
                 # Defensive check for None or infinity
-                if route_cost is None or not math.isfinite(route_cost):
-                    route_cost = 0.0
+                if leg_cost_value is None or not math.isfinite(leg_cost_value):
+                    leg_cost_value = 0.0
                 for p in model.products:
                     for d in model.dates:
-                        transport_cost += route_cost * model.shipment[r, p, d]
+                        transport_cost += leg_cost_value * model.shipment_leg[(origin, dest), p, d]
 
             # STATE TRACKING: INVENTORY HOLDING COST (state-specific rates)
             # Frozen storage typically more expensive than ambient
@@ -1789,14 +1780,18 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             if hours > 1e-6:
                 labor_hours_by_date[d] = hours
 
-        # Extract shipment decisions
-        shipments_by_route_product_date: Dict[Tuple[int, str, Date], float] = {}
-        for r in model.routes:
+        # LEG-BASED ROUTING: Extract shipment decisions by leg
+        shipments_by_leg_product_date: Dict[Tuple[Tuple[str, str], str, Date], float] = {}
+        for (origin, dest) in model.legs:
             for p in model.products:
                 for d in model.dates:
-                    qty = value(model.shipment[r, p, d])
+                    qty = value(model.shipment_leg[(origin, dest), p, d])
                     if qty > 1e-6:  # Only include non-zero shipments
-                        shipments_by_route_product_date[(r, p, d)] = qty
+                        shipments_by_leg_product_date[((origin, dest), p, d)] = qty
+
+        # LEGACY: Keep route-based shipments for backward compatibility (DEPRECATED)
+        shipments_by_route_product_date: Dict[Tuple[int, str, Date], float] = {}
+        # Note: This will be empty in leg-based routing, included for backward compatibility
 
         # Calculate costs
         total_labor_cost = 0.0
@@ -1828,14 +1823,14 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 qty = value(model.production[d, p])
                 total_production_cost += self.cost_structure.production_cost_per_unit * qty
 
-        # Calculate transport cost
+        # LEG-BASED ROUTING: Calculate transport cost (sum of leg costs)
         total_transport_cost = 0.0
-        for r in model.routes:
-            route_cost = self.route_cost[r]
+        for (origin, dest) in model.legs:
+            leg_cost_value = self.leg_cost[(origin, dest)]
             for p in model.products:
                 for d in model.dates:
-                    qty = value(model.shipment[r, p, d])
-                    total_transport_cost += route_cost * qty
+                    qty = value(model.shipment_leg[(origin, dest), p, d])
+                    total_transport_cost += leg_cost_value * qty
 
         # Extract shortage quantities (if shortages allowed)
         shortages_by_dest_product_date: Dict[Tuple[str, str, Date], float] = {}
@@ -1909,7 +1904,8 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             'production_batches': production_batches,  # Add list format for UI
             'labor_hours_by_date': labor_hours_by_date,
             'labor_cost_by_date': labor_cost_by_date,
-            'shipments_by_route_product_date': shipments_by_route_product_date,
+            'shipments_by_route_product_date': shipments_by_route_product_date,  # DEPRECATED - kept for backward compatibility
+            'shipments_by_leg_product_date': shipments_by_leg_product_date,  # LEG-BASED ROUTING
             'shortages_by_dest_product_date': shortages_by_dest_product_date,
             # STATE TRACKING: State-specific inventory data
             'inventory_frozen_by_loc_product_date': inventory_frozen_by_loc_product_date,
