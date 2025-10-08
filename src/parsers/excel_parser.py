@@ -122,15 +122,40 @@ class ExcelParser:
         # Parse locations
         locations = []
         for _, row in df.iterrows():
-            location = Location(
-                id=str(row["id"]),
-                name=str(row["name"]),
-                type=LocationType(row["type"].lower()),
-                storage_mode=StorageMode(row["storage_mode"].lower()),
-                capacity=float(row["capacity"]) if "capacity" in row and pd.notna(row["capacity"]) else None,
-                latitude=float(row["latitude"]) if "latitude" in row and pd.notna(row["latitude"]) else None,
-                longitude=float(row["longitude"]) if "longitude" in row and pd.notna(row["longitude"]) else None,
-            )
+            loc_type = LocationType(row["type"].lower())
+
+            # Build base location parameters
+            base_params = {
+                "id": str(row["id"]),
+                "name": str(row["name"]),
+                "type": loc_type,
+                "storage_mode": StorageMode(row["storage_mode"].lower()),
+                "capacity": float(row["capacity"]) if "capacity" in row and pd.notna(row["capacity"]) else None,
+                "latitude": float(row["latitude"]) if "latitude" in row and pd.notna(row["latitude"]) else None,
+                "longitude": float(row["longitude"]) if "longitude" in row and pd.notna(row["longitude"]) else None,
+            }
+
+            # Check if this is a manufacturing location
+            if loc_type == LocationType.MANUFACTURING:
+                # Manufacturing-specific parameters
+                if "production_rate" not in row or pd.isna(row["production_rate"]):
+                    raise ValueError(f"Manufacturing location {row['id']} missing required 'production_rate' parameter")
+
+                mfg_params = {
+                    **base_params,
+                    "production_rate": float(row["production_rate"]),
+                    "max_daily_capacity": float(row["max_daily_capacity"]) if "max_daily_capacity" in row and pd.notna(row["max_daily_capacity"]) else None,
+                    "daily_startup_hours": float(row["daily_startup_hours"]) if "daily_startup_hours" in row and pd.notna(row["daily_startup_hours"]) else 0.5,
+                    "daily_shutdown_hours": float(row["daily_shutdown_hours"]) if "daily_shutdown_hours" in row and pd.notna(row["daily_shutdown_hours"]) else 0.5,
+                    "default_changeover_hours": float(row["default_changeover_hours"]) if "default_changeover_hours" in row and pd.notna(row["default_changeover_hours"]) else 1.0,
+                    "morning_truck_cutoff_hour": int(row["morning_truck_cutoff_hour"]) if "morning_truck_cutoff_hour" in row and pd.notna(row["morning_truck_cutoff_hour"]) else 24,
+                    "afternoon_truck_cutoff_hour": int(row["afternoon_truck_cutoff_hour"]) if "afternoon_truck_cutoff_hour" in row and pd.notna(row["afternoon_truck_cutoff_hour"]) else 12,
+                }
+                location = ManufacturingSite(**mfg_params)
+            else:
+                # Regular location (storage or breadroom)
+                location = Location(**base_params)
+
             locations.append(location)
 
         return locations

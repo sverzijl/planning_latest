@@ -57,10 +57,27 @@ location_id  product_id  date        quantity  confidence
 - `type`: "manufacturing", "storage", "breadroom"
 - `storage_mode`: "ambient", "frozen", "both"
 
+**Manufacturing-Specific Columns** (required when `type="manufacturing"`):
+| Column | Type | Description | Example | Required |
+|--------|------|-------------|---------|----------|
+| `production_rate` | float | Units produced per hour | 1400.0 | Yes (for mfg) |
+| `max_daily_capacity` | float | Max production per day (units) | 19600 | No |
+| `daily_startup_hours` | float | Production line startup time (hours) | 0.5 | No (default: 0.5) |
+| `daily_shutdown_hours` | float | Production line shutdown time (hours) | 0.5 | No (default: 0.5) |
+| `default_changeover_hours` | float | Product changeover time (hours) | 1.0 | No (default: 1.0) |
+| `morning_truck_cutoff_hour` | int | Morning truck production cutoff (0-24) | 24 | No (default: 24) |
+| `afternoon_truck_cutoff_hour` | int | Afternoon truck production cutoff (0-24) | 12 | No (default: 12) |
+
+**Notes:**
+- Manufacturing-specific columns only apply to rows where `type="manufacturing"`
+- For non-manufacturing locations, these columns can be omitted or left blank
+- `production_rate` is REQUIRED for manufacturing locations
+- Cutoff hours: 24 = end of previous day, 12 = noon same day
+
 **Example Rows:**
 ```
-id    name              type          storage_mode  capacity
-6122  Manufacturing     manufacturing both          100000
+id    name              type          storage_mode  capacity  production_rate  max_daily_capacity  daily_startup_hours  daily_shutdown_hours
+6122  Manufacturing     manufacturing both          100000    1400.0           19600               0.5                  0.5
 6104  QBA-Moorebank     breadroom     ambient       5000
 LIN01 Lineage Frozen   storage       frozen        50000
 ```
