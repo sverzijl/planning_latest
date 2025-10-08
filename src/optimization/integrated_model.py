@@ -1341,7 +1341,9 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                             # For each delivery date, check if departure is on current date
                             for delivery_date in model.dates:
                                 departure_date = delivery_date - timedelta(days=transit_days)
-                                if departure_date == date:
+                                # BUG FIX: Only count departures within planning horizon
+                                # Departures before start_date are handled by initial_inventory
+                                if departure_date == date and departure_date in model.dates:
                                     # This truck-destination-delivery combination departs on current date
                                     truck_outflows += model.truck_load[truck_idx, dest, prod, delivery_date]
 
@@ -1478,6 +1480,27 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 model.dates,
                 rule=truck_availability_rule,
                 doc="Truck availability by day of week"
+            )
+
+            # Constraint: Prevent phantom truck loads (departures before planning horizon)
+            def no_phantom_truck_loads_rule(model, truck_idx, dest, prod, delivery_date):
+                """Prevent truck loads when required departure would be before planning horizon."""
+                transit_days = self._get_truck_transit_days(truck_idx, dest)
+                departure_date = delivery_date - timedelta(days=transit_days)
+
+                if departure_date < self.start_date:
+                    # This truck load would require departure before planning horizon
+                    return model.truck_load[truck_idx, dest, prod, delivery_date] == 0
+                else:
+                    return Constraint.Skip
+
+            model.no_phantom_truck_loads_con = Constraint(
+                model.trucks,
+                model.truck_destinations,
+                model.products,
+                model.dates,
+                rule=no_phantom_truck_loads_rule,
+                doc="Prevent truck loads with departure before planning horizon"
             )
 
             # Constraint: Link truck loads to route shipments
