@@ -411,6 +411,9 @@ with tab_optimization:
                 # Get parsed data
                 data = session_state.get_parsed_data()
 
+                # Get initial inventory from session state
+                initial_inventory = session_state.get_initial_inventory_dict()
+
                 # Create optimization model
                 model = IntegratedProductionDistributionModel(
                     forecast=data['forecast'],
@@ -423,7 +426,7 @@ with tab_optimization:
                     max_routes_per_destination=max_routes,
                     allow_shortages=allow_shortages,
                     enforce_shelf_life=enforce_shelf_life,
-                    initial_inventory={},  # No starting inventory
+                    initial_inventory=initial_inventory,
                 )
 
                 # Calculate planning horizon info

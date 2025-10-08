@@ -2,8 +2,11 @@
 
 from pathlib import Path
 from typing import Optional
+from datetime import date as Date
 
 from .excel_parser import ExcelParser
+from .product_alias_resolver import ProductAliasResolver
+from .inventory_parser import InventoryParser
 from ..models import (
     Forecast,
     Location,
@@ -12,6 +15,7 @@ from ..models import (
     TruckSchedule,
     CostStructure,
 )
+from ..models.inventory import InventorySnapshot
 
 
 class MultiFileParser:
@@ -41,6 +45,7 @@ class MultiFileParser:
         self,
         forecast_file: Optional[Path | str] = None,
         network_file: Optional[Path | str] = None,
+        inventory_file: Optional[Path | str] = None,
     ):
         """
         Initialize multi-file parser.
@@ -48,32 +53,37 @@ class MultiFileParser:
         Args:
             forecast_file: Path to file containing Forecast sheet (optional)
             network_file: Path to file containing Locations, Routes, LaborCalendar,
-                         TruckSchedules, and CostParameters sheets (optional)
+                         TruckSchedules, CostParameters, and Alias sheets (optional)
+            inventory_file: Path to file containing inventory snapshot data (optional)
 
         Raises:
-            ValueError: If both files are None
+            ValueError: If both forecast_file and network_file are None
             FileNotFoundError: If specified file doesn't exist
 
         Note:
-            At least one file must be provided. If forecast_file is None,
-            forecast data cannot be parsed. If network_file is None,
-            network configuration cannot be parsed.
+            At least one of forecast_file or network_file must be provided.
+            inventory_file is optional and can be added later.
         """
         if forecast_file is None and network_file is None:
             raise ValueError("At least one of forecast_file or network_file must be provided")
 
         self.forecast_file = Path(forecast_file) if forecast_file else None
         self.network_file = Path(network_file) if network_file else None
+        self.inventory_file = Path(inventory_file) if inventory_file else None
 
         # Validate files exist
         if self.forecast_file and not self.forecast_file.exists():
             raise FileNotFoundError(f"Forecast file not found: {forecast_file}")
         if self.network_file and not self.network_file.exists():
             raise FileNotFoundError(f"Network file not found: {network_file}")
+        if self.inventory_file and not self.inventory_file.exists():
+            raise FileNotFoundError(f"Inventory file not found: {inventory_file}")
 
         # Create parsers
         self._forecast_parser = ExcelParser(self.forecast_file) if self.forecast_file else None
         self._network_parser = ExcelParser(self.network_file) if self.network_file else None
+        self._product_alias_resolver: Optional[ProductAliasResolver] = None
+        self._inventory_parser: Optional[InventoryParser] = None
 
     def parse_forecast(self, sheet_name: str = "Forecast") -> Forecast:
         """
@@ -278,3 +288,74 @@ class MultiFileParser:
             "unused_locations": sorted(unused_locations),
             "warnings": warnings,
         }
+
+    def parse_product_aliases(self, sheet_name: str = "Alias") -> ProductAliasResolver:
+        """
+        Parse product aliases from network file.
+
+        Args:
+            sheet_name: Name of alias sheet (default: "Alias")
+
+        Returns:
+            ProductAliasResolver object
+
+        Raises:
+            ValueError: If network_file was not provided
+
+        Note:
+            If the Alias sheet doesn't exist, an empty resolver is returned (no aliases).
+        """
+        if self.network_file is None:
+            raise ValueError("Cannot parse product aliases: no network_file provided")
+
+        if self._product_alias_resolver is None:
+            self._product_alias_resolver = ProductAliasResolver(
+                self.network_file,
+                sheet_name=sheet_name
+            )
+
+        return self._product_alias_resolver
+
+    def parse_inventory(
+        self,
+        snapshot_date: Optional[Date] = None,
+        sheet_name: str | int = 0,
+    ) -> InventorySnapshot:
+        """
+        Parse inventory snapshot from inventory file.
+
+        Args:
+            snapshot_date: Date of inventory snapshot (default: today)
+            sheet_name: Sheet name or index (default: 0 for first sheet)
+
+        Returns:
+            InventorySnapshot object
+
+        Raises:
+            ValueError: If inventory_file was not provided
+
+        Note:
+            Product codes in inventory are automatically resolved using
+            the product alias resolver from the network file (if available).
+        """
+        if self.inventory_file is None:
+            raise ValueError("Cannot parse inventory: no inventory_file provided")
+
+        # Parse product aliases if not already done
+        alias_resolver = None
+        if self.network_file:
+            try:
+                alias_resolver = self.parse_product_aliases()
+            except Exception:
+                # If alias parsing fails, continue without it
+                pass
+
+        # Create inventory parser
+        if self._inventory_parser is None:
+            self._inventory_parser = InventoryParser(
+                self.inventory_file,
+                product_alias_resolver=alias_resolver,
+                snapshot_date=snapshot_date,
+            )
+
+        return self._inventory_parser.parse(sheet_name=sheet_name)

@@ -10,6 +10,7 @@ from .labor_calendar import LaborCalendar, LaborDay
 from .production_batch import ProductionBatch
 from .shipment import Shipment
 from .cost_structure import CostStructure
+from .inventory import InventorySnapshot, InventoryEntry
 
 __all__ = [
     # Location and network
@@ -34,4 +35,7 @@ __all__ = [
     "Shipment",
     # Cost structure
     "CostStructure",
+    # Inventory
+    "InventorySnapshot",
+    "InventoryEntry",
 ]

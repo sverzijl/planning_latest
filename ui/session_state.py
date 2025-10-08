@@ -40,6 +40,8 @@ def initialize_session_state():
         'truck_schedules': None,
         'cost_structure': None,
         'manufacturing_site': None,
+        'initial_inventory': None,
+        'product_aliases': None,
 
         # Planning objects
         'graph_builder': None,
@@ -60,6 +62,7 @@ def initialize_session_state():
         # Metadata
         'forecast_filename': None,
         'network_filename': None,
+        'inventory_filename': None,
     }
 
     for key, default_value in defaults.items():
@@ -121,6 +124,9 @@ def store_parsed_data(
     manufacturing_site: ManufacturingSite,
     forecast_filename: str = None,
     network_filename: str = None,
+    initial_inventory: Optional[Any] = None,
+    product_aliases: Optional[Any] = None,
+    inventory_filename: str = None,
 ):
     """Store parsed data in session state.
 
@@ -135,8 +141,11 @@ def store_parsed_data(
     st.session_state.truck_schedules = truck_schedules
     st.session_state.cost_structure = cost_structure
     st.session_state.manufacturing_site = manufacturing_site
+    st.session_state.initial_inventory = initial_inventory
+    st.session_state.product_aliases = product_aliases
     st.session_state.forecast_filename = forecast_filename
     st.session_state.network_filename = network_filename
+    st.session_state.inventory_filename = inventory_filename
     st.session_state.data_uploaded = True
 
 
@@ -192,7 +201,22 @@ def get_parsed_data() -> Optional[dict]:
         'truck_schedules': st.session_state.truck_schedules,
         'cost_structure': st.session_state.cost_structure,
         'manufacturing_site': st.session_state.manufacturing_site,
+        'initial_inventory': st.session_state.initial_inventory,
+        'product_aliases': st.session_state.product_aliases,
     }
+
+
+def get_initial_inventory_dict() -> dict:
+    """Get initial inventory in optimization model format.
+
+    Returns:
+        Dictionary mapping (location_id, product_id) to quantity in units.
+        Empty dict if no inventory loaded.
+    """
+    inventory = st.session_state.get('initial_inventory')
+    if inventory and hasattr(inventory, 'to_optimization_dict'):
+        return inventory.to_optimization_dict()
+    return {}
 
 
 def get_planning_results() -> Optional[dict]:
