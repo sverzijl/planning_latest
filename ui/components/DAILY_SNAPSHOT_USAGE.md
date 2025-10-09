@@ -77,7 +77,8 @@ from ui.components import render_daily_snapshot
 
 # In your Streamlit page
 results = get_current_results()  # Your results dict
-locations = st.session_state.get('locations_dict', {})
+locations_list = st.session_state.get('locations', [])
+locations = {loc.location_id: loc for loc in locations_list} if locations_list else {}
 
 render_daily_snapshot(
     results=results,
@@ -114,7 +115,8 @@ with tab_snapshot:
 
     # Get current results
     results = get_current_results()
-    locations = st.session_state.get('locations_dict', {})
+    locations_list = st.session_state.get('locations', [])
+    locations = {loc.location_id: loc for loc in locations_list} if locations_list else {}
 
     # Render snapshot
     from ui.components import render_daily_snapshot

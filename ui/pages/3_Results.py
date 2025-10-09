@@ -941,8 +941,9 @@ with tab_snapshot:
     # Get current results (heuristic or optimization based on selection)
     results = get_current_results()
 
-    # Get locations dictionary from session state
-    locations_dict = st.session_state.get('locations_dict', {})
+    # Convert locations list to dict {location_id: Location}
+    locations_list = st.session_state.get('locations', [])
+    locations_dict = {loc.location_id: loc for loc in locations_list} if locations_list else {}
 
     # Render the daily snapshot component
     if results and locations_dict:
@@ -952,4 +953,4 @@ with tab_snapshot:
         if not results:
             st.info("No planning results available. Run planning first.")
         if not locations_dict:
-            st.info("No location data available. Ensure data has been uploaded.")
+            st.info("No location data available. Upload data in the Upload page first.")

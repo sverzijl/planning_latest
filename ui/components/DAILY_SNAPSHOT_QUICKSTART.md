@@ -7,7 +7,8 @@ from ui.components import render_daily_snapshot
 
 # Get your results and locations
 results = get_current_results()  # Dict with 'production_schedule' and 'shipments'
-locations = st.session_state.get('locations_dict', {})
+locations_list = st.session_state.get('locations', [])
+locations = {loc.location_id: loc for loc in locations_list} if locations_list else {}
 
 # Render the component
 render_daily_snapshot(results, locations)
@@ -68,7 +69,8 @@ with tab_snapshot:
     st.divider()
 
     results = get_current_results()
-    locations = st.session_state.get('locations_dict', {})
+    locations_list = st.session_state.get('locations', [])
+    locations = {loc.location_id: loc for loc in locations_list} if locations_list else {}
 
     render_daily_snapshot(results, locations, key_prefix="results_snapshot")
 ```
