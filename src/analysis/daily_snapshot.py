@@ -2,6 +2,13 @@
 
 This module generates daily snapshots of inventory across the supply chain network,
 tracking batches, quantities, in-transit shipments, flows, and demand satisfaction.
+
+SNAPSHOT SEMANTICS:
+- Inventory shown is the "available inventory" BEFORE demand consumption on that date
+- This represents what inventory is available to satisfy demand
+- In real-world scenarios, pre-positioned inventory from earlier deliveries can
+  satisfy demand without requiring same-day delivery
+- Demand satisfaction shows what is available to meet forecasted demand
 """
 
 from __future__ import annotations
@@ -146,11 +153,14 @@ class DemandRecord:
     """
     Represents demand satisfaction at a destination.
 
+    NOTE: supplied_quantity represents the inventory AVAILABLE to satisfy demand,
+    not necessarily the inventory consumed. This is the "before demand" view.
+
     Attributes:
         destination_id: Destination location ID
         product_id: Product identifier
         demand_quantity: Forecasted demand quantity
-        supplied_quantity: Actual quantity supplied
+        supplied_quantity: Actual quantity supplied (available inventory)
         shortage_quantity: Shortage (demand - supplied, if positive)
     """
     destination_id: str
@@ -196,6 +206,10 @@ class DailySnapshot:
     """
     Complete inventory snapshot for a single date.
 
+    NOTE: This snapshot represents the state BEFORE demand consumption on the date.
+    - location_inventory: Available inventory that can satisfy demand
+    - demand_satisfied: Compares available inventory to forecasted demand
+
     Attributes:
         date: Snapshot date
         location_inventory: Inventory at each location (keyed by location_id)
@@ -235,6 +249,12 @@ class DailySnapshotGenerator:
 
     This class tracks inventory movement through the supply chain network,
     including production, shipments, arrivals, and demand satisfaction.
+
+    IMPORTANT: Snapshots show inventory state BEFORE demand consumption.
+    This means:
+    - Inventory reflects what is available to satisfy demand on that date
+    - Pre-positioned inventory from earlier deliveries is included
+    - Demand satisfaction compares available inventory to forecasted demand
     """
 
     def __init__(
@@ -242,7 +262,8 @@ class DailySnapshotGenerator:
         production_schedule: ProductionSchedule,
         shipments: List[Shipment],
         locations_dict: Dict[str, Location],
-        forecast: Forecast
+        forecast: Forecast,
+        verbose: bool = False
     ):
         """
         Initialize snapshot generator.
@@ -252,11 +273,13 @@ class DailySnapshotGenerator:
             shipments: List of shipments
             locations_dict: Dictionary mapping location_id to Location object
             forecast: Forecast with demand data
+            verbose: Enable debug logging (default: False)
         """
         self.production_schedule = production_schedule
         self.shipments = shipments
         self.locations_dict = locations_dict
         self.forecast = forecast
+        self.verbose = verbose
 
         # Build efficient lookup structures
         self._build_lookup_structures()
@@ -337,13 +360,14 @@ class DailySnapshotGenerator:
         """
         snapshot = DailySnapshot(date=snapshot_date)
 
-        # Calculate inventory at each location
+        # FIX #1: Calculate inventory at ALL locations (even with zero inventory)
+        # This ensures complete visibility of the network state
         location_inventory = {}
         for location_id in self.locations_dict.keys():
             loc_inv = self._calculate_location_inventory(location_id, snapshot_date)
-            if loc_inv.total_quantity > 0 or location_id == self.production_schedule.manufacturing_site_id:
-                location_inventory[location_id] = loc_inv
-                snapshot.total_system_inventory += loc_inv.total_quantity
+            # ALWAYS add the location (removed filter that excluded zero-inventory locations)
+            location_inventory[location_id] = loc_inv
+            snapshot.total_system_inventory += loc_inv.total_quantity
 
         snapshot.location_inventory = location_inventory
 
@@ -366,7 +390,8 @@ class DailySnapshotGenerator:
     def _calculate_location_inventory(
         self,
         location_id: str,
-        snapshot_date: Date
+        snapshot_date: Date,
+        verbose: bool = False
     ) -> LocationInventory:
         """
         Calculate inventory at a location on a specific date.
@@ -377,13 +402,23 @@ class DailySnapshotGenerator:
         - A batch leaves origin when shipment departs
         - A batch arrives at destination after transit time
 
+        NOTE: This calculates inventory BEFORE demand consumption on the snapshot date.
+        Available inventory includes pre-positioned stock from earlier deliveries.
+
         Args:
             location_id: Location to calculate inventory for
             snapshot_date: Date to calculate inventory on
+            verbose: Enable debug logging for this calculation (default: False)
 
         Returns:
             LocationInventory for the location
         """
+        # FIX #3: Use instance verbose flag if not explicitly overridden
+        debug = verbose or self.verbose
+
+        if debug:
+            print(f"\n[DEBUG] Calculating inventory for {location_id} on {snapshot_date}")
+
         location = self.locations_dict.get(location_id)
         location_name = location.name if location else location_id
 
@@ -401,8 +436,14 @@ class DailySnapshotGenerator:
         for batch in self.production_schedule.production_batches:
             if batch.manufacturing_site_id == location_id and batch.production_date <= snapshot_date:
                 batch_quantities[batch.id] = batch.quantity
+                if debug:
+                    print(f"  [DEBUG] Added batch {batch.id}: {batch.quantity} units (produced {batch.production_date})")
+
+        if debug:
+            print(f"  [DEBUG] Initial batches: {len(batch_quantities)}, total: {sum(batch_quantities.values()):.0f}")
 
         # Process shipments to track batch movements
+        shipments_processed = 0
         for shipment in self.shipments:
             # Calculate key dates for this shipment
             departure_date = shipment.delivery_date - timedelta(days=shipment.total_transit_days)
@@ -419,8 +460,11 @@ class DailySnapshotGenerator:
                 if current_location == location_id and current_date <= snapshot_date:
                     if shipment.batch_id in batch_quantities:
                         batch_quantities[shipment.batch_id] -= shipment.quantity
+                        if debug:
+                            print(f"  [DEBUG] Departure: batch {shipment.batch_id} -= {shipment.quantity} (departed {current_date})")
                         if batch_quantities[shipment.batch_id] <= 0.01:  # Account for rounding
                             del batch_quantities[shipment.batch_id]
+                        shipments_processed += 1
 
                 # If shipment arrived at this location, add to inventory
                 if next_location == location_id and arrival_date <= snapshot_date:
@@ -429,10 +473,17 @@ class DailySnapshotGenerator:
                         if shipment.batch_id not in batch_quantities:
                             batch_quantities[shipment.batch_id] = 0.0
                         batch_quantities[shipment.batch_id] += shipment.quantity
+                        if debug:
+                            print(f"  [DEBUG] Arrival: batch {shipment.batch_id} += {shipment.quantity} (arrived {arrival_date})")
+                        shipments_processed += 1
 
                 # Move to next leg
                 current_date = arrival_date
                 current_location = next_location
+
+        if debug:
+            print(f"  [DEBUG] Processed {shipments_processed} shipment movements")
+            print(f"  [DEBUG] Final batches: {len(batch_quantities)}, total: {sum(batch_quantities.values()):.0f}")
 
         # Build BatchInventory objects for remaining quantities
         for batch_id, quantity in batch_quantities.items():
@@ -449,6 +500,9 @@ class DailySnapshotGenerator:
                         age_days=age_days
                     )
                     loc_inv.add_batch(batch_inv)
+
+        if debug:
+            print(f"  [DEBUG] RESULT: {loc_inv.total_quantity:.0f} units at {location_id}")
 
         return loc_inv
 
@@ -619,16 +673,28 @@ class DailySnapshotGenerator:
         """
         Get demand satisfaction records for the snapshot date.
 
-        Compares forecasted demand to actual availability, which includes:
+        FIX #2: CLARIFIED SEMANTICS
+        This method calculates what inventory is AVAILABLE to satisfy demand on the
+        snapshot date. This is the "before demand consumption" view.
+
+        Available inventory includes:
         - On-hand inventory at the location (from earlier deliveries)
         - New deliveries arriving on the snapshot date
+
+        In practice, the location_inventory already includes deliveries that have
+        arrived by the snapshot date (including same-day arrivals), so we use
+        that directly as the "available" quantity.
 
         This reflects the real-world scenario where pre-positioned inventory
         can satisfy demand without requiring same-day delivery.
 
+        FUTURE ENHANCEMENT:
+        Could add an "ending_inventory" field showing inventory AFTER demand
+        consumption for clearer user understanding.
+
         Args:
             snapshot_date: Date to check demand satisfaction
-            location_inventory: Inventory at each location on this date
+            location_inventory: Inventory at each location on this date (before demand)
 
         Returns:
             List of DemandRecord objects
@@ -642,19 +708,13 @@ class DailySnapshotGenerator:
             if entry.forecast_date == snapshot_date:
                 demand_by_location_product[entry.location_id][entry.product_id] = entry.quantity
 
-        # Get on-hand inventory at each location (from earlier deliveries)
+        # Get available inventory at each location (before demand consumption)
+        # This includes both on-hand inventory from earlier deliveries AND
+        # new arrivals on the snapshot date
         inventory_by_location_product: Dict[str, Dict[str, float]] = defaultdict(lambda: defaultdict(float))
         for location_id, loc_inv in location_inventory.items():
             for product_id, quantity in loc_inv.by_product.items():
                 inventory_by_location_product[location_id][product_id] = quantity
-
-        # Get all deliveries for this date (new arrivals)
-        deliveries_today_by_location_product: Dict[str, Dict[str, float]] = defaultdict(lambda: defaultdict(float))
-
-        deliveries = self._shipments_by_delivery.get(snapshot_date, {})
-        for dest_id, products in deliveries.items():
-            for product_id, shipments in products.items():
-                deliveries_today_by_location_product[dest_id][product_id] = sum(s.quantity for s in shipments)
 
         # Combine to create demand records
         # ONLY create records for locations that actually have demand
@@ -667,23 +727,18 @@ class DailySnapshotGenerator:
             for product_id in all_products_with_demand:
                 demand_qty = demand_by_location_product[location_id][product_id]
 
-                # FIX: Include BOTH on-hand inventory AND new deliveries
-                on_hand_qty = inventory_by_location_product[location_id].get(product_id, 0.0)
-                deliveries_today_qty = deliveries_today_by_location_product[location_id].get(product_id, 0.0)
-
-                # Total available = on-hand inventory + new deliveries today
-                # BUT: We need to avoid double-counting! The inventory already includes today's deliveries
-                # if they arrived earlier in the day. So we use ONLY the on-hand inventory.
-                supplied_qty = on_hand_qty
+                # Available inventory = what's on hand (including today's arrivals)
+                # The location_inventory already accounts for arrivals up to snapshot_date
+                available_qty = inventory_by_location_product[location_id].get(product_id, 0.0)
 
                 # Calculate shortage
-                shortage_qty = max(0.0, demand_qty - supplied_qty)
+                shortage_qty = max(0.0, demand_qty - available_qty)
 
                 record = DemandRecord(
                     destination_id=location_id,
                     product_id=product_id,
                     demand_quantity=demand_qty,
-                    supplied_quantity=supplied_qty,  # Report actual quantity available
+                    supplied_quantity=available_qty,  # Available inventory (before demand)
                     shortage_quantity=shortage_qty
                 )
                 demand_records.append(record)

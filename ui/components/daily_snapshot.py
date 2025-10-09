@@ -169,66 +169,134 @@ def render_daily_snapshot(
     location_inventory = snapshot['location_inventory']
 
     if not location_inventory:
-        st.info("ℹ️ No inventory at any location on this date")
+        st.info("ℹ️ No locations found in network")
     else:
-        # Sort locations by quantity (descending)
-        sorted_locations = sorted(
-            location_inventory.items(),
-            key=lambda x: x[1]['total'],
-            reverse=True
-        )
+        # Calculate summary metrics
+        locations_with_inventory = sum(1 for inv in location_inventory.values() if inv['total'] > 0)
+        locations_empty = len(location_inventory) - locations_with_inventory
 
-        for location_id, inv_data in sorted_locations:
-            location = locations.get(location_id)
-            location_name = location.name if location else location_id
-            total_units = inv_data['total']
+        # Display summary metrics in compact format
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.markdown(f"**Total Locations:** {len(location_inventory)}")
+        with col2:
+            st.markdown(f"**With Inventory:** {locations_with_inventory}")
+        with col3:
+            st.markdown(f"**Empty:** {locations_empty}")
 
-            # Determine if expanded (manufacturing site defaults to expanded)
-            is_manufacturing = location and hasattr(location, 'is_manufacturing') and location.is_manufacturing
+        st.markdown("---")
 
-            with st.expander(
-                f"**{location_id} - {location_name}** ({total_units:,.0f} units)",
-                expanded=is_manufacturing
-            ):
-                # Show batches by product
-                batches_by_product = inv_data.get('batches', {})
+        # Add sorting and filtering controls
+        col1, col2 = st.columns([2, 1])
 
-                if not batches_by_product:
-                    st.caption("_No detailed batch information available_")
+        with col1:
+            sort_option = st.radio(
+                "Sort by:",
+                options=["Inventory Level (High to Low)", "Inventory Level (Low to High)", "Location ID", "Location Name"],
+                horizontal=True,
+                key=f"{key_prefix}_sort_option"
+            )
+
+        with col2:
+            filter_option = st.selectbox(
+                "Filter:",
+                options=["Show All", "Only With Inventory", "Only Empty"],
+                key=f"{key_prefix}_filter_option"
+            )
+
+        # Apply filtering
+        filtered_locations = location_inventory.items()
+        if filter_option == "Only With Inventory":
+            filtered_locations = [(loc_id, inv) for loc_id, inv in filtered_locations if inv['total'] > 0]
+        elif filter_option == "Only Empty":
+            filtered_locations = [(loc_id, inv) for loc_id, inv in filtered_locations if inv['total'] == 0]
+
+        # Apply sorting
+        if sort_option == "Inventory Level (High to Low)":
+            sorted_locations = sorted(filtered_locations, key=lambda x: x[1]['total'], reverse=True)
+        elif sort_option == "Inventory Level (Low to High)":
+            sorted_locations = sorted(filtered_locations, key=lambda x: x[1]['total'], reverse=False)
+        elif sort_option == "Location ID":
+            sorted_locations = sorted(filtered_locations, key=lambda x: x[0])
+        else:  # Location Name
+            sorted_locations = sorted(
+                filtered_locations,
+                key=lambda x: locations.get(x[0]).name if locations.get(x[0]) else x[0]
+            )
+
+        if not sorted_locations:
+            st.info(f"ℹ️ No locations match the filter: {filter_option}")
+        else:
+            # Display locations
+            for location_id, inv_data in sorted_locations:
+                location = locations.get(location_id)
+                location_name = location.name if location else location_id
+                total_units = inv_data['total']
+
+                # Visual indicator based on inventory level
+                if total_units == 0:
+                    icon = "📭"
+                    status_text = "Empty"
+                    status_color = "secondary"
+                elif total_units < 1000:
+                    icon = "📦"
+                    status_text = f"{total_units:,.0f} units (Low)"
+                    status_color = "warning"
                 else:
-                    # Create table
-                    batch_data = []
-                    for product_id, batch_list in batches_by_product.items():
-                        for batch_info in batch_list:
-                            batch_data.append({
-                                'Batch ID': batch_info.get('id', 'N/A'),
-                                'Product': product_id,
-                                'Quantity': batch_info.get('quantity', 0),
-                                'Age (days)': batch_info.get('age_days', 0),
-                                'Production Date': batch_info.get('production_date', 'N/A'),
-                            })
+                    icon = "📦"
+                    status_text = f"{total_units:,.0f} units"
+                    status_color = "primary"
 
-                    if batch_data:
-                        df_batches = pd.DataFrame(batch_data)
+                # Determine if expanded (manufacturing site defaults to expanded)
+                is_manufacturing = location and hasattr(location, 'is_manufacturing') and location.is_manufacturing
 
-                        # Style based on age
-                        def highlight_age(row):
-                            age = row['Age (days)']
-                            if age <= 3:
-                                return ['background-color: #d4edda'] * len(row)  # Green - fresh
-                            elif age <= 7:
-                                return ['background-color: #fff3cd'] * len(row)  # Yellow - medium
-                            else:
-                                return ['background-color: #f8d7da'] * len(row)  # Red - old
+                with st.expander(
+                    f"{icon} **{location_id} - {location_name}** ({status_text})",
+                    expanded=is_manufacturing
+                ):
+                    # Show zero inventory message
+                    if total_units == 0:
+                        st.caption("📭 No inventory at this location on this date")
+                    else:
+                        # Show batches by product
+                        batches_by_product = inv_data.get('batches', {})
 
-                        st.dataframe(
-                            df_batches.style.apply(highlight_age, axis=1),
-                            use_container_width=True,
-                            hide_index=True
-                        )
+                        if not batches_by_product:
+                            st.caption("_No detailed batch information available_")
+                        else:
+                            # Create table
+                            batch_data = []
+                            for product_id, batch_list in batches_by_product.items():
+                                for batch_info in batch_list:
+                                    batch_data.append({
+                                        'Batch ID': batch_info.get('id', 'N/A'),
+                                        'Product': product_id,
+                                        'Quantity': batch_info.get('quantity', 0),
+                                        'Age (days)': batch_info.get('age_days', 0),
+                                        'Production Date': batch_info.get('production_date', 'N/A'),
+                                    })
 
-                        # Show legend
-                        st.caption("🟢 Fresh (0-3 days)  |  🟡 Medium (4-7 days)  |  🔴 Old (8+ days)")
+                            if batch_data:
+                                df_batches = pd.DataFrame(batch_data)
+
+                                # Style based on age
+                                def highlight_age(row):
+                                    age = row['Age (days)']
+                                    if age <= 3:
+                                        return ['background-color: #d4edda'] * len(row)  # Green - fresh
+                                    elif age <= 7:
+                                        return ['background-color: #fff3cd'] * len(row)  # Yellow - medium
+                                    else:
+                                        return ['background-color: #f8d7da'] * len(row)  # Red - old
+
+                                st.dataframe(
+                                    df_batches.style.apply(highlight_age, axis=1),
+                                    use_container_width=True,
+                                    hide_index=True
+                                )
+
+                                # Show legend
+                                st.caption("🟢 Fresh (0-3 days)  |  🟡 Medium (4-7 days)  |  🔴 Old (8+ days)")
 
     st.divider()
 

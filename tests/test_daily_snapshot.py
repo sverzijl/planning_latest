@@ -1781,3 +1781,567 @@ def test_demand_satisfied_from_inventory_and_delivery() -> None:
     # Verify total inventory includes both shipments
     assert "6103" in snapshot.location_inventory
     assert snapshot.location_inventory["6103"].total_quantity == 500.0
+
+
+# ===========================
+# NEW REGRESSION TESTS - Missing Locations Bug
+# ===========================
+
+
+def test_all_locations_appear_regardless_of_inventory() -> None:
+    """Verify ALL network locations appear in snapshot even with zero inventory.
+
+    Regression test for bug where locations with zero inventory were excluded
+    from the snapshot, leading to missing breadrooms in the UI.
+
+    Bug: Line 344 in daily_snapshot.py had condition:
+        if loc_inv.total_quantity > 0 or location_id == self.production_schedule.manufacturing_site_id:
+
+    This excluded locations with zero inventory unless they were the manufacturing site.
+    """
+    base_date = date(2025, 10, 13)
+
+    # Create 10 locations - but only ship to 3 of them
+    locations_dict = {
+        "6122": Location(id="6122", name="Manufacturing", type=LocationType.MANUFACTURING, storage_mode=StorageMode.AMBIENT),
+        "6104": Location(id="6104", name="Hub NSW", type=LocationType.STORAGE, storage_mode=StorageMode.AMBIENT),
+        "6125": Location(id="6125", name="Hub VIC", type=LocationType.STORAGE, storage_mode=StorageMode.AMBIENT),
+        "6103": Location(id="6103", name="Breadroom VIC", type=LocationType.BREADROOM, storage_mode=StorageMode.AMBIENT),
+        "6105": Location(id="6105", name="Breadroom NSW", type=LocationType.BREADROOM, storage_mode=StorageMode.AMBIENT),
+        "6107": Location(id="6107", name="Breadroom ACT", type=LocationType.BREADROOM, storage_mode=StorageMode.AMBIENT),
+        "6110": Location(id="6110", name="Breadroom QLD", type=LocationType.BREADROOM, storage_mode=StorageMode.AMBIENT),
+        "6115": Location(id="6115", name="Breadroom SA", type=LocationType.BREADROOM, storage_mode=StorageMode.AMBIENT),
+        "6118": Location(id="6118", name="Breadroom TAS", type=LocationType.BREADROOM, storage_mode=StorageMode.AMBIENT),
+        "6130": Location(id="6130", name="Breadroom WA", type=LocationType.BREADROOM, storage_mode=StorageMode.AMBIENT),
+    }
+
+    # Production at manufacturing only
+    batch = ProductionBatch(
+        id="BATCH-001",
+        product_id="176283",
+        manufacturing_site_id="6122",
+        production_date=base_date,
+        quantity=1000.0,
+        initial_state=ProductState.AMBIENT,
+        labor_hours_used=0.72,
+        production_cost=500.0
+    )
+
+    schedule = ProductionSchedule(
+        manufacturing_site_id="6122",
+        schedule_start_date=base_date,
+        schedule_end_date=base_date,
+        production_batches=[batch],
+        daily_totals={base_date: 1000.0},
+        daily_labor_hours={base_date: 0.72},
+        infeasibilities=[],
+        total_units=1000.0,
+        total_labor_hours=0.72
+    )
+
+    # Only ship to 3 locations (6103, 6104, 6125)
+    route1 = MockRoute(route_legs=[MockRouteLeg("6122", "6104", 1)])
+    route2 = MockRoute(route_legs=[MockRouteLeg("6122", "6125", 1)])
+    route3 = MockRoute(route_legs=[MockRouteLeg("6122", "6103", 2)])
+
+    shipments = [
+        Shipment(
+            id="SHIP-001", batch_id="BATCH-001", product_id="176283",
+            quantity=300.0, origin_id="6122", destination_id="6104",
+            delivery_date=base_date + timedelta(days=2),
+            route=route1, production_date=base_date
+        ),
+        Shipment(
+            id="SHIP-002", batch_id="BATCH-001", product_id="176283",
+            quantity=300.0, origin_id="6122", destination_id="6125",
+            delivery_date=base_date + timedelta(days=2),
+            route=route2, production_date=base_date
+        ),
+        Shipment(
+            id="SHIP-003", batch_id="BATCH-001", product_id="176283",
+            quantity=400.0, origin_id="6122", destination_id="6103",
+            delivery_date=base_date + timedelta(days=3),
+            route=route3, production_date=base_date
+        ),
+    ]
+
+    forecast = Forecast(name="Test", entries=[])
+
+    generator = DailySnapshotGenerator(schedule, shipments, locations_dict, forecast)
+    snapshot = generator._generate_single_snapshot(base_date + timedelta(days=5))
+
+    # CRITICAL: ALL 10 locations MUST appear in snapshot
+    # Before fix: Only 4 locations appeared (6122, 6103, 6104, 6125)
+    # After fix: All 10 locations appear
+    assert len(snapshot.location_inventory) == 10, f"Expected 10 locations, got {len(snapshot.location_inventory)}"
+
+    # Specifically check for the missing locations from the bug report
+    assert "6110" in snapshot.location_inventory, "6110 (QLD) should appear even with zero inventory"
+    assert "6103" in snapshot.location_inventory, "6103 (VIC) should appear"
+    assert "6105" in snapshot.location_inventory, "6105 (NSW) should appear even with zero inventory"
+    assert "6107" in snapshot.location_inventory, "6107 (ACT) should appear even with zero inventory"
+    assert "6115" in snapshot.location_inventory, "6115 (SA) should appear even with zero inventory"
+    assert "6118" in snapshot.location_inventory, "6118 (TAS) should appear even with zero inventory"
+    assert "6130" in snapshot.location_inventory, "6130 (WA) should appear even with zero inventory"
+
+    # Verify zero-inventory locations have zero quantity
+    assert snapshot.location_inventory["6110"].total_quantity == 0.0
+    assert snapshot.location_inventory["6105"].total_quantity == 0.0
+    assert snapshot.location_inventory["6107"].total_quantity == 0.0
+
+
+def test_zero_inventory_locations_included() -> None:
+    """Verify locations with zero inventory are included in snapshot."""
+    base_date = date(2025, 10, 13)
+
+    # Create location that will never receive shipments
+    locations_dict = {
+        "6122": Location(id="6122", name="Mfg", type=LocationType.MANUFACTURING, storage_mode=StorageMode.AMBIENT),
+        "6110": Location(id="6110", name="QLD", type=LocationType.BREADROOM, storage_mode=StorageMode.AMBIENT),
+    }
+
+    # No production, no shipments
+    schedule = ProductionSchedule(
+        manufacturing_site_id="6122",
+        schedule_start_date=base_date,
+        schedule_end_date=base_date,
+        production_batches=[],
+        daily_totals={},
+        daily_labor_hours={},
+        infeasibilities=[],
+        total_units=0.0,
+        total_labor_hours=0.0
+    )
+
+    forecast = Forecast(name="Test", entries=[])
+
+    generator = DailySnapshotGenerator(schedule, [], locations_dict, forecast)
+    snapshot = generator._generate_single_snapshot(base_date)
+
+    # Both locations should appear
+    assert len(snapshot.location_inventory) == 2
+    assert "6122" in snapshot.location_inventory
+    assert "6110" in snapshot.location_inventory
+
+    # Both should have zero inventory
+    assert snapshot.location_inventory["6122"].total_quantity == 0.0
+    assert snapshot.location_inventory["6110"].total_quantity == 0.0
+
+
+def test_all_nine_breadrooms_appear() -> None:
+    """Verify all 9 breadrooms appear in snapshot."""
+    base_date = date(2025, 10, 13)
+
+    # All 9 breadrooms from real network
+    breadrooms = {
+        "6103": "Breadroom VIC",
+        "6105": "Breadroom NSW",
+        "6107": "Breadroom ACT",
+        "6110": "Breadroom QLD",
+        "6115": "Breadroom SA",
+        "6118": "Breadroom TAS",
+        "6123": "Breadroom NSW2",
+        "6127": "Breadroom VIC2",
+        "6130": "Breadroom WA",
+    }
+
+    locations_dict = {
+        "6122": Location(id="6122", name="Manufacturing", type=LocationType.MANUFACTURING, storage_mode=StorageMode.AMBIENT),
+    }
+
+    for br_id, br_name in breadrooms.items():
+        locations_dict[br_id] = Location(
+            id=br_id, name=br_name, type=LocationType.BREADROOM, storage_mode=StorageMode.AMBIENT
+        )
+
+    # Create demand at all breadrooms
+    forecast_entries = []
+    for br_id in breadrooms.keys():
+        forecast_entries.append(
+            ForecastEntry(
+                location_id=br_id,
+                product_id="176283",
+                forecast_date=base_date + timedelta(days=3),
+                quantity=100.0
+            )
+        )
+
+    forecast = Forecast(name="Test", entries=forecast_entries)
+
+    schedule = ProductionSchedule(
+        manufacturing_site_id="6122",
+        schedule_start_date=base_date,
+        schedule_end_date=base_date,
+        production_batches=[],
+        daily_totals={},
+        daily_labor_hours={},
+        infeasibilities=[],
+        total_units=0.0,
+        total_labor_hours=0.0
+    )
+
+    generator = DailySnapshotGenerator(schedule, [], locations_dict, forecast)
+    snapshot = generator._generate_single_snapshot(base_date)
+
+    # All 10 locations (1 manufacturing + 9 breadrooms) should appear
+    assert len(snapshot.location_inventory) == 10
+
+    # Check each breadroom
+    for br_id in breadrooms.keys():
+        assert br_id in snapshot.location_inventory, f"Breadroom {br_id} should appear in snapshot"
+
+
+def test_hub_locations_always_appear() -> None:
+    """Verify hub locations (6104, 6125) appear in snapshot even with zero inventory."""
+    base_date = date(2025, 10, 13)
+
+    locations_dict = {
+        "6122": Location(id="6122", name="Mfg", type=LocationType.MANUFACTURING, storage_mode=StorageMode.AMBIENT),
+        "6104": Location(id="6104", name="Hub NSW", type=LocationType.STORAGE, storage_mode=StorageMode.AMBIENT),
+        "6125": Location(id="6125", name="Hub VIC", type=LocationType.STORAGE, storage_mode=StorageMode.AMBIENT),
+    }
+
+    schedule = ProductionSchedule(
+        manufacturing_site_id="6122",
+        schedule_start_date=base_date,
+        schedule_end_date=base_date,
+        production_batches=[],
+        daily_totals={},
+        daily_labor_hours={},
+        infeasibilities=[],
+        total_units=0.0,
+        total_labor_hours=0.0
+    )
+
+    forecast = Forecast(name="Test", entries=[])
+
+    generator = DailySnapshotGenerator(schedule, [], locations_dict, forecast)
+    snapshot = generator._generate_single_snapshot(base_date)
+
+    # All 3 locations should appear
+    assert len(snapshot.location_inventory) == 3
+    assert "6104" in snapshot.location_inventory
+    assert "6125" in snapshot.location_inventory
+
+    # Both hubs should have zero inventory
+    assert snapshot.location_inventory["6104"].total_quantity == 0.0
+    assert snapshot.location_inventory["6125"].total_quantity == 0.0
+
+
+def test_missing_locations_bug_regression() -> None:
+    """Regression test for specific bug where 6110, 6103, 6105 were missing.
+
+    Bug: Line 344 in daily_snapshot.py filtered out locations with zero inventory.
+    Fix: Changed condition to always include ALL locations from locations_dict.
+
+    Before:
+        if loc_inv.total_quantity > 0 or location_id == self.production_schedule.manufacturing_site_id:
+
+    After:
+        # Always include all locations (removed the condition entirely)
+    """
+    base_date = date(2025, 10, 13)
+
+    # Recreate exact scenario from bug report
+    locations_dict = {
+        "6122": Location(id="6122", name="Manufacturing", type=LocationType.MANUFACTURING, storage_mode=StorageMode.AMBIENT),
+        "6104": Location(id="6104", name="Hub NSW", type=LocationType.STORAGE, storage_mode=StorageMode.AMBIENT),
+        "6125": Location(id="6125", name="Hub VIC", type=LocationType.STORAGE, storage_mode=StorageMode.AMBIENT),
+        "6103": Location(id="6103", name="VIC", type=LocationType.BREADROOM, storage_mode=StorageMode.AMBIENT),
+        "6105": Location(id="6105", name="NSW", type=LocationType.BREADROOM, storage_mode=StorageMode.AMBIENT),
+        "6110": Location(id="6110", name="QLD", type=LocationType.BREADROOM, storage_mode=StorageMode.AMBIENT),
+    }
+
+    # Production at manufacturing
+    batch = ProductionBatch(
+        id="BATCH-001",
+        product_id="176283",
+        manufacturing_site_id="6122",
+        production_date=base_date,
+        quantity=500.0,
+        initial_state=ProductState.AMBIENT,
+        labor_hours_used=0.36,
+        production_cost=250.0
+    )
+
+    schedule = ProductionSchedule(
+        manufacturing_site_id="6122",
+        schedule_start_date=base_date,
+        schedule_end_date=base_date,
+        production_batches=[batch],
+        daily_totals={base_date: 500.0},
+        daily_labor_hours={base_date: 0.36},
+        infeasibilities=[],
+        total_units=500.0,
+        total_labor_hours=0.36
+    )
+
+    # Only ship to one location
+    route = MockRoute(route_legs=[MockRouteLeg("6122", "6104", 1)])
+    shipments = [
+        Shipment(
+            id="SHIP-001", batch_id="BATCH-001", product_id="176283",
+            quantity=500.0, origin_id="6122", destination_id="6104",
+            delivery_date=base_date + timedelta(days=2),
+            route=route, production_date=base_date
+        ),
+    ]
+
+    forecast = Forecast(name="Test", entries=[])
+
+    generator = DailySnapshotGenerator(schedule, shipments, locations_dict, forecast)
+    snapshot = generator._generate_single_snapshot(base_date + timedelta(days=3))
+
+    # CRITICAL: All 6 locations MUST appear
+    assert len(snapshot.location_inventory) == 6
+
+    # Specifically check the problematic locations
+    assert "6110" in snapshot.location_inventory, "6110 (QLD) was missing in bug report"
+    assert "6103" in snapshot.location_inventory, "6103 (VIC) was missing in bug report"
+    assert "6105" in snapshot.location_inventory, "6105 (NSW) was missing in bug report"
+
+
+def test_in_transit_shipments_tracked() -> None:
+    """Verify in-transit shipments are captured in snapshot."""
+    base_date = date(2025, 10, 13)
+
+    locations_dict = {
+        "6122": Location(id="6122", name="Mfg", type=LocationType.MANUFACTURING, storage_mode=StorageMode.AMBIENT),
+        "6104": Location(id="6104", name="Hub", type=LocationType.STORAGE, storage_mode=StorageMode.AMBIENT),
+    }
+
+    batch = ProductionBatch(
+        id="BATCH-001",
+        product_id="176283",
+        manufacturing_site_id="6122",
+        production_date=base_date,
+        quantity=500.0,
+        initial_state=ProductState.AMBIENT,
+        labor_hours_used=0.36,
+        production_cost=250.0
+    )
+
+    schedule = ProductionSchedule(
+        manufacturing_site_id="6122",
+        schedule_start_date=base_date,
+        schedule_end_date=base_date,
+        production_batches=[batch],
+        daily_totals={base_date: 500.0},
+        daily_labor_hours={base_date: 0.36},
+        infeasibilities=[],
+        total_units=500.0,
+        total_labor_hours=0.36
+    )
+
+    # 3-day transit
+    route = MockRoute(route_legs=[MockRouteLeg("6122", "6104", 3)])
+    shipments = [
+        Shipment(
+            id="SHIP-001", batch_id="BATCH-001", product_id="176283",
+            quantity=500.0, origin_id="6122", destination_id="6104",
+            delivery_date=base_date + timedelta(days=4),  # Depart day 1, arrive day 4
+            route=route, production_date=base_date
+        ),
+    ]
+
+    forecast = Forecast(name="Test", entries=[])
+
+    generator = DailySnapshotGenerator(schedule, shipments, locations_dict, forecast)
+
+    # Day 2: Should be in transit
+    snapshot = generator._generate_single_snapshot(base_date + timedelta(days=2))
+
+    assert len(snapshot.in_transit) == 1
+    assert snapshot.in_transit[0].shipment_id == "SHIP-001"
+    assert snapshot.in_transit[0].origin_id == "6122"
+    assert snapshot.in_transit[0].destination_id == "6104"
+    assert snapshot.in_transit[0].days_in_transit == 1
+
+
+def test_manufacturing_site_always_appears() -> None:
+    """Verify manufacturing site (6122) always appears even with no production."""
+    base_date = date(2025, 10, 13)
+
+    locations_dict = {
+        "6122": Location(id="6122", name="Mfg", type=LocationType.MANUFACTURING, storage_mode=StorageMode.AMBIENT),
+    }
+
+    schedule = ProductionSchedule(
+        manufacturing_site_id="6122",
+        schedule_start_date=base_date,
+        schedule_end_date=base_date,
+        production_batches=[],
+        daily_totals={},
+        daily_labor_hours={},
+        infeasibilities=[],
+        total_units=0.0,
+        total_labor_hours=0.0
+    )
+
+    forecast = Forecast(name="Test", entries=[])
+
+    generator = DailySnapshotGenerator(schedule, [], locations_dict, forecast)
+
+    # Check multiple days
+    for days_offset in range(5):
+        snapshot = generator._generate_single_snapshot(base_date + timedelta(days=days_offset))
+
+        assert "6122" in snapshot.location_inventory, f"Manufacturing should appear on day {days_offset}"
+        assert snapshot.location_inventory["6122"].total_quantity == 0.0
+
+
+def test_intermediate_storage_appears_when_used() -> None:
+    """Verify intermediate storage (Lineage) appears when used."""
+    base_date = date(2025, 10, 13)
+
+    locations_dict = {
+        "6122": Location(id="6122", name="Mfg", type=LocationType.MANUFACTURING, storage_mode=StorageMode.AMBIENT),
+        "Lineage": Location(id="Lineage", name="Lineage Frozen", type=LocationType.STORAGE, storage_mode=StorageMode.FROZEN),
+        "6130": Location(id="6130", name="WA", type=LocationType.BREADROOM, storage_mode=StorageMode.BOTH),
+    }
+
+    batch = ProductionBatch(
+        id="BATCH-001",
+        product_id="176283",
+        manufacturing_site_id="6122",
+        production_date=base_date,
+        quantity=500.0,
+        initial_state=ProductState.FROZEN,
+        labor_hours_used=0.36,
+        production_cost=250.0
+    )
+
+    schedule = ProductionSchedule(
+        manufacturing_site_id="6122",
+        schedule_start_date=base_date,
+        schedule_end_date=base_date,
+        production_batches=[batch],
+        daily_totals={base_date: 500.0},
+        daily_labor_hours={base_date: 0.36},
+        infeasibilities=[],
+        total_units=500.0,
+        total_labor_hours=0.36
+    )
+
+    # Route through Lineage
+    route = MockRoute(route_legs=[
+        MockRouteLeg("6122", "Lineage", 2, "frozen"),
+        MockRouteLeg("Lineage", "6130", 3, "frozen")
+    ])
+
+    shipments = [
+        Shipment(
+            id="SHIP-001", batch_id="BATCH-001", product_id="176283",
+            quantity=500.0, origin_id="6122", destination_id="6130",
+            delivery_date=base_date + timedelta(days=6),
+            route=route, production_date=base_date
+        ),
+    ]
+
+    forecast = Forecast(name="Test", entries=[])
+
+    generator = DailySnapshotGenerator(schedule, shipments, locations_dict, forecast)
+
+    # All 3 locations should always appear
+    for days_offset in range(7):
+        snapshot = generator._generate_single_snapshot(base_date + timedelta(days=days_offset))
+
+        assert len(snapshot.location_inventory) == 3, f"All 3 locations should appear on day {days_offset}"
+        assert "6122" in snapshot.location_inventory
+        assert "Lineage" in snapshot.location_inventory
+        assert "6130" in snapshot.location_inventory
+
+
+def test_full_network_all_locations() -> None:
+    """Integration test: Full network with all 10+ locations.
+
+    This test verifies the complete fix by creating a realistic scenario
+    with all network locations and ensuring they ALL appear regardless of
+    inventory state.
+    """
+    base_date = date(2025, 10, 13)
+
+    # Complete network: 1 manufacturing + 2 hubs + 9 breadrooms + 1 intermediate storage
+    locations_dict = {
+        "6122": Location(id="6122", name="Manufacturing", type=LocationType.MANUFACTURING, storage_mode=StorageMode.BOTH),
+        "6104": Location(id="6104", name="Hub NSW", type=LocationType.STORAGE, storage_mode=StorageMode.BOTH),
+        "6125": Location(id="6125", name="Hub VIC", type=LocationType.STORAGE, storage_mode=StorageMode.BOTH),
+        "Lineage": Location(id="Lineage", name="Lineage", type=LocationType.STORAGE, storage_mode=StorageMode.FROZEN),
+        "6103": Location(id="6103", name="VIC", type=LocationType.BREADROOM, storage_mode=StorageMode.AMBIENT),
+        "6105": Location(id="6105", name="NSW", type=LocationType.BREADROOM, storage_mode=StorageMode.AMBIENT),
+        "6107": Location(id="6107", name="ACT", type=LocationType.BREADROOM, storage_mode=StorageMode.AMBIENT),
+        "6110": Location(id="6110", name="QLD", type=LocationType.BREADROOM, storage_mode=StorageMode.AMBIENT),
+        "6115": Location(id="6115", name="SA", type=LocationType.BREADROOM, storage_mode=StorageMode.AMBIENT),
+        "6118": Location(id="6118", name="TAS", type=LocationType.BREADROOM, storage_mode=StorageMode.AMBIENT),
+        "6123": Location(id="6123", name="NSW2", type=LocationType.BREADROOM, storage_mode=StorageMode.AMBIENT),
+        "6127": Location(id="6127", name="VIC2", type=LocationType.BREADROOM, storage_mode=StorageMode.AMBIENT),
+        "6130": Location(id="6130", name="WA", type=LocationType.BREADROOM, storage_mode=StorageMode.BOTH),
+    }
+
+    # Some production
+    batch = ProductionBatch(
+        id="BATCH-001",
+        product_id="176283",
+        manufacturing_site_id="6122",
+        production_date=base_date,
+        quantity=2000.0,
+        initial_state=ProductState.AMBIENT,
+        labor_hours_used=1.43,
+        production_cost=1000.0
+    )
+
+    schedule = ProductionSchedule(
+        manufacturing_site_id="6122",
+        schedule_start_date=base_date,
+        schedule_end_date=base_date,
+        production_batches=[batch],
+        daily_totals={base_date: 2000.0},
+        daily_labor_hours={base_date: 1.43},
+        infeasibilities=[],
+        total_units=2000.0,
+        total_labor_hours=1.43
+    )
+
+    # Ship to only a few locations (mixed inventory states)
+    route1 = MockRoute(route_legs=[MockRouteLeg("6122", "6104", 1)])
+    route2 = MockRoute(route_legs=[MockRouteLeg("6122", "6125", 1), MockRouteLeg("6125", "6103", 1)])
+    route3 = MockRoute(route_legs=[MockRouteLeg("6122", "6110", 2)])
+
+    shipments = [
+        Shipment(
+            id="SHIP-001", batch_id="BATCH-001", product_id="176283",
+            quantity=600.0, origin_id="6122", destination_id="6104",
+            delivery_date=base_date + timedelta(days=2),
+            route=route1, production_date=base_date
+        ),
+        Shipment(
+            id="SHIP-002", batch_id="BATCH-001", product_id="176283",
+            quantity=700.0, origin_id="6122", destination_id="6103",
+            delivery_date=base_date + timedelta(days=3),
+            route=route2, production_date=base_date
+        ),
+        Shipment(
+            id="SHIP-003", batch_id="BATCH-001", product_id="176283",
+            quantity=700.0, origin_id="6122", destination_id="6110",
+            delivery_date=base_date + timedelta(days=3),
+            route=route3, production_date=base_date
+        ),
+    ]
+
+    forecast = Forecast(name="Test", entries=[])
+
+    generator = DailySnapshotGenerator(schedule, shipments, locations_dict, forecast)
+    snapshot = generator._generate_single_snapshot(base_date + timedelta(days=5))
+
+    # CRITICAL: ALL 13 locations MUST appear
+    assert len(snapshot.location_inventory) == 13, f"Expected 13 locations, got {len(snapshot.location_inventory)}"
+
+    # Verify each location appears
+    for location_id in locations_dict.keys():
+        assert location_id in snapshot.location_inventory, f"Location {location_id} should appear in snapshot"
+
+    # Verify locations with zero inventory are included
+    zero_inventory_locations = ["6105", "6107", "6115", "6118", "6123", "6127", "6130", "Lineage"]
+    for location_id in zero_inventory_locations:
+        assert snapshot.location_inventory[location_id].total_quantity == 0.0, \
+            f"Location {location_id} should have zero inventory"
