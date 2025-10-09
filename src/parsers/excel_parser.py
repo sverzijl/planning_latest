@@ -35,6 +35,7 @@ class ExcelParser:
     - Sheet 'LaborCalendar': columns [date, fixed_hours, regular_rate, overtime_rate, non_fixed_rate?, minimum_hours?, is_fixed_day?]
     - Sheet 'TruckSchedules': columns [id, truck_name, departure_type, departure_time, destination_id?, capacity, cost_fixed?, cost_per_unit?, day_of_week?, intermediate_stops?, pallet_capacity?, units_per_pallet?, units_per_case?]
     - Sheet 'CostParameters': columns [cost_type, value, unit?]
+    - Sheet 'Alias' (optional): columns [Alias1, Alias2, Alias3, ...] where Alias1 is canonical product name
 
     Also supports SAP IBP export format (wide format with dates as columns).
     """

@@ -11,16 +11,23 @@ class ProductAliasResolver:
     The Network_Config.xlsx file contains an "Alias" tab with product codes
     that are equivalent (e.g., different SAP material codes for the same product).
 
-    Format of Alias tab:
-    - Column 0: Product name (used as canonical ID)
-    - Columns 1+: Equivalent product codes
+    Format of Alias tab (with headers):
+    - Column headers: Alias1, Alias2, Alias3, Alias4, ...
+    - Alias1 (column 0): Product name (used as canonical ID)
+    - Alias2+ (columns 1+): Equivalent product codes
 
     Example:
+        | Alias1                        | Alias2 | Alias3 | Alias4 |
+        |-------------------------------|--------|--------|--------|
         | HELGAS GFREE MIXED GRAIN 500G | 168847 | 176283 | 184222 |
         | HELGAS GFREE TRAD WHITE 470G  | 168846 | 176299 | 184226 |
 
     The resolver maps all codes (168847, 176283, 184222) to the canonical
     product ID "HELGAS GFREE MIXED GRAIN 500G".
+
+    Note:
+        The parser is position-based and works with or without explicit column headers.
+        Legacy files without headers are still supported for backwards compatibility.
     """
 
     def __init__(self, network_config_file: Path | str, sheet_name: str = "Alias"):
@@ -56,6 +63,23 @@ class ProductAliasResolver:
             if df.empty:
                 # No aliases defined - that's okay
                 return
+
+            # Validate header format (informational only - not enforced for backwards compatibility)
+            if len(df.columns) > 0:
+                # Check if headers follow the expected Alias1, Alias2, ... pattern
+                expected_headers = [f"Alias{i+1}" for i in range(len(df.columns))]
+                actual_headers = [str(col) for col in df.columns]
+
+                # Only warn if headers look wrong (but still allow parsing)
+                if actual_headers != expected_headers and not all(col.startswith('Unnamed:') for col in actual_headers):
+                    import warnings
+                    warnings.warn(
+                        f"Alias sheet header format has changed. "
+                        f"Expected: {expected_headers[:3]}... "
+                        f"Found: {actual_headers[:3]}... "
+                        f"Parsing will proceed using position-based column access. "
+                        f"Consider updating headers to: Alias1, Alias2, Alias3, etc."
+                    )
 
             # Iterate through rows
             for _, row in df.iterrows():
