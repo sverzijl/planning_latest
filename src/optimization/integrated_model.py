@@ -747,41 +747,97 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                     )
 
         # Check 4: Labor calendar coverage - do we have labor data for all production dates?
+        # Distinguish between critical (needed for forecast) and non-critical (extended horizon) dates
         # Missing weekday dates are critical errors (production should be possible Mon-Fri)
         # Missing weekend dates are warnings (optional production, zero capacity if not provided)
-        missing_weekday_dates = []
-        missing_weekend_dates = []
+
+        # Calculate critical date range (needed to satisfy forecast demand)
+        forecast_start = min(e.forecast_date for e in self.forecast.entries)
+        forecast_end = max(e.forecast_date for e in self.forecast.entries)
+        max_transit_days = max(r.total_transit_days for r in self.enumerated_routes) if self.enumerated_routes else 0
+
+        # Critical range: must have labor data to produce and deliver forecast demand
+        critical_start = forecast_start - timedelta(days=int(max_transit_days) + 1)
+        critical_end = forecast_end
+
+        # Separate missing dates into critical vs. non-critical buckets
+        critical_missing_weekdays = []
+        noncritical_missing_weekdays = []
+        critical_missing_weekends = []
+        noncritical_missing_weekends = []
 
         for prod_date in self.production_dates:
             if prod_date not in self.labor_by_date:
-                # weekday() returns 0=Monday, 6=Sunday
-                if prod_date.weekday() < 5:  # Monday-Friday
-                    missing_weekday_dates.append(prod_date)
-                else:  # Saturday-Sunday
-                    missing_weekend_dates.append(prod_date)
+                is_weekday = prod_date.weekday() < 5  # Monday-Friday
+                is_critical = critical_start <= prod_date <= critical_end
 
-        # Critical error for missing weekdays
-        if missing_weekday_dates:
-            if len(missing_weekday_dates) <= 5:
-                date_str = ', '.join(str(d) for d in sorted(missing_weekday_dates))
+                if is_weekday and is_critical:
+                    critical_missing_weekdays.append(prod_date)
+                elif is_weekday and not is_critical:
+                    noncritical_missing_weekdays.append(prod_date)
+                elif not is_weekday and is_critical:
+                    critical_missing_weekends.append(prod_date)
+                else:
+                    noncritical_missing_weekends.append(prod_date)
+
+        # Get labor calendar date range for error messages
+        labor_dates = [d for d in self.production_dates if d in self.labor_by_date]
+        labor_start = min(labor_dates) if labor_dates else None
+        labor_end = max(labor_dates) if labor_dates else None
+
+        # Critical error for missing weekdays in critical date range
+        if critical_missing_weekdays:
+            if len(critical_missing_weekdays) <= 5:
+                date_str = ', '.join(str(d) for d in sorted(critical_missing_weekdays))
             else:
-                date_str = ', '.join(str(d) for d in sorted(missing_weekday_dates)[:5]) + f" (and {len(missing_weekday_dates) - 5} more)"
+                date_str = ', '.join(str(d) for d in sorted(critical_missing_weekdays)[:5]) + f" (and {len(critical_missing_weekdays) - 5} more)"
 
             issues.append(
-                f"Labor calendar missing entries for {len(missing_weekday_dates)} weekday production date(s): {date_str}"
+                f"Labor calendar missing entries for {len(critical_missing_weekdays)} critical weekday production date(s): {date_str}\n"
+                f"     Forecast range: {forecast_start} to {forecast_end}\n"
+                f"     Required production start (with {max_transit_days}-day transit buffer): {critical_start}\n"
+                f"     Labor calendar coverage: {labor_start} to {labor_end}\n"
+                f"     → To fix: Extend labor calendar to cover {critical_start} through {critical_end}"
             )
 
-        # Warning only for missing weekends (model treats as zero capacity)
-        if missing_weekend_dates:
-            if len(missing_weekend_dates) <= 5:
-                date_str = ', '.join(str(d) for d in sorted(missing_weekend_dates))
+        # Warning for missing weekdays in non-critical range (extended planning horizon)
+        if noncritical_missing_weekdays:
+            if len(noncritical_missing_weekdays) <= 5:
+                date_str = ', '.join(str(d) for d in sorted(noncritical_missing_weekdays))
             else:
-                date_str = ', '.join(str(d) for d in sorted(missing_weekend_dates)[:5]) + f" (and {len(missing_weekend_dates) - 5} more)"
+                date_str = ', '.join(str(d) for d in sorted(noncritical_missing_weekdays)[:5]) + f" (and {len(noncritical_missing_weekdays) - 5} more)"
 
             warnings.warn(
-                f"Labor calendar missing weekend dates in planning horizon: {date_str}. "
+                f"Labor calendar missing {len(noncritical_missing_weekdays)} weekday entries outside critical forecast range: {date_str}. "
+                f"These dates (before {critical_start} or after {critical_end}) are not needed to satisfy forecast demand. "
+                f"The model will proceed, but extend labor calendar if production is desired on these dates.",
+                UserWarning
+            )
+
+        # Warning for missing weekends in critical range (optional capacity)
+        if critical_missing_weekends:
+            if len(critical_missing_weekends) <= 5:
+                date_str = ', '.join(str(d) for d in sorted(critical_missing_weekends))
+            else:
+                date_str = ', '.join(str(d) for d in sorted(critical_missing_weekends)[:5]) + f" (and {len(critical_missing_weekends) - 5} more)"
+
+            warnings.warn(
+                f"Labor calendar missing weekend dates in critical forecast range: {date_str}. "
                 f"These dates will have zero production capacity. "
                 f"Add weekend labor entries if weekend production should be available.",
+                UserWarning
+            )
+
+        # Info only for missing weekends in non-critical range
+        if noncritical_missing_weekends:
+            if len(noncritical_missing_weekends) <= 5:
+                date_str = ', '.join(str(d) for d in sorted(noncritical_missing_weekends))
+            else:
+                date_str = ', '.join(str(d) for d in sorted(noncritical_missing_weekends)[:5]) + f" (and {len(noncritical_missing_weekends) - 5} more)"
+
+            warnings.warn(
+                f"Labor calendar missing {len(noncritical_missing_weekends)} weekend dates outside critical range: {date_str}. "
+                f"These dates will have zero production capacity (weekend production is optional).",
                 UserWarning
             )
 

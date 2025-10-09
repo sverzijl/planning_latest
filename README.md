@@ -1,5 +1,9 @@
 # Gluten-Free Bread Production-Distribution Planning
 
+![Tests](https://github.com/USER/REPO/workflows/Tests/badge.svg)
+![Coverage](https://github.com/USER/REPO/workflows/Coverage/badge.svg)
+![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)
+
 An integrated production scheduling and distribution optimization application for gluten-free bread, from manufacturing through multi-echelon frozen and ambient transport networks to breadrooms.
 
 ## Overview
@@ -140,9 +144,42 @@ pytest --cov=src tests/
 
 # Run specific test file
 pytest tests/test_models.py
+
+# Run labor validation integration tests
+pytest tests/test_labor_validation_integration.py -v
+
+# Run labor calendar validation tests
+pytest tests/test_integrated_model.py::TestLaborCalendarValidation -v
+
+# Run with verbose output and stop on first 5 failures
+pytest tests/ -v --tb=short --maxfail=5
+
+# Run tests with detailed coverage report
+pytest --cov=src --cov-report=html --cov-report=term
+# Then open htmlcov/index.html in browser
 ```
 
-**Test Coverage:** 73 tests covering all core models, parsers, multi-file workflow, and SAP IBP conversion
+**Test Coverage:** 266+ tests covering all core models, parsers, multi-file workflow, SAP IBP conversion, labor validation, and integrated optimization
+
+### Continuous Integration
+
+This project uses GitHub Actions for continuous integration:
+
+- **Tests Workflow:** Runs all tests on Python 3.11 and 3.12
+- **Coverage Workflow:** Generates coverage reports and uploads to Codecov
+- **Pre-commit Hooks:** Optional local testing before commits
+
+To enable pre-commit hooks:
+```bash
+# Install pre-commit
+pip install pre-commit
+
+# Install git hooks
+pre-commit install
+
+# Manually run hooks on all files
+pre-commit run --all-files
+```
 
 ### Code Quality
 
@@ -259,6 +296,10 @@ planning_latest/
 ├── tests/                  # Unit and integration tests
 ├── data/
 │   └── examples/          # Sample forecast files
+├── .github/
+│   └── workflows/         # CI/CD workflows
+│       ├── tests.yml      # Test automation
+│       └── coverage.yml   # Coverage reporting
 ├── requirements.txt        # Python dependencies
 ├── README.md              # This file
 └── CLAUDE.md              # Development guidelines
@@ -460,6 +501,16 @@ See [CLAUDE.md](CLAUDE.md) for detailed development guidelines, architecture dec
 3. Follow PEP 8 style guidelines (enforced by black/flake8)
 4. Keep UI and business logic separate
 5. Document complex algorithms
+6. Ensure all tests pass before submitting PR
+
+### Pull Request Process
+
+1. Fork the repository and create a feature branch
+2. Write tests for new functionality
+3. Ensure all tests pass: `pytest tests/ -v`
+4. Run code quality checks: `black src/ tests/ ui/` and `flake8 src/ tests/ ui/`
+5. Update documentation as needed
+6. Submit pull request with clear description
 
 ## License
 

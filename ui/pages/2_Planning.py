@@ -417,6 +417,52 @@ with tab_optimization:
 
     st.divider()
 
+    # Planning Horizon Control
+    st.markdown(section_header("Planning Horizon", level=3, icon="📅"), unsafe_allow_html=True)
+
+    col1, col2 = st.columns([2, 1])
+
+    with col1:
+        planning_horizon_mode = st.radio(
+            "Planning horizon mode:",
+            options=["Auto (from forecast)", "Custom (weeks)"],
+            index=0,
+            help="Auto mode calculates horizon from forecast range. Custom mode lets you specify weeks to plan ahead.",
+            key="planning_horizon_mode"
+        )
+
+    with col2:
+        planning_horizon_weeks = None
+        custom_end_date = None
+
+        if planning_horizon_mode == "Custom (weeks)":
+            planning_horizon_weeks = st.number_input(
+                "Planning horizon (weeks):",
+                min_value=4,
+                max_value=104,
+                value=26,  # Default 6 months
+                step=1,
+                help="Number of weeks to plan ahead. Minimum 4 weeks, maximum 104 weeks (2 years).",
+                key="planning_horizon_weeks"
+            )
+
+            # Calculate and display the end date
+            data = session_state.get_parsed_data()
+            if data and data.get('forecast') and data['forecast'].entries:
+                forecast_start = min(e.forecast_date for e in data['forecast'].entries)
+                custom_end_date = forecast_start + timedelta(days=planning_horizon_weeks * 7)
+                st.info(f"📅 Planning horizon: {planning_horizon_weeks} weeks (ending {custom_end_date.strftime('%Y-%m-%d')})")
+
+                # Check if labor calendar covers the planning horizon
+                labor_end = max(day.date for day in data['labor_calendar'].labor_days)
+                if custom_end_date > labor_end:
+                    st.warning(
+                        f"⚠️ Planning horizon ({custom_end_date.strftime('%Y-%m-%d')}) extends beyond labor calendar coverage ({labor_end.strftime('%Y-%m-%d')}). "
+                        f"Extended dates will issue warnings but optimization will proceed."
+                    )
+
+    st.divider()
+
     # Run Optimization
     st.markdown(section_header("Run Optimization", level=3, icon="🚀"), unsafe_allow_html=True)
 
@@ -455,6 +501,7 @@ with tab_optimization:
                     enforce_shelf_life=enforce_shelf_life,
                     initial_inventory=initial_inventory,
                     start_date=planning_start_date,  # Use override if specified, else None (auto-calculate)
+                    end_date=custom_end_date,  # Use custom horizon if specified, else None (auto-calculate)
                 )
 
                 # Calculate planning horizon info
