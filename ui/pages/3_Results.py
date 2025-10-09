@@ -628,9 +628,18 @@ with tab_distribution:
     truck_plan = results.get('truck_plan')
     shipments = results.get('shipments', [])
 
-    if not truck_plan or not shipments:
-        st.warning("No distribution plan available")
+    # Check if we have any distribution data to show
+    has_shipments = shipments and len(shipments) > 0
+    has_truck_loads = truck_plan and len(truck_plan.loads) > 0
+
+    if not has_shipments:
+        st.warning("📦 No distribution plan available - no shipments found in solution")
     else:
+        # We have shipments - show distribution data
+        # Display informational message if truck assignments are missing
+        if not has_truck_loads:
+            st.info("📦 **Shipment data available.** Truck assignments not available - model may have been solved without truck schedules or routes don't align with truck destinations.")
+
         # Summary metrics
         st.markdown(section_header("Distribution Summary", level=3, icon="📊"), unsafe_allow_html=True)
 
@@ -641,22 +650,29 @@ with tab_distribution:
             st.markdown(colored_metric("Total Units", f"{sum(s.quantity for s in shipments):,.0f}", "primary"), unsafe_allow_html=True)
 
         with col2:
-            st.markdown(colored_metric("Trucks Used", str(len(truck_plan.loads)), "secondary"), unsafe_allow_html=True)
-            avg_load = sum(tl.total_units for tl in truck_plan.loads) / len(truck_plan.loads) if truck_plan.loads else 0
+            trucks_used = len(truck_plan.loads) if truck_plan else 0
+            st.markdown(colored_metric("Trucks Used", str(trucks_used), "secondary"), unsafe_allow_html=True)
+            avg_load = sum(tl.total_units for tl in truck_plan.loads) / len(truck_plan.loads) if has_truck_loads else 0
             st.markdown(colored_metric("Avg Load", f"{avg_load:,.0f} units", "secondary"), unsafe_allow_html=True)
 
         with col3:
             destinations = set(s.destination_id for s in shipments)
             st.markdown(colored_metric("Destinations", str(len(destinations)), "accent"), unsafe_allow_html=True)
 
+            # Show unassigned shipment count if relevant
+            if truck_plan and len(truck_plan.unassigned_shipments) > 0:
+                st.markdown(colored_metric("Unassigned", str(len(truck_plan.unassigned_shipments)), "accent"), unsafe_allow_html=True)
+
         with col4:
-            if truck_plan.is_feasible():
+            if truck_plan and truck_plan.is_feasible():
                 st.markdown(success_badge("Feasible"), unsafe_allow_html=True)
-            else:
+            elif truck_plan and not truck_plan.is_feasible():
                 st.markdown(error_badge(f"{len(truck_plan.infeasibilities)} Issues"), unsafe_allow_html=True)
+            else:
+                st.markdown(warning_badge("No Truck Data"), unsafe_allow_html=True)
 
         # Show infeasibilities if any
-        if not truck_plan.is_feasible():
+        if truck_plan and not truck_plan.is_feasible():
             st.divider()
             with st.expander("⚠️ Truck Loading Infeasibilities", expanded=False):
                 for infeas in truck_plan.infeasibilities:
@@ -668,21 +684,24 @@ with tab_distribution:
         dist_tab1, dist_tab2 = st.tabs(["📊 Charts", "📋 Tables"])
 
         with dist_tab1:
-            col1, col2 = st.columns(2)
+            if has_truck_loads:
+                col1, col2 = st.columns(2)
 
-            with col1:
-                st.markdown(section_header("Shipments by Destination", level=4), unsafe_allow_html=True)
-                fig = render_shipments_by_destination_chart(truck_plan)
-                st.plotly_chart(fig, use_container_width=True, key="distribution_shipments_by_dest")
+                with col1:
+                    st.markdown(section_header("Shipments by Destination", level=4), unsafe_allow_html=True)
+                    fig = render_shipments_by_destination_chart(truck_plan)
+                    st.plotly_chart(fig, use_container_width=True, key="distribution_shipments_by_dest")
 
-            with col2:
-                st.markdown(section_header("Truck Utilization", level=4), unsafe_allow_html=True)
-                fig = render_truck_utilization_chart(truck_plan)
-                st.plotly_chart(fig, use_container_width=True, key="distribution_truck_utilization")
+                with col2:
+                    st.markdown(section_header("Truck Utilization", level=4), unsafe_allow_html=True)
+                    fig = render_truck_utilization_chart(truck_plan)
+                    st.plotly_chart(fig, use_container_width=True, key="distribution_truck_utilization")
 
-            st.markdown(section_header("Truck Loading Timeline", level=4), unsafe_allow_html=True)
-            fig = render_truck_loading_timeline(truck_plan)
-            st.plotly_chart(fig, use_container_width=True, key="distribution_truck_timeline")
+                st.markdown(section_header("Truck Loading Timeline", level=4), unsafe_allow_html=True)
+                fig = render_truck_loading_timeline(truck_plan)
+                st.plotly_chart(fig, use_container_width=True, key="distribution_truck_timeline")
+            else:
+                st.info("📊 Truck loading charts not available - no truck assignments in solution. View shipments in the **Tables** tab below.")
 
         with dist_tab2:
             st.markdown(section_header("Shipments", level=4), unsafe_allow_html=True)
@@ -691,7 +710,10 @@ with tab_distribution:
             st.divider()
 
             st.markdown(section_header("Truck Loadings", level=4), unsafe_allow_html=True)
-            render_truck_loads_table(truck_plan)
+            if has_truck_loads:
+                render_truck_loads_table(truck_plan)
+            else:
+                st.info("ℹ️ No truck loading data available. Shipments may not be assigned to specific trucks.")
 
 
 # ===========================

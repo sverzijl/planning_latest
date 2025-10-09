@@ -5,6 +5,7 @@ into the same data structures used by heuristic planning, enabling
 the Results UI to display both types of results seamlessly.
 """
 
+import logging
 from typing import Dict, Any, Optional, List
 from datetime import date as Date, timedelta
 from collections import defaultdict
@@ -18,6 +19,8 @@ from src.costs.cost_breakdown import (
 )
 from src.distribution.truck_loader import TruckLoadPlan, TruckLoad
 from src.models.shipment import Shipment
+
+logger = logging.getLogger(__name__)
 
 
 def adapt_optimization_results(
@@ -50,9 +53,11 @@ def adapt_optimization_results(
 
     # Get shipments (model already has this method)
     shipments = model.get_shipment_plan() or []
+    logger.info(f"Retrieved {len(shipments)} shipments from optimization model")
 
     # Create truck plan from optimization results
     truck_plan = _create_truck_plan_from_optimization(model, shipments)
+    logger.info(f"Created truck plan with {len(truck_plan.loads)} truck loads and {len(truck_plan.unassigned_shipments)} unassigned shipments")
 
     # Convert cost breakdown
     cost_breakdown = _create_cost_breakdown(model, solution)
@@ -166,6 +171,19 @@ def _create_truck_plan_from_optimization(model: Any, shipments: List[Shipment]) 
             truck_shipments[key].append(shipment)
         else:
             unassigned_shipments.append(shipment)
+
+    # Log truck assignment diagnostics
+    logger.debug(f"Grouped shipments: {len(truck_shipments)} trucks with assignments, {len(unassigned_shipments)} unassigned")
+
+    if len(unassigned_shipments) > 0 and len(shipments) > 0:
+        pct_unassigned = 100 * len(unassigned_shipments) / len(shipments)
+        if pct_unassigned > 50:
+            logger.warning(
+                f"{pct_unassigned:.1f}% of shipments are unassigned to trucks. "
+                f"This may indicate: (1) model solved without truck_schedules, "
+                f"(2) routes don't align with truck destinations, or "
+                f"(3) limited route enumeration (max_routes_per_destination too low)"
+            )
 
     # Create TruckLoad objects
     loads: List[TruckLoad] = []
