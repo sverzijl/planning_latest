@@ -454,12 +454,15 @@ with tab_optimization:
                 st.info(f"📅 Planning horizon: {planning_horizon_weeks} weeks (ending {custom_end_date.strftime('%Y-%m-%d')})")
 
                 # Check if labor calendar covers the planning horizon
-                labor_end = max(day.date for day in data['labor_calendar'].labor_days)
-                if custom_end_date > labor_end:
-                    st.warning(
-                        f"⚠️ Planning horizon ({custom_end_date.strftime('%Y-%m-%d')}) extends beyond labor calendar coverage ({labor_end.strftime('%Y-%m-%d')}). "
-                        f"Extended dates will issue warnings but optimization will proceed."
-                    )
+                if data.get('labor_calendar') and data['labor_calendar'].days:
+                    labor_end = max(day.date for day in data['labor_calendar'].days)
+                    if custom_end_date > labor_end:
+                        st.warning(
+                            f"⚠️ Planning horizon ({custom_end_date.strftime('%Y-%m-%d')}) extends beyond labor calendar coverage ({labor_end.strftime('%Y-%m-%d')}). "
+                            f"Extended dates will issue warnings but optimization will proceed."
+                        )
+                else:
+                    st.warning("⚠️ Labor calendar data not available. Cannot validate planning horizon coverage.")
 
     st.divider()
 
