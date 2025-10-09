@@ -99,7 +99,17 @@ class WasteCostCalculator:
         """
         Calculate cost of unmet demand.
 
-        Compares forecast to shipments to find gaps.
+        Compares forecast to shipments delivered on the same date.
+
+        KNOWN LIMITATION: This method only considers shipments delivered ON the demand date,
+        ignoring pre-positioned inventory from earlier deliveries. This can overestimate
+        unmet demand costs when inventory is held at locations.
+
+        For accurate demand satisfaction tracking that includes pre-positioned inventory,
+        use DailySnapshotGenerator which tracks cumulative inventory over time.
+
+        Phase 3 enhancement: Implement chronological inventory tracking to account for
+        inventory carried forward from earlier deliveries.
 
         Args:
             forecast: Demand forecast
