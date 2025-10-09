@@ -85,6 +85,9 @@ class ProductAliasResolver:
             for _, row in df.iterrows():
                 # First column is the canonical product name/ID
                 canonical_id = str(row.iloc[0]).strip()
+                # Remove trailing .0 from numeric strings (e.g., '184222.0' -> '184222')
+                if canonical_id.endswith('.0'):
+                    canonical_id = canonical_id[:-2]
                 self._canonical_products.add(canonical_id)
 
                 # Map the canonical ID to itself
@@ -99,6 +102,9 @@ class ProductAliasResolver:
                         continue
 
                     alias_code = str(alias_code).strip()
+                    # Remove trailing .0 from numeric strings (e.g., '184222.0' -> '184222')
+                    if alias_code.endswith('.0'):
+                        alias_code = alias_code[:-2]
                     if not alias_code:
                         continue
 
