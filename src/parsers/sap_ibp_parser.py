@@ -3,11 +3,13 @@
 from datetime import datetime, date
 from pathlib import Path
 from typing import Optional
+import warnings
 
 import pandas as pd
 from openpyxl import load_workbook
 
 from ..models import Forecast, ForecastEntry
+from .product_alias_resolver import ProductAliasResolver
 
 
 class SapIbpParser:
@@ -80,7 +82,11 @@ class SapIbpParser:
             return None
 
     @staticmethod
-    def parse_sap_ibp_forecast(file_path: Path, sheet_name: str) -> Forecast:
+    def parse_sap_ibp_forecast(
+        file_path: Path,
+        sheet_name: str,
+        product_alias_resolver: Optional[ProductAliasResolver] = None
+    ) -> Forecast:
         """
         Parse forecast data from SAP IBP export sheet.
 
@@ -89,6 +95,7 @@ class SapIbpParser:
         Args:
             file_path: Path to the Excel file
             sheet_name: Name of the sheet containing SAP IBP data
+            product_alias_resolver: Optional product alias resolver for mapping product codes to canonical IDs
 
         Returns:
             Forecast object with entries
@@ -187,15 +194,37 @@ class SapIbpParser:
 
         # Create ForecastEntry objects
         entries = []
+        unmapped_products = set()
+
         for _, row in df_long.iterrows():
+            raw_product_id = row["Product ID"]
+
+            # Resolve product alias if resolver provided
+            product_id = raw_product_id
+            if product_alias_resolver:
+                resolved_id = product_alias_resolver.resolve_product_id(raw_product_id)
+                if resolved_id != raw_product_id:
+                    product_id = resolved_id
+                elif not product_alias_resolver.is_mapped(raw_product_id):
+                    unmapped_products.add(raw_product_id)
+
             entry = ForecastEntry(
                 location_id=row["Location ID"],
-                product_id=row["Product ID"],
+                product_id=product_id,  # Use resolved ID
                 forecast_date=row["date"],
                 quantity=row["quantity"],
                 confidence=None,
             )
             entries.append(entry)
+
+        # Warn about unmapped products
+        if unmapped_products:
+            warnings.warn(
+                f"SAP IBP forecast contains {len(unmapped_products)} unmapped product codes: "
+                f"{sorted(list(unmapped_products)[:5])}{'...' if len(unmapped_products) > 5 else ''}. "
+                f"These will be used as-is. Consider adding them to the Alias sheet.",
+                UserWarning
+            )
 
         forecast_name = f"SAP IBP Forecast from {Path(file_path).name} (Sheet: {sheet_name})"
         return Forecast(name=forecast_name, entries=entries)

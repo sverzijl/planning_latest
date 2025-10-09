@@ -3,6 +3,7 @@
 from datetime import date
 from pathlib import Path
 from typing import Optional
+import warnings
 
 import pandas as pd
 from openpyxl import load_workbook
@@ -22,6 +23,7 @@ from ..models import (
     LaborDay,
     CostStructure,
 )
+from .product_alias_resolver import ProductAliasResolver
 
 
 class ExcelParser:
@@ -40,12 +42,13 @@ class ExcelParser:
     Also supports SAP IBP export format (wide format with dates as columns).
     """
 
-    def __init__(self, file_path: Path | str):
+    def __init__(self, file_path: Path | str, product_alias_resolver: Optional[ProductAliasResolver] = None):
         """
         Initialize parser with Excel file path.
 
         Args:
             file_path: Path to the Excel file (.xlsm or .xlsx)
+            product_alias_resolver: Optional product alias resolver for mapping product codes to canonical IDs
 
         Raises:
             FileNotFoundError: If file does not exist
@@ -56,6 +59,8 @@ class ExcelParser:
             raise FileNotFoundError(f"File not found: {file_path}")
         if self.file_path.suffix not in [".xlsm", ".xlsx"]:
             raise ValueError(f"File must be .xlsm or .xlsx: {file_path}")
+
+        self.product_alias_resolver = product_alias_resolver
 
     def parse_forecast(self, sheet_name: str = "Forecast") -> Forecast:
         """
@@ -86,15 +91,37 @@ class ExcelParser:
             if required_cols.issubset(df.columns):
                 # Standard format - use existing parsing logic
                 entries = []
+                unmapped_products = set()
+
                 for _, row in df.iterrows():
+                    raw_product_id = str(row["product_id"])
+
+                    # Resolve product alias if resolver provided
+                    product_id = raw_product_id
+                    if self.product_alias_resolver:
+                        resolved_id = self.product_alias_resolver.resolve_product_id(raw_product_id)
+                        if resolved_id != raw_product_id:
+                            product_id = resolved_id
+                        elif not self.product_alias_resolver.is_mapped(raw_product_id):
+                            unmapped_products.add(raw_product_id)
+
                     entry = ForecastEntry(
                         location_id=str(row["location_id"]),
-                        product_id=str(row["product_id"]),
+                        product_id=product_id,  # Use resolved ID
                         forecast_date=pd.to_datetime(row["date"]).date(),
                         quantity=float(row["quantity"]),
                         confidence=float(row["confidence"]) if "confidence" in row and pd.notna(row["confidence"]) else None,
                     )
                     entries.append(entry)
+
+                # Warn about unmapped products
+                if unmapped_products:
+                    warnings.warn(
+                        f"Forecast contains {len(unmapped_products)} unmapped product codes: "
+                        f"{sorted(list(unmapped_products)[:5])}{'...' if len(unmapped_products) > 5 else ''}. "
+                        f"These will be used as-is. Consider adding them to the Alias sheet.",
+                        UserWarning
+                    )
 
                 forecast_name = f"Forecast from {self.file_path.name}"
                 return Forecast(name=forecast_name, entries=entries)
@@ -106,7 +133,11 @@ class ExcelParser:
         from .sap_ibp_parser import SapIbpParser
         sap_sheet = SapIbpParser.detect_sap_ibp_format(self.file_path)
         if sap_sheet:
-            return SapIbpParser.parse_sap_ibp_forecast(self.file_path, sap_sheet)
+            return SapIbpParser.parse_sap_ibp_forecast(
+                self.file_path,
+                sap_sheet,
+                product_alias_resolver=self.product_alias_resolver  # Pass through resolver
+            )
 
         # Neither format found
         raise ValueError(

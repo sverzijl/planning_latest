@@ -63,6 +63,8 @@ class MultiFileParser:
         Note:
             At least one of forecast_file or network_file must be provided.
             inventory_file is optional and can be added later.
+            If network_file is provided, product aliases are automatically loaded
+            and applied to forecast and inventory data.
         """
         if forecast_file is None and network_file is None:
             raise ValueError("At least one of forecast_file or network_file must be provided")
@@ -79,21 +81,40 @@ class MultiFileParser:
         if self.inventory_file and not self.inventory_file.exists():
             raise FileNotFoundError(f"Inventory file not found: {inventory_file}")
 
-        # Create parsers
-        self._forecast_parser = ExcelParser(self.forecast_file) if self.forecast_file else None
-        self._network_parser = ExcelParser(self.network_file) if self.network_file else None
+        # Load product alias resolver if network file is provided
         self._product_alias_resolver: Optional[ProductAliasResolver] = None
+        if self.network_file:
+            try:
+                self._product_alias_resolver = ProductAliasResolver(
+                    self.network_file,
+                    sheet_name="Alias"
+                )
+            except Exception:
+                # If Alias sheet doesn't exist or parsing fails, continue without it
+                # (This is normal for network configs without alias definitions)
+                pass
+
+        # Create parsers with alias resolver
+        self._forecast_parser = ExcelParser(
+            self.forecast_file,
+            product_alias_resolver=self._product_alias_resolver
+        ) if self.forecast_file else None
+
+        self._network_parser = ExcelParser(self.network_file) if self.network_file else None
         self._inventory_parser: Optional[InventoryParser] = None
 
     def parse_forecast(self, sheet_name: str = "Forecast") -> Forecast:
         """
-        Parse forecast data.
+        Parse forecast data with automatic product alias resolution.
+
+        Product codes are automatically resolved to canonical Alias1 names
+        if a network_file with Alias sheet was provided during initialization.
 
         Args:
             sheet_name: Name of forecast sheet (default: "Forecast")
 
         Returns:
-            Forecast object with entries
+            Forecast object with entries (product IDs resolved to canonical names)
 
         Raises:
             ValueError: If forecast_file was not provided
