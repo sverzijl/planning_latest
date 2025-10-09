@@ -40,6 +40,7 @@ from .date_filter import (
     calculate_date_stats,
     sync_url_params,
 )
+from .daily_snapshot import render_daily_snapshot
 
 __all__ = [
     # Network visualization
@@ -79,4 +80,6 @@ __all__ = [
     'get_quick_range_dates',
     'calculate_date_stats',
     'sync_url_params',
+    # Daily snapshot
+    'render_daily_snapshot',
 ]

@@ -40,6 +40,7 @@ from ui.components import (
     render_cost_by_category_chart,
     render_daily_cost_chart,
     render_cost_breakdown_table,
+    render_daily_snapshot,
 )
 
 # Page config
@@ -207,12 +208,13 @@ def get_current_results():
 st.divider()
 
 # Create tabs for different result views
-tab_overview, tab_production, tab_distribution, tab_costs, tab_comparison = st.tabs([
+tab_overview, tab_production, tab_distribution, tab_costs, tab_comparison, tab_snapshot = st.tabs([
     "📊 Overview",
     "📦 Production",
     "🚚 Distribution",
     "💰 Costs",
-    "⚖️ Comparison"
+    "⚖️ Comparison",
+    "📸 Daily Snapshot"
 ])
 
 
@@ -920,3 +922,34 @@ with tab_comparison:
             - Longer solve time
             - More complex to configure
             """)
+
+
+# ===========================
+# TAB 5: DAILY SNAPSHOT
+# ===========================
+
+with tab_snapshot:
+    st.markdown("""
+    <div class="info-box">
+        <div style="font-weight: 600; margin-bottom: 8px;">📸 Daily Inventory Snapshot</div>
+        <div>Interactive daily view of inventory at locations, in-transit shipments, manufacturing activity, and demand satisfaction.</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.divider()
+
+    # Get current results (heuristic or optimization based on selection)
+    results = get_current_results()
+
+    # Get locations dictionary from session state
+    locations_dict = st.session_state.get('locations_dict', {})
+
+    # Render the daily snapshot component
+    if results and locations_dict:
+        render_daily_snapshot(results, locations_dict, key_prefix="results_snapshot")
+    else:
+        st.warning("⚠️ Unable to display daily snapshot. Missing results or location data.")
+        if not results:
+            st.info("No planning results available. Run planning first.")
+        if not locations_dict:
+            st.info("No location data available. Ensure data has been uploaded.")
