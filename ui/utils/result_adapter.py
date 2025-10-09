@@ -6,7 +6,7 @@ the Results UI to display both types of results seamlessly.
 """
 
 from typing import Dict, Any, Optional, List
-from datetime import date as Date
+from datetime import date as Date, timedelta
 from collections import defaultdict
 from src.production.scheduler import ProductionSchedule, ProductionBatch
 from src.costs.cost_breakdown import (
@@ -20,13 +20,18 @@ from src.distribution.truck_loader import TruckLoadPlan, TruckLoad
 from src.models.shipment import Shipment
 
 
-def adapt_optimization_results(model: Any, result: dict) -> Optional[Dict[str, Any]]:
+def adapt_optimization_results(
+    model: Any,
+    result: dict,
+    inventory_snapshot_date: Optional[Date] = None
+) -> Optional[Dict[str, Any]]:
     """
     Convert optimization results to heuristic-compatible format.
 
     Args:
         model: IntegratedProductionDistributionModel instance
         result: Optimization result dictionary from session state
+        inventory_snapshot_date: Optional date when initial inventory was loaded
 
     Returns:
         Dictionary with keys: production_schedule, shipments, truck_plan, cost_breakdown
@@ -37,7 +42,11 @@ def adapt_optimization_results(model: Any, result: dict) -> Optional[Dict[str, A
         return None
 
     # Convert production schedule
-    production_schedule = _create_production_schedule(model, solution)
+    production_schedule = _create_production_schedule(
+        model,
+        solution,
+        inventory_snapshot_date
+    )
 
     # Get shipments (model already has this method)
     shipments = model.get_shipment_plan() or []
@@ -56,11 +65,33 @@ def adapt_optimization_results(model: Any, result: dict) -> Optional[Dict[str, A
     }
 
 
-def _create_production_schedule(model: Any, solution: dict) -> ProductionSchedule:
+def _create_production_schedule(
+    model: Any,
+    solution: dict,
+    inventory_snapshot_date: Optional[Date] = None
+) -> ProductionSchedule:
     """Convert optimization solution to ProductionSchedule object."""
 
-    # Create ProductionBatch objects from solution
     batches = []
+
+    # CREATE BATCHES FROM INITIAL INVENTORY
+    if hasattr(model, 'initial_inventory') and model.initial_inventory and inventory_snapshot_date:
+        for (location_id, product_id), quantity in model.initial_inventory.items():
+            if quantity > 0:
+                # Create virtual batch for initial inventory
+                # Use snapshot_date - 1 so inventory exists on snapshot_date
+                batch = ProductionBatch(
+                    id=f"INIT-{location_id}-{product_id}",
+                    product_id=product_id,
+                    manufacturing_site_id=location_id,  # CRITICAL: Use actual location, not just 6122!
+                    production_date=inventory_snapshot_date - timedelta(days=1),
+                    quantity=quantity,
+                    labor_hours_used=0,  # Initial inventory has no labor cost
+                    production_cost=0,  # Initial inventory is sunk cost
+                )
+                batches.append(batch)
+
+    # EXISTING CODE: Create ProductionBatch objects from solution
     for idx, batch_dict in enumerate(solution.get('production_batches', [])):
         batch = ProductionBatch(
             id=f"OPT-BATCH-{idx+1:04d}",
@@ -88,10 +119,21 @@ def _create_production_schedule(model: Any, solution: dict) -> ProductionSchedul
             proportion = batch.quantity / date_total
             batch.labor_hours_used = daily_labor_hours.get(batch.production_date, 0) * proportion
 
+    # Determine actual schedule start date
+    if inventory_snapshot_date:
+        # Use inventory snapshot date as schedule start
+        actual_start_date = inventory_snapshot_date
+    elif batches:
+        # Use earliest production/batch date if no inventory
+        actual_start_date = min(b.production_date for b in batches)
+    else:
+        # Fallback to model start date
+        actual_start_date = model.start_date
+
     # Build ProductionSchedule
     return ProductionSchedule(
         manufacturing_site_id=model.manufacturing_site.location_id,
-        schedule_start_date=model.start_date,
+        schedule_start_date=actual_start_date,
         schedule_end_date=model.end_date,
         production_batches=batches,
         daily_totals=daily_totals,

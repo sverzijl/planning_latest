@@ -372,7 +372,7 @@ class DailySnapshotGenerator:
         Calculate inventory at a location on a specific date.
 
         This tracks batches through the network:
-        - Batches are at manufacturing site on production date
+        - Batches are at their origin location (manufacturing_site_id) on production date
         - Batches move with shipments through the network
         - A batch leaves origin when shipment departs
         - A batch arrives at destination after transit time
@@ -396,11 +396,11 @@ class DailySnapshotGenerator:
         # We need to trace each batch through shipments
         batch_quantities: Dict[str, float] = {}  # batch_id -> remaining quantity at this location
 
-        # Start with all batches at manufacturing site on their production date
-        if location_id == self.production_schedule.manufacturing_site_id:
-            for batch in self.production_schedule.production_batches:
-                if batch.production_date <= snapshot_date:
-                    batch_quantities[batch.id] = batch.quantity
+        # Start with batches at their ACTUAL location (from manufacturing_site_id field)
+        # This handles both regular production (always at manufacturing) and initial inventory (can be anywhere)
+        for batch in self.production_schedule.production_batches:
+            if batch.manufacturing_site_id == location_id and batch.production_date <= snapshot_date:
+                batch_quantities[batch.id] = batch.quantity
 
         # Process shipments to track batch movements
         for shipment in self.shipments:

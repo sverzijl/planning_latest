@@ -194,9 +194,14 @@ def get_current_results():
     """Get results based on currently selected source."""
     if st.session_state.result_source == 'optimization':
         opt_results = session_state.get_optimization_results()
+
+        # Get inventory snapshot date from session state
+        inventory_snapshot_date = st.session_state.get('inventory_snapshot_date')
+
         adapted_results = adapt_optimization_results(
             model=opt_results['model'],
-            result=opt_results['result']
+            result=opt_results['result'],
+            inventory_snapshot_date=inventory_snapshot_date
         )
         if adapted_results is None:
             st.error("❌ Optimization results are not available. The model may not have been solved yet.")
