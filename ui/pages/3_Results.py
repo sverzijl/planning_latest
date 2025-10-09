@@ -799,7 +799,9 @@ with tab_comparison:
 
         # Get key metrics
         heuristic_cost = heuristic_results['cost_breakdown'].total_cost
-        opt_cost = opt_results['result'].objective_value or 0
+        # Use properly calculated total_cost from model solution, not raw solver objective_value
+        model_solution = opt_results['model'].get_solution()
+        opt_cost = model_solution.get('total_cost', 0) if model_solution else 0
 
         # Validate opt_cost is finite
         if opt_cost is None or math.isinf(opt_cost) or math.isnan(opt_cost):
@@ -823,8 +825,7 @@ with tab_comparison:
             st.markdown(section_header("Optimization", level=4), unsafe_allow_html=True)
             st.markdown(colored_metric("Total Cost", f"${opt_cost:,.2f}", "success"), unsafe_allow_html=True)
 
-            # Get solution from model
-            model_solution = opt_results['model'].get_solution()
+            # Use model_solution already obtained above
             if model_solution:
                 production_days = len(set(
                     batch['date'] for batch in model_solution.get('production_batches', [])
