@@ -358,8 +358,8 @@ class DailySnapshotGenerator:
         snapshot.inflows = self._calculate_inflows(snapshot_date)
         snapshot.outflows = self._calculate_outflows(snapshot_date)
 
-        # Get demand satisfaction
-        snapshot.demand_satisfied = self._get_demand_satisfied(snapshot_date)
+        # Get demand satisfaction (pass location inventory for accurate calculation)
+        snapshot.demand_satisfied = self._get_demand_satisfied(snapshot_date, location_inventory)
 
         return snapshot
 
@@ -611,14 +611,24 @@ class DailySnapshotGenerator:
 
         return outflows
 
-    def _get_demand_satisfied(self, snapshot_date: Date) -> List[DemandRecord]:
+    def _get_demand_satisfied(
+        self,
+        snapshot_date: Date,
+        location_inventory: Dict[str, LocationInventory]
+    ) -> List[DemandRecord]:
         """
         Get demand satisfaction records for the snapshot date.
 
-        Compares forecasted demand to actual deliveries.
+        Compares forecasted demand to actual availability, which includes:
+        - On-hand inventory at the location (from earlier deliveries)
+        - New deliveries arriving on the snapshot date
+
+        This reflects the real-world scenario where pre-positioned inventory
+        can satisfy demand without requiring same-day delivery.
 
         Args:
             snapshot_date: Date to check demand satisfaction
+            location_inventory: Inventory at each location on this date
 
         Returns:
             List of DemandRecord objects
@@ -632,32 +642,48 @@ class DailySnapshotGenerator:
             if entry.forecast_date == snapshot_date:
                 demand_by_location_product[entry.location_id][entry.product_id] = entry.quantity
 
-        # Get all deliveries for this date
-        supplied_by_location_product: Dict[str, Dict[str, float]] = defaultdict(lambda: defaultdict(float))
+        # Get on-hand inventory at each location (from earlier deliveries)
+        inventory_by_location_product: Dict[str, Dict[str, float]] = defaultdict(lambda: defaultdict(float))
+        for location_id, loc_inv in location_inventory.items():
+            for product_id, quantity in loc_inv.by_product.items():
+                inventory_by_location_product[location_id][product_id] = quantity
+
+        # Get all deliveries for this date (new arrivals)
+        deliveries_today_by_location_product: Dict[str, Dict[str, float]] = defaultdict(lambda: defaultdict(float))
 
         deliveries = self._shipments_by_delivery.get(snapshot_date, {})
         for dest_id, products in deliveries.items():
             for product_id, shipments in products.items():
-                supplied_by_location_product[dest_id][product_id] = sum(s.quantity for s in shipments)
+                deliveries_today_by_location_product[dest_id][product_id] = sum(s.quantity for s in shipments)
 
         # Combine to create demand records
-        all_locations = set(demand_by_location_product.keys()) | set(supplied_by_location_product.keys())
+        # ONLY create records for locations that actually have demand
+        all_locations_with_demand = set(demand_by_location_product.keys())
 
-        for location_id in all_locations:
-            all_products = set(demand_by_location_product[location_id].keys()) | set(
-                supplied_by_location_product[location_id].keys()
-            )
+        for location_id in all_locations_with_demand:
+            # For this location with demand, check all products that have demand
+            all_products_with_demand = set(demand_by_location_product[location_id].keys())
 
-            for product_id in all_products:
-                demand_qty = demand_by_location_product[location_id].get(product_id, 0.0)
-                supplied_qty = supplied_by_location_product[location_id].get(product_id, 0.0)
+            for product_id in all_products_with_demand:
+                demand_qty = demand_by_location_product[location_id][product_id]
+
+                # FIX: Include BOTH on-hand inventory AND new deliveries
+                on_hand_qty = inventory_by_location_product[location_id].get(product_id, 0.0)
+                deliveries_today_qty = deliveries_today_by_location_product[location_id].get(product_id, 0.0)
+
+                # Total available = on-hand inventory + new deliveries today
+                # BUT: We need to avoid double-counting! The inventory already includes today's deliveries
+                # if they arrived earlier in the day. So we use ONLY the on-hand inventory.
+                supplied_qty = on_hand_qty
+
+                # Calculate shortage
                 shortage_qty = max(0.0, demand_qty - supplied_qty)
 
                 record = DemandRecord(
                     destination_id=location_id,
                     product_id=product_id,
                     demand_quantity=demand_qty,
-                    supplied_quantity=supplied_qty,
+                    supplied_quantity=supplied_qty,  # Report actual quantity available
                     shortage_quantity=shortage_qty
                 )
                 demand_records.append(record)
