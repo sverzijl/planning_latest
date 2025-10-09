@@ -18,6 +18,7 @@ from collections import defaultdict
 from src.models.location import Location
 from src.production.scheduler import ProductionSchedule, ProductionBatch
 from src.models.shipment import Shipment
+from src.analysis.daily_snapshot import DailySnapshotGenerator
 from ui.components.styling import (
     section_header,
     colored_metric,
@@ -248,10 +249,10 @@ def render_daily_snapshot(
             transit_data = []
             for shipment in in_transit_shipments:
                 transit_data.append({
-                    'Route': f"{shipment.origin_id} → {shipment.destination_id}",
-                    'Product': shipment.product_id,
-                    'Quantity': shipment.quantity,
-                    'Days in Transit': _get_days_in_transit(shipment, selected_date),
+                    'Route': f"{shipment['origin_id']} → {shipment['destination_id']}",
+                    'Product': shipment['product_id'],
+                    'Quantity': shipment['quantity'],
+                    'Days in Transit': shipment['days_in_transit'],
                 })
 
             df_transit = pd.DataFrame(transit_data)
@@ -268,18 +269,13 @@ def render_daily_snapshot(
             prod_data = []
             for batch in production_batches:
                 prod_data.append({
-                    'Batch ID': batch.id,
-                    'Product': batch.product_id,
-                    'Quantity': batch.quantity,
-                    'Labor Hours': f"{batch.labor_hours_used:.1f}h",
+                    'Batch ID': batch['batch_id'],
+                    'Product': batch['product_id'],
+                    'Quantity': batch['quantity'],
                 })
 
             df_prod = pd.DataFrame(prod_data)
             st.dataframe(df_prod, use_container_width=True, hide_index=True)
-
-            # Show summary
-            total_labor = sum(b.labor_hours_used for b in production_batches)
-            st.caption(f"**Total Labor Hours:** {total_labor:.1f}h")
 
     st.divider()
 
@@ -426,18 +422,31 @@ def _get_date_range(
     """
     dates = []
 
-    # Add production dates
+    # Get planning start date if available
+    planning_start = None
+    if hasattr(production_schedule, 'schedule_start_date') and production_schedule.schedule_start_date:
+        planning_start = production_schedule.schedule_start_date
+
+    # Add production dates (only if on or after planning start)
     if production_schedule and production_schedule.production_batches:
-        dates.extend([b.production_date for b in production_schedule.production_batches])
+        for batch in production_schedule.production_batches:
+            if planning_start is None or batch.production_date >= planning_start:
+                dates.append(batch.production_date)
 
     # Add shipment dates
     for shipment in shipments:
         if hasattr(shipment, 'departure_date') and shipment.departure_date:
-            dates.append(shipment.departure_date)
+            if planning_start is None or shipment.departure_date >= planning_start:
+                dates.append(shipment.departure_date)
         if hasattr(shipment, 'arrival_date') and shipment.arrival_date:
-            dates.append(shipment.arrival_date)
+            if planning_start is None or shipment.arrival_date >= planning_start:
+                dates.append(shipment.arrival_date)
         if hasattr(shipment, 'production_date') and shipment.production_date:
-            dates.append(shipment.production_date)
+            if planning_start is None or shipment.production_date >= planning_start:
+                dates.append(shipment.production_date)
+        if hasattr(shipment, 'delivery_date') and shipment.delivery_date:
+            if planning_start is None or shipment.delivery_date >= planning_start:
+                dates.append(shipment.delivery_date)
 
     if not dates:
         return None
@@ -451,7 +460,7 @@ def _generate_snapshot(
     shipments: List[Shipment],
     locations: Dict[str, Location]
 ) -> Dict[str, Any]:
-    """Generate snapshot data for a specific date.
+    """Generate snapshot data for a specific date using the backend generator.
 
     Returns:
         Dictionary containing:
@@ -467,12 +476,37 @@ def _generate_snapshot(
         - demand_satisfaction: List of demand items
     """
 
-    # Initialize snapshot
+    # Get forecast from session state
+    forecast = None
+    try:
+        import streamlit as st
+        forecast = st.session_state.get('forecast')
+    except Exception:
+        pass
+
+    # If no forecast, create empty one
+    if not forecast:
+        from src.models.forecast import Forecast
+        forecast = Forecast(name="Empty", entries=[])
+
+    # Create backend snapshot generator
+    generator = DailySnapshotGenerator(
+        production_schedule=production_schedule,
+        shipments=shipments,
+        locations_dict=locations,
+        forecast=forecast
+    )
+
+    # Generate backend snapshot
+    backend_snapshot = generator._generate_single_snapshot(selected_date)
+
+    # Convert backend dataclasses to UI-friendly dict format
     snapshot = {
-        'total_inventory': 0,
-        'in_transit_total': 0,
-        'production_total': 0,
-        'demand_total': 0,
+        'date': backend_snapshot.date,
+        'total_inventory': backend_snapshot.total_system_inventory,
+        'in_transit_total': backend_snapshot.total_in_transit,
+        'production_total': sum(b.quantity for b in backend_snapshot.production_activity),
+        'demand_total': sum(d.demand_quantity for d in backend_snapshot.demand_satisfied),
         'location_inventory': {},
         'in_transit_shipments': [],
         'production_batches': [],
@@ -481,141 +515,117 @@ def _generate_snapshot(
         'demand_satisfaction': [],
     }
 
-    # ====================
-    # PRODUCTION BATCHES
-    # ====================
-
-    if production_schedule and production_schedule.production_batches:
-        for batch in production_schedule.production_batches:
-            if batch.production_date == selected_date:
-                snapshot['production_batches'].append(batch)
-                snapshot['production_total'] += batch.quantity
-
-                # Add to inflows
-                snapshot['inflows'].append({
-                    'type': 'Production',
-                    'location': batch.manufacturing_site_id,
-                    'product': batch.product_id,
-                    'quantity': batch.quantity,
-                    'details': f"Batch {batch.id}",
-                })
-
-    # ====================
-    # SHIPMENTS (IN-TRANSIT & ARRIVALS/DEPARTURES)
-    # ====================
-
-    for shipment in shipments:
-        departure_date = getattr(shipment, 'departure_date', None) or getattr(shipment, 'production_date', None)
-        arrival_date = getattr(shipment, 'arrival_date', None)
-
-        # Check if in transit on selected date
-        if departure_date and arrival_date:
-            if departure_date <= selected_date < arrival_date:
-                snapshot['in_transit_shipments'].append(shipment)
-                snapshot['in_transit_total'] += shipment.quantity
-
-        # Check if departing on selected date
-        if departure_date == selected_date:
-            snapshot['outflows'].append({
-                'type': 'Departure',
-                'location': shipment.origin_id,
-                'product': shipment.product_id,
-                'quantity': shipment.quantity,
-                'details': f"To {shipment.destination_id}",
+    # Convert location inventory
+    for location_id, loc_inv in backend_snapshot.location_inventory.items():
+        # Group batches by product
+        batches_by_product = defaultdict(list)
+        for batch in loc_inv.batches:
+            batches_by_product[batch.product_id].append({
+                'id': batch.batch_id,
+                'quantity': batch.quantity,
+                'production_date': batch.production_date,
+                'age_days': batch.age_days,
             })
 
-        # Check if arriving on selected date
-        if arrival_date == selected_date:
-            snapshot['inflows'].append({
-                'type': 'Arrival',
-                'location': shipment.destination_id,
-                'product': shipment.product_id,
-                'quantity': shipment.quantity,
-                'details': f"From {shipment.origin_id}",
-            })
+        snapshot['location_inventory'][location_id] = {
+            'location_name': loc_inv.location_name,
+            'total': loc_inv.total_quantity,
+            'by_product': dict(loc_inv.by_product),
+            'batches': dict(batches_by_product),
+        }
 
-    # ====================
-    # LOCATION INVENTORY (SIMPLIFIED)
-    # ====================
+    # Convert in-transit shipments
+    for transit in backend_snapshot.in_transit:
+        snapshot['in_transit_shipments'].append({
+            'origin_id': transit.origin_id,
+            'destination_id': transit.destination_id,
+            'product_id': transit.product_id,
+            'quantity': transit.quantity,
+            'days_in_transit': transit.days_in_transit,
+        })
 
-    # Build inventory by tracking production and shipments up to selected_date
-    # This is a simplified view - actual inventory tracking would be more complex
+    # Convert production batches
+    for batch in backend_snapshot.production_activity:
+        snapshot['production_batches'].append({
+            'batch_id': batch.batch_id,
+            'product_id': batch.product_id,
+            'quantity': batch.quantity,
+        })
 
-    inventory_by_location_product: Dict[Tuple[str, str], List[ProductionBatch]] = defaultdict(list)
+    # Convert inflows (production and arrivals)
+    for flow in backend_snapshot.inflows:
+        flow_type_map = {
+            'production': 'Production',
+            'arrival': 'Arrival'
+        }
+        details = ''
+        if flow.counterparty:
+            details = f"From {flow.counterparty}"
+        elif flow.batch_id:
+            details = f"Batch {flow.batch_id}"
 
-    # Add all production batches up to and including selected date
-    if production_schedule and production_schedule.production_batches:
-        for batch in production_schedule.production_batches:
-            if batch.production_date <= selected_date:
-                key = (batch.manufacturing_site_id, batch.product_id)
-                inventory_by_location_product[key].append(batch)
+        snapshot['inflows'].append({
+            'type': flow_type_map.get(flow.flow_type, flow.flow_type.title()),
+            'location': flow.location_id,
+            'product': flow.product_id,
+            'quantity': flow.quantity,
+            'details': details,
+        })
 
-    # Aggregate by location
-    for (location_id, product_id), batch_list in inventory_by_location_product.items():
-        if location_id not in snapshot['location_inventory']:
-            snapshot['location_inventory'][location_id] = {
-                'total': 0,
-                'batches': {},
-            }
+    # Convert outflows (departures and demand)
+    for flow in backend_snapshot.outflows:
+        flow_type_map = {
+            'departure': 'Departure',
+            'demand': 'Demand'
+        }
+        details = ''
+        if flow.counterparty:
+            details = f"To {flow.counterparty}"
+        else:
+            details = 'Customer demand'
 
-        total_qty = sum(b.quantity for b in batch_list)
-        snapshot['location_inventory'][location_id]['total'] += total_qty
-        snapshot['total_inventory'] += total_qty
+        snapshot['outflows'].append({
+            'type': flow_type_map.get(flow.flow_type, flow.flow_type.title()),
+            'location': flow.location_id,
+            'product': flow.product_id,
+            'quantity': flow.quantity,
+            'details': details,
+        })
 
-        # Store batch details
-        snapshot['location_inventory'][location_id]['batches'][product_id] = [
-            {
-                'id': b.id,
-                'quantity': b.quantity,
-                'production_date': b.production_date,
-                'age_days': (selected_date - b.production_date).days,
-            }
-            for b in batch_list
-        ]
-
-    # ====================
-    # DEMAND SATISFACTION (PLACEHOLDER)
-    # ====================
-
-    # Note: Full demand satisfaction tracking would require forecast data
-    # For now, we'll show a simplified view
-
-    # Get forecast from session state if available
-    try:
-        import streamlit as st
-        forecast = st.session_state.get('forecast')
-
-        if forecast:
-            # Group demand by destination and product for selected date
-            for entry in forecast.entries:
-                if entry.date == selected_date:
-                    snapshot['demand_total'] += entry.quantity
-
-                    snapshot['demand_satisfaction'].append({
-                        'destination': entry.location_id,
-                        'product': entry.product_id,
-                        'demand': entry.quantity,
-                        'supplied': entry.quantity,  # Simplified - assume met
-                    })
-
-                    # Add to outflows
-                    snapshot['outflows'].append({
-                        'type': 'Demand',
-                        'location': entry.location_id,
-                        'product': entry.product_id,
-                        'quantity': entry.quantity,
-                        'details': 'Customer demand',
-                    })
-    except Exception:
-        # If forecast not available, continue without demand data
-        pass
+    # Convert demand satisfaction
+    for demand_record in backend_snapshot.demand_satisfied:
+        snapshot['demand_satisfaction'].append({
+            'destination': demand_record.destination_id,
+            'product': demand_record.product_id,
+            'demand': demand_record.demand_quantity,
+            'supplied': demand_record.supplied_quantity,
+            'status': '✅ Met' if demand_record.is_satisfied else f"⚠️ Short {demand_record.shortage_quantity:.0f}",
+        })
 
     return snapshot
 
 
-def _get_days_in_transit(shipment: Shipment, current_date: Date) -> int:
-    """Calculate how many days a shipment has been in transit."""
-    departure_date = getattr(shipment, 'departure_date', None) or getattr(shipment, 'production_date', None)
+def _get_days_in_transit(shipment: Any, current_date: Date) -> int:
+    """Calculate how many days a shipment has been in transit.
+
+    Args:
+        shipment: Shipment object or dict-like object with departure_date
+        current_date: Current date for calculation
+
+    Returns:
+        Number of days in transit
+    """
+    # Handle both real Shipment objects and dict/SimpleNamespace objects
+    departure_date = None
+
+    if hasattr(shipment, 'departure_date'):
+        departure_date = shipment.departure_date
+    elif hasattr(shipment, 'production_date'):
+        departure_date = shipment.production_date
+    elif isinstance(shipment, dict) and 'departure_date' in shipment:
+        departure_date = shipment['departure_date']
+    elif isinstance(shipment, dict) and 'production_date' in shipment:
+        departure_date = shipment['production_date']
 
     if not departure_date:
         return 0
