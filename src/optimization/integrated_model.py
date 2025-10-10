@@ -2114,19 +2114,23 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 batch_id = f"BATCH-UNKNOWN"
 
             # Create single-leg route for this shipment
-            # The Route object needs route_legs list - create a simple one-leg route
-            from src.models.route import Route, RouteLeg
+            # Use RoutePath with RouteLeg for proper shipment model compatibility
+            from src.shelf_life.tracker import RouteLeg
+            from src.network.route_finder import RoutePath
+
             leg = RouteLeg(
                 from_location_id=origin_id,
                 to_location_id=dest_id,
                 transport_mode='ambient',  # Simplified - actual mode tracking could be added
                 transit_days=transit_days
             )
-            single_leg_route = Route(
-                route_id=f"LEG-{origin_id}-{dest_id}",
-                origin_id=origin_id,
-                destination_id=dest_id,
-                route_legs=[leg]
+            single_leg_route = RoutePath(
+                path=[origin_id, dest_id],
+                total_transit_days=transit_days,
+                total_cost=0.0,  # Cost tracking could be added if needed
+                transport_modes=['ambient'],
+                route_legs=[leg],
+                intermediate_stops=[]
             )
 
             # Create shipment
