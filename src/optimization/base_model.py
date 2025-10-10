@@ -315,6 +315,9 @@ class BaseOptimizationModel(ABC):
 
                 # Extract solution to our format
                 self.solution = self.extract_solution(self.model)
+
+                # Store solution data in result metadata for easy access
+                result.metadata.update(self.solution)
             except Exception as e:
                 result.infeasibility_message = f"Error extracting solution: {e}"
                 result.success = False

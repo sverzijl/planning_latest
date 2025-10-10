@@ -239,6 +239,12 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             if loc.storage_mode in [StorageMode.AMBIENT, StorageMode.BOTH]
         } | {'6122_Storage'}  # Virtual storage at manufacturing site
 
+        # Locations that support both frozen and ambient storage (can freeze/thaw)
+        self.locations_with_freezing: Set[str] = {
+            loc.id for loc in self.locations
+            if loc.storage_mode == StorageMode.BOTH
+        }
+
         # Identify intermediate storage locations (storage type, no demand)
         self.intermediate_storage: Set[str] = {
             loc.id for loc in self.locations
@@ -596,6 +602,26 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             self.legs_from_location[origin].append((origin, destination))
             self.legs_to_location[destination].append((origin, destination))
 
+        # Add virtual legs from 6122_Storage (mirrors manufacturing site's outbound connections)
+        # Production flows into 6122_Storage cohorts, which then ship via these virtual legs
+        mfg_site_id = self.manufacturing_site.location_id
+        if mfg_site_id in self.legs_from_location:
+            for (origin, destination) in self.legs_from_location[mfg_site_id]:
+                # Create virtual leg from 6122_Storage to same destination
+                virtual_leg = ('6122_Storage', destination)
+                actual_leg = (origin, destination)
+
+                self.legs_from_location['6122_Storage'].append(virtual_leg)
+                self.legs_to_location[destination].append(virtual_leg)
+
+                # Copy leg attributes from actual manufacturing site leg
+                self.leg_transit_days[virtual_leg] = self.leg_transit_days[actual_leg]
+                self.leg_cost[virtual_leg] = self.leg_cost[actual_leg]
+                self.leg_transport_mode[virtual_leg] = self.leg_transport_mode[actual_leg]
+
+                # Add to leg_keys for downstream processing
+                self.leg_keys.add(virtual_leg)
+
         # Determine arrival state for each leg (similar to routes)
         self.leg_arrival_state: Dict[Tuple[str, str], str] = {}
 
@@ -908,7 +934,7 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
 
         A cohort is reachable if:
         1. loc is manufacturing site (6122_Storage) - production flows here directly
-        2. loc can be reached from manufacturing via a route with compatible timing
+        2. loc can be reached from manufacturing via a multi-hop route with compatible timing
 
         Args:
             loc: Location ID
@@ -923,7 +949,24 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         if loc == '6122_Storage':
             return True
 
-        # Other locations: check if reachable via network legs
+        # For demand locations: check if reachable via enumerated routes (includes multi-hop paths)
+        # Find minimum transit time from manufacturing to this location
+        min_transit_time = None
+        for route in self.enumerated_routes:
+            if route.destination_id == loc:
+                # This route reaches the destination (may be multi-hop via hubs)
+                # Use total transit time including all hops
+                total_transit = route.total_transit_days
+                if min_transit_time is None or total_transit < min_transit_time:
+                    min_transit_time = total_transit
+
+        if min_transit_time is not None:
+            earliest_arrival = prod_date + timedelta(days=min_transit_time)
+            if earliest_arrival <= curr_date:
+                return True
+
+        # For intermediate storage locations (e.g., Lineage): check via direct legs
+        # These can receive shipments but aren't enumerated route destinations
         for leg in self.legs_to_location.get(loc, []):
             transit_days = self.leg_transit_days.get(leg, 0)
             earliest_arrival = prod_date + timedelta(days=transit_days)
@@ -934,7 +977,7 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
 
         return False
 
-    def _build_cohort_indices(self, sorted_dates: List[Date]) -> Tuple[Set, Set, Set, Set]:
+    def _build_cohort_indices(self, sorted_dates: List[Date]) -> Tuple[Set, Set, Set, Set, Set]:
         """
         Build sparse cohort indices for 4D inventory and shipment variables.
 
@@ -947,7 +990,7 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         3. location has received shipments from production_date OR is manufacturing site
 
         Returns:
-            Tuple of (frozen_cohorts, ambient_cohorts, shipment_cohorts, demand_cohorts)
+            Tuple of (frozen_cohorts, ambient_cohorts, shipment_cohorts, demand_cohorts, freeze_thaw_cohorts)
             Each is a set of tuples defining valid indices
         """
         frozen_cohorts = set()
@@ -1006,22 +1049,40 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                     if self._cohort_is_reachable(loc, prod, prod_date, demand_date):
                         demand_cohorts.add((loc, prod, prod_date, demand_date))
 
+        # Freeze/thaw cohorts: for locations that support both frozen and ambient storage
+        # These can convert inventory between storage modes
+        freeze_thaw_cohorts = set()
+        for loc in self.locations_with_freezing:
+            for prod in self.products:
+                for prod_date in sorted_dates:
+                    for curr_date in [d for d in sorted_dates if d >= prod_date]:
+                        # Check if cohort could exist at this location on this date
+                        # Apply same age constraints as regular cohorts
+                        age_days = (curr_date - prod_date).days
+
+                        # Can freeze if within ambient shelf life AND frozen shelf life
+                        # Can thaw if within frozen shelf life
+                        if age_days <= self.FROZEN_SHELF_LIFE:
+                            if self._cohort_is_reachable(loc, prod, prod_date, curr_date):
+                                freeze_thaw_cohorts.add((loc, prod, prod_date, curr_date))
+
         # Report index sizes
         print(f"  Frozen cohorts: {len(frozen_cohorts):,}")
         print(f"  Ambient cohorts: {len(ambient_cohorts):,}")
         print(f"  Shipment cohorts: {len(shipment_cohorts):,}")
         print(f"  Demand cohorts: {len(demand_cohorts):,}")
-        print(f"  Total: {len(frozen_cohorts) + len(ambient_cohorts) + len(shipment_cohorts) + len(demand_cohorts):,}")
+        print(f"  Freeze/thaw cohorts: {len(freeze_thaw_cohorts):,}")
+        print(f"  Total: {len(frozen_cohorts) + len(ambient_cohorts) + len(shipment_cohorts) + len(demand_cohorts) + len(freeze_thaw_cohorts):,}")
 
         # Validate size is reasonable
-        total_cohort_vars = len(frozen_cohorts) + len(ambient_cohorts) + len(shipment_cohorts) + len(demand_cohorts)
+        total_cohort_vars = len(frozen_cohorts) + len(ambient_cohorts) + len(shipment_cohorts) + len(demand_cohorts) + len(freeze_thaw_cohorts)
         if total_cohort_vars > 200000:
             warnings.warn(
                 f"Cohort model is very large: {total_cohort_vars:,} cohort variables. "
                 f"This may cause slow solve times. Consider reducing planning horizon or using rolling horizon."
             )
 
-        return frozen_cohorts, ambient_cohorts, shipment_cohorts, demand_cohorts
+        return frozen_cohorts, ambient_cohorts, shipment_cohorts, demand_cohorts, freeze_thaw_cohorts
 
     def build_model(self) -> ConcreteModel:
         """
@@ -1090,13 +1151,15 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 self.cohort_frozen_index_set,
                 self.cohort_ambient_index_set,
                 self.cohort_shipment_index_set,
-                self.cohort_demand_index_set
+                self.cohort_demand_index_set,
+                self.cohort_freeze_thaw_index_set
             ) = self._build_cohort_indices(sorted_dates)
 
             model.cohort_frozen_index = list(self.cohort_frozen_index_set)
             model.cohort_ambient_index = list(self.cohort_ambient_index_set)
             model.cohort_shipment_index = list(self.cohort_shipment_index_set)
             model.cohort_demand_index = list(self.cohort_demand_index_set)
+            model.cohort_freeze_thaw_index = list(self.cohort_freeze_thaw_index_set)
 
         # Decision variables: production[date, product]
         model.production = Var(
@@ -1249,6 +1312,22 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 model.cohort_demand_index,
                 within=NonNegativeReals,
                 doc="Demand satisfied from specific cohort (enables FIFO allocation)"
+            )
+
+            # Freeze/thaw operations: Convert inventory between storage modes
+            # freeze[loc, prod, prod_date, curr_date]: Quantity frozen from ambient to frozen state
+            # thaw[loc, prod, prod_date, curr_date]: Quantity thawed from frozen to ambient state
+            # Note: Thawing resets shelf life - thawed inventory on date X becomes a cohort with prod_date=X (14 days fresh)
+            model.freeze = Var(
+                model.cohort_freeze_thaw_index,
+                within=NonNegativeReals,
+                doc="Quantity frozen from ambient to frozen storage (loc, prod, prod_date, curr_date)"
+            )
+
+            model.thaw = Var(
+                model.cohort_freeze_thaw_index,
+                within=NonNegativeReals,
+                doc="Quantity thawed from frozen to ambient storage - resets shelf life to 14 days"
             )
 
         # Auxiliary variables for labor cost calculation
@@ -1718,7 +1797,7 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 """
                 Frozen inventory balance by age cohort.
 
-                frozen_cohort[t] = frozen_cohort[t-1] + frozen_arrivals[t] - frozen_departures[t]
+                frozen_cohort[t] = frozen_cohort[t-1] + frozen_arrivals[t] + freeze_input[t] - frozen_departures[t] - thaw_output[t]
 
                 Shelf life enforcement: Frozen products have 120-day shelf life (handled by sparse indexing).
                 """
@@ -1752,9 +1831,21 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                             if (leg, prod, prod_date, delivery_date) in self.cohort_shipment_index_set:
                                 frozen_departures += model.shipment_leg_cohort[leg, prod, prod_date, delivery_date]
 
+                # Freeze input: ambient inventory converted to frozen (if location supports freezing)
+                freeze_input = 0
+                if loc in self.locations_with_freezing:
+                    if (loc, prod, prod_date, curr_date) in self.cohort_freeze_thaw_index_set:
+                        freeze_input = model.freeze[loc, prod, prod_date, curr_date]
+
+                # Thaw output: frozen inventory converted to ambient (if location supports thawing)
+                thaw_output = 0
+                if loc in self.locations_with_freezing:
+                    if (loc, prod, prod_date, curr_date) in self.cohort_freeze_thaw_index_set:
+                        thaw_output = model.thaw[loc, prod, prod_date, curr_date]
+
                 # Balance equation
                 return model.inventory_frozen_cohort[loc, prod, prod_date, curr_date] == (
-                    prev_cohort + frozen_arrivals - frozen_departures
+                    prev_cohort + frozen_arrivals + freeze_input - frozen_departures - thaw_output
                 )
 
             model.inventory_frozen_cohort_balance_con = Constraint(
@@ -1767,8 +1858,13 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 """
                 Ambient inventory balance by age cohort.
 
-                ambient_cohort[t] = ambient_cohort[t-1] + production[t] + ambient_arrivals[t] -
-                                     demand_consumption[t] - ambient_departures[t]
+                ambient_cohort[t] = ambient_cohort[t-1] + production[t] + ambient_arrivals[t] + thaw_input[t] -
+                                     demand_consumption[t] - ambient_departures[t] - freeze_output[t]
+
+                CRITICAL DESIGN: Thawing resets shelf life
+                - When inventory is thawed on date X, it becomes an ambient cohort with prod_date=X
+                - This gives it 14 days of fresh shelf life from the thaw date
+                - Therefore, thaw_input sums over ALL production dates (all thawed inventory becomes prod_date=curr_date)
 
                 Shelf life enforcement: cohort variables only created for age <= SHELF_LIFE (sparse indexing).
                 """
@@ -1813,9 +1909,27 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                     if (loc, prod, prod_date, curr_date) in self.cohort_demand_index_set:
                         demand_consumption = model.demand_from_cohort[loc, prod, prod_date, curr_date]
 
+                # Freeze output: ambient inventory converted to frozen (if location supports freezing)
+                freeze_output = 0
+                if loc in self.locations_with_freezing:
+                    if (loc, prod, prod_date, curr_date) in self.cohort_freeze_thaw_index_set:
+                        freeze_output = model.freeze[loc, prod, prod_date, curr_date]
+
+                # Thaw input: frozen inventory converted to ambient (if location supports thawing)
+                # KEY DESIGN: Thawed inventory on date X becomes a cohort with prod_date=X (resets shelf life to 14 days)
+                # Therefore, we sum ALL thaw operations on curr_date that affect this cohort
+                thaw_input = 0
+                if loc in self.locations_with_freezing and prod_date == curr_date:
+                    # This cohort receives all inventory thawed on curr_date (regardless of original prod_date)
+                    # Sum over all production dates that could be thawed on this date
+                    for original_prod_date in sorted_dates:
+                        if original_prod_date <= curr_date:  # Can't thaw future production
+                            if (loc, prod, original_prod_date, curr_date) in self.cohort_freeze_thaw_index_set:
+                                thaw_input += model.thaw[loc, prod, original_prod_date, curr_date]
+
                 # Balance equation
                 return model.inventory_ambient_cohort[loc, prod, prod_date, curr_date] == (
-                    prev_cohort + production_input + ambient_arrivals - demand_consumption - ambient_departures
+                    prev_cohort + production_input + ambient_arrivals + thaw_input - demand_consumption - ambient_departures - freeze_output
                 )
 
             model.inventory_ambient_cohort_balance_con = Constraint(
@@ -2251,6 +2365,23 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             for loc, prod, date in model.inventory_ambient_index:
                 inventory_cost += ambient_holding_rate * model.inventory_ambient[loc, prod, date]
 
+            # Freeze/thaw operation costs (if batch tracking enabled)
+            freeze_thaw_cost = 0.0
+            if self.use_batch_tracking:
+                # Get freeze/thaw cost rates from cost structure (with defaults)
+                freeze_cost_rate = getattr(self.cost_structure, 'freeze_cost_per_unit', 0.05)
+                if freeze_cost_rate is None or not math.isfinite(freeze_cost_rate):
+                    freeze_cost_rate = 0.05  # Default: $0.05 per unit
+
+                thaw_cost_rate = getattr(self.cost_structure, 'thaw_cost_per_unit', 0.05)
+                if thaw_cost_rate is None or not math.isfinite(thaw_cost_rate):
+                    thaw_cost_rate = 0.05  # Default: $0.05 per unit
+
+                # Sum freeze operation costs
+                for loc, prod, prod_date, curr_date in model.cohort_freeze_thaw_index:
+                    freeze_thaw_cost += freeze_cost_rate * model.freeze[loc, prod, prod_date, curr_date]
+                    freeze_thaw_cost += thaw_cost_rate * model.thaw[loc, prod, prod_date, curr_date]
+
             # Shortage penalty cost (if shortages allowed)
             shortage_cost = 0.0
             if self.allow_shortages:
@@ -2301,14 +2432,14 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
 
             fifo_penalty_cost = 0.0  # Disabled - see comment above
 
-            # Total cost = labor + production + transport + inventory + truck + shortage
+            # Total cost = labor + production + transport + inventory + freeze/thaw + truck + shortage
             # Note: fifo_penalty_cost removed from objective (now always 0)
-            return labor_cost + production_cost + transport_cost + inventory_cost + truck_cost + shortage_cost + fifo_penalty_cost
+            return labor_cost + production_cost + transport_cost + inventory_cost + freeze_thaw_cost + truck_cost + shortage_cost + fifo_penalty_cost
 
         model.obj = Objective(
             rule=objective_rule,
             sense=minimize,
-            doc="Minimize total cost (labor + production + transport + inventory + truck + shortage penalty)"
+            doc="Minimize total cost (labor + production + transport + inventory + freeze/thaw + truck + shortage penalty)"
         )
 
         # BATCH TRACKING: Validate cohort model if enabled
@@ -2668,6 +2799,30 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                     batch_shipments.append(shipment)
                     shipment_id_counter += 1
 
+        # FREEZE/THAW: Extract freeze and thaw operations (if batch tracking enabled)
+        freeze_operations: Dict[Tuple[str, str, Date, Date], float] = {}
+        thaw_operations: Dict[Tuple[str, str, Date, Date], float] = {}
+        total_freeze_cost = 0.0
+        total_thaw_cost = 0.0
+
+        if self.use_batch_tracking and hasattr(model, 'freeze') and hasattr(model, 'thaw'):
+            # Get freeze/thaw costs
+            freeze_cost_rate = self.cost_structure.freeze_cost_per_unit if hasattr(self.cost_structure, 'freeze_cost_per_unit') else 0.05
+            thaw_cost_rate = self.cost_structure.thaw_cost_per_unit if hasattr(self.cost_structure, 'thaw_cost_per_unit') else 0.05
+
+            # Extract freeze operations
+            for (loc, prod, prod_date, curr_date) in model.cohort_freeze_thaw_index:
+                freeze_qty = value(model.freeze[loc, prod, prod_date, curr_date])
+                if freeze_qty > 1e-6:
+                    freeze_operations[(loc, prod, prod_date, curr_date)] = freeze_qty
+                    total_freeze_cost += freeze_cost_rate * freeze_qty
+
+                # Extract thaw operations
+                thaw_qty = value(model.thaw[loc, prod, prod_date, curr_date])
+                if thaw_qty > 1e-6:
+                    thaw_operations[(loc, prod, prod_date, curr_date)] = thaw_qty
+                    total_thaw_cost += thaw_cost_rate * thaw_qty
+
         return {
             'production_by_date_product': production_by_date_product,
             'production_batches': production_batches,  # Dict format for backward compatibility
@@ -2695,6 +2850,11 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             'cohort_demand_consumption': cohort_demand_consumption if self.use_batch_tracking else {},
             # Combined cohort inventory for backward compatibility
             'cohort_inventory': {**cohort_inventory_frozen, **cohort_inventory_ambient} if self.use_batch_tracking else {},
+            # FREEZE/THAW: State transition operations
+            'freeze_operations': freeze_operations if self.use_batch_tracking else {},
+            'thaw_operations': thaw_operations if self.use_batch_tracking else {},
+            'total_freeze_cost': total_freeze_cost,
+            'total_thaw_cost': total_thaw_cost,
             'truck_loads_by_truck_dest_product_date': truck_loads_by_truck_dest_product_date if self.truck_schedules else {},
             'total_labor_cost': total_labor_cost,
             'total_production_cost': total_production_cost,
@@ -2703,7 +2863,7 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             'total_truck_cost': total_truck_cost,
             'total_shortage_cost': total_shortage_cost,
             'total_shortage_units': total_shortage_units,
-            'total_cost': total_labor_cost + total_production_cost + total_transport_cost + total_inventory_cost + total_truck_cost + total_shortage_cost,  # Updated
+            'total_cost': total_labor_cost + total_production_cost + total_transport_cost + total_inventory_cost + total_truck_cost + total_shortage_cost + total_freeze_cost + total_thaw_cost,  # Updated
         }
 
 
