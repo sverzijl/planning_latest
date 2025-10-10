@@ -1,0 +1,85 @@
+/home/sverzijl/planning_latest/src/optimization/integrated_model.py:662: UserWarning: 
+Planning horizon may be insufficient:
+  Current start: 2025-10-13
+  Required start: 2025-10-03 (10 days earlier)
+  Max transit time: 3.5 days
+  Early demand (on 2025-10-07) cannot be satisfied.
+  Solution: Extend planning horizon or accept reduced demand satisfaction.
+  warnings.warn(
+/home/sverzijl/planning_latest/src/optimization/integrated_model.py:674: UserWarning: 
+Planning horizon end date may be insufficient:
+  Current end: 2025-11-09
+  Required end: 2026-12-31 (417 days later)
+  Late demand (on 2026-12-31) will be filtered out.
+  Solution: Extend planning horizon end date to include all demand.
+  warnings.warn(
+/home/sverzijl/planning_latest/src/optimization/integrated_model.py:711: UserWarning: Re-filtered 16920 demand entries after planning horizon adjustment. Adjusted horizon: [2025-10-13, 2025-11-09]
+  warnings.warn(
+======================================================================
+4-WEEK BATCH TRACKING TEST - REAL DATA
+======================================================================
+
+Testing: Do natural constraints spread production without smoothing?
+
+Configuration:
+  - Data: data/examples/Gfree Forecast.xlsm
+  - Planning horizon: 4 weeks (28 days)
+  - Batch tracking: ENABLED
+  - FIFO penalty: DISABLED
+  - Production smoothing: DISABLED
+  - Relying on: Labor costs + shelf life + capacity
+
+======================================================================
+Loading data...
+======================================================================
+
+✅ Data loaded:
+   Forecast: 17760 entries
+   Locations: 11
+   Routes: 10
+
+   Planning window: 2025-10-13 to 2025-11-09
+
+======================================================================
+Building optimization model...
+======================================================================
+
+✅ Model built:
+   Batch tracking: True
+   Production smoothing: False
+   Routes enumerated: 8
+
+======================================================================
+Solving optimization...
+======================================================================
+(This may take 2-5 minutes with batch tracking...)
+
+Building sparse cohort indices...
+  Frozen cohorts: 5,410
+  Ambient cohorts: 14,375
+  Shipment cohorts: 10,540
+  Demand cohorts: 8,210
+  Total: 38,535
+
+Validating cohort model structure...
+  Cohort variables: 38,535 / 17 total (226676.5%)
+  ✓ Cohort model validation passed
+
+✅ Solve completed: optimal
+   Total cost: $2,386,111.02
+
+❌ No production batches found in result
+
+======================================================================
+CONCLUSION
+======================================================================
+
+❌ ISSUE: Production still concentrated despite natural constraints.
+
+   This indicates MISSING COST COMPONENTS:
+   - Holding costs may not be properly modeled
+   - Labor cost structure may not penalize concentration enough
+   - Other economic incentives for spreading may be missing
+
+   RECOMMENDATION: Investigate cost model, not add artificial constraints.
+   Find the missing economic driver for production spreading.

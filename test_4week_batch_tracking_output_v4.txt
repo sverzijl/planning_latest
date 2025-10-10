@@ -1,0 +1,37 @@
+======================================================================
+4-WEEK BATCH TRACKING TEST - REAL DATA
+======================================================================
+
+Testing: Do natural constraints spread production without smoothing?
+
+Configuration:
+  - Data: data/examples/Gfree Forecast.xlsm
+  - Planning horizon: 4 weeks (28 days)
+  - Batch tracking: ENABLED
+  - FIFO penalty: DISABLED
+  - Production smoothing: DISABLED
+  - Relying on: Labor costs + shelf life + capacity
+
+======================================================================
+Loading data...
+======================================================================
+
+✅ Data loaded:
+   Forecast: 17760 entries
+   Locations: 11
+   Routes: 10
+
+   Planning window: 2025-10-13 to 2025-11-09
+
+======================================================================
+Building optimization model...
+======================================================================
+Traceback (most recent call last):
+  File "/home/sverzijl/planning_latest/test_4week_batch_tracking.py", line 228, in <module>
+    main()
+  File "/home/sverzijl/planning_latest/test_4week_batch_tracking.py", line 165, in main
+    model = IntegratedProductionDistributionModel(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/sverzijl/planning_latest/src/optimization/integrated_model.py", line 178, in __init__
+    raise TypeError(
+TypeError: truck_schedules must be a TruckScheduleCollection, not a list. Wrap your list: TruckScheduleCollection(schedules=your_list)

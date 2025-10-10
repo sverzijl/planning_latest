@@ -260,7 +260,15 @@ def _create_cost_breakdown(model: Any, solution: dict) -> TotalCostBreakdown:
     transport_cost = solution.get('total_transport_cost', 0)
     truck_cost = solution.get('total_truck_cost', 0)
     shortage_cost = solution.get('total_shortage_cost', 0)
-    total_cost = solution.get('total_cost', 0)
+    freeze_cost = solution.get('total_freeze_cost', 0)  # Freeze/thaw state transition costs
+    thaw_cost = solution.get('total_thaw_cost', 0)
+    inventory_cost = solution.get('total_inventory_cost', 0)  # Holding costs
+
+    # Calculate total cost (sum of all components)
+    total_cost = (
+        labor_cost + production_cost + transport_cost + truck_cost +
+        shortage_cost + freeze_cost + thaw_cost + inventory_cost
+    )
 
     # Get daily labor hours and costs
     labor_hours_by_date = solution.get('labor_hours_by_date', {})

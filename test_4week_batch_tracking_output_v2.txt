@@ -1,0 +1,27 @@
+======================================================================
+4-WEEK BATCH TRACKING TEST - REAL DATA
+======================================================================
+
+Testing: Do natural constraints spread production without smoothing?
+
+Configuration:
+  - Data: data/examples/Gfree Forecast.xlsm
+  - Planning horizon: 4 weeks (28 days)
+  - Batch tracking: ENABLED
+  - FIFO penalty: DISABLED
+  - Production smoothing: DISABLED
+  - Relying on: Labor costs + shelf life + capacity
+
+======================================================================
+Loading data...
+======================================================================
+Traceback (most recent call last):
+  File "/home/sverzijl/planning_latest/test_4week_batch_tracking.py", line 228, in <module>
+    main()
+  File "/home/sverzijl/planning_latest/test_4week_batch_tracking.py", line 133, in main
+    manufacturing_site = next((loc for loc in locations if loc.type.value == "manufacturing"), None)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/sverzijl/planning_latest/test_4week_batch_tracking.py", line 133, in <genexpr>
+    manufacturing_site = next((loc for loc in locations if loc.type.value == "manufacturing"), None)
+                                                           ^^^^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'value'

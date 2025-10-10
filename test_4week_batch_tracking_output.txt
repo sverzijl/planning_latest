@@ -1,0 +1,64 @@
+======================================================================
+4-WEEK BATCH TRACKING TEST - REAL DATA
+======================================================================
+
+Testing: Do natural constraints spread production without smoothing?
+
+Configuration:
+  - Data: data/examples/Gfree Forecast.xlsm
+  - Planning horizon: 4 weeks (28 days)
+  - Batch tracking: ENABLED
+  - FIFO penalty: DISABLED
+  - Production smoothing: DISABLED
+  - Relying on: Labor costs + shelf life + capacity
+
+======================================================================
+Loading data...
+======================================================================
+Traceback (most recent call last):
+  File "/home/sverzijl/planning_latest/test_4week_batch_tracking.py", line 202, in <module>
+    main()
+  File "/home/sverzijl/planning_latest/test_4week_batch_tracking.py", line 121, in main
+    data = parser.parse()
+           ^^^^^^^^^^^^
+AttributeError: 'ExcelParser' object has no attribute 'parse'
+======================================================================
+4-WEEK BATCH TRACKING TEST - REAL DATA
+======================================================================
+
+Testing: Do natural constraints spread production without smoothing?
+
+Configuration:
+  - Data: data/examples/Gfree Forecast.xlsm
+  - Planning horizon: 4 weeks (28 days)
+  - Batch tracking: ENABLED
+  - FIFO penalty: DISABLED
+  - Production smoothing: DISABLED
+  - Relying on: Labor costs + shelf life + capacity
+
+======================================================================
+Loading data...
+======================================================================
+Traceback (most recent call last):
+  File "/home/sverzijl/planning_latest/test_4week_batch_tracking.py", line 226, in <module>
+    main()
+  File "/home/sverzijl/planning_latest/test_4week_batch_tracking.py", line 124, in main
+    locations = parser.parse_locations()
+                ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/sverzijl/planning_latest/src/parsers/excel_parser.py", line 161, in parse_locations
+    df = pd.read_excel(
+         ^^^^^^^^^^^^^^
+  File "/home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pandas/io/excel/_base.py", line 508, in read_excel
+    data = io.parse(
+           ^^^^^^^^^
+  File "/home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pandas/io/excel/_base.py", line 1616, in parse
+    return self._reader.parse(
+           ^^^^^^^^^^^^^^^^^^^
+  File "/home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pandas/io/excel/_base.py", line 773, in parse
+    sheet = self.get_sheet_by_name(asheetname)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pandas/io/excel/_openpyxl.py", line 582, in get_sheet_by_name
+    self.raise_if_bad_sheet_by_name(name)
+  File "/home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pandas/io/excel/_base.py", line 624, in raise_if_bad_sheet_by_name
+    raise ValueError(f"Worksheet named '{name}' not found")
+ValueError: Worksheet named 'Locations' not found

@@ -1,0 +1,28 @@
+======================================================================
+4-WEEK BATCH TRACKING TEST - REAL DATA
+======================================================================
+
+Testing: Do natural constraints spread production without smoothing?
+
+Configuration:
+  - Data: data/examples/Gfree Forecast.xlsm
+  - Planning horizon: 4 weeks (28 days)
+  - Batch tracking: ENABLED
+  - FIFO penalty: DISABLED
+  - Production smoothing: DISABLED
+  - Relying on: Labor costs + shelf life + capacity
+
+======================================================================
+Loading data...
+======================================================================
+
+✅ Data loaded:
+Traceback (most recent call last):
+  File "/home/sverzijl/planning_latest/test_4week_batch_tracking.py", line 228, in <module>
+    main()
+  File "/home/sverzijl/planning_latest/test_4week_batch_tracking.py", line 139, in main
+    print(f"   Forecast: {len(forecast.data)} rows")
+                              ^^^^^^^^^^^^^
+  File "/home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pydantic/main.py", line 991, in __getattr__
+    raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+AttributeError: 'Forecast' object has no attribute 'data'
