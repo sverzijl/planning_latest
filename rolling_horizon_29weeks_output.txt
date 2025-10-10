@@ -1,0 +1,83 @@
+======================================================================
+ROLLING HORIZON - FULL 29-WEEK DATASET (14-DAY WINDOWS)
+======================================================================
+
+Loading data...
+
+Full Dataset:
+  Forecast entries: 9,180
+  Start date: 2025-06-02
+  End date: 2025-12-22
+  Total days: 204
+  Total demand: 2,407,299 units
+  Load time: 1.7s
+
+======================================================================
+CONFIGURATION
+======================================================================
+
+Rolling Horizon Configuration:
+  Window size: 14 days (2 weeks)
+  Overlap: 7 days (1 week)
+  Committed days per window: 7
+  Expected windows: ~29 (approximate)
+  Temporal aggregation: NO (daily granularity)
+  Reason: Avoids truck schedule infeasibility
+
+======================================================================
+SOLVING FULL 29-WEEK PROBLEM
+======================================================================
+
+Initializing rolling horizon solver...
+
+Solving...
+(This will show progress for each window)
+======================================================================
+ROLLING HORIZON SOLVER
+======================================================================
+
+Planning horizon: 2025-06-02 to 2025-12-22 (204 days)
+Window size: 14 days
+Overlap: 7 days
+Temporal aggregation: No
+
+Creating windows...
+  Created 30 windows
+    1. Window[window_1]: 2025-06-02 to 2025-06-15 (14d (overlap: 7d))
+    2. Window[window_2]: 2025-06-09 to 2025-06-22 (14d (overlap: 7d))
+    3. Window[window_3]: 2025-06-16 to 2025-06-29 (14d (overlap: 7d))
+    4. Window[window_4]: 2025-06-23 to 2025-07-06 (14d (overlap: 7d))
+    5. Window[window_5]: 2025-06-30 to 2025-07-13 (14d (overlap: 7d))
+    6. Window[window_6]: 2025-07-07 to 2025-07-20 (14d (overlap: 7d))
+    7. Window[window_7]: 2025-07-14 to 2025-07-27 (14d (overlap: 7d))
+    8. Window[window_8]: 2025-07-21 to 2025-08-03 (14d (overlap: 7d))
+    9. Window[window_9]: 2025-07-28 to 2025-08-10 (14d (overlap: 7d))
+    10. Window[window_10]: 2025-08-04 to 2025-08-17 (14d (overlap: 7d))
+    11. Window[window_11]: 2025-08-11 to 2025-08-24 (14d (overlap: 7d))
+    12. Window[window_12]: 2025-08-18 to 2025-08-31 (14d (overlap: 7d))
+    13. Window[window_13]: 2025-08-25 to 2025-09-07 (14d (overlap: 7d))
+    14. Window[window_14]: 2025-09-01 to 2025-09-14 (14d (overlap: 7d))
+    15. Window[window_15]: 2025-09-08 to 2025-09-21 (14d (overlap: 7d))
+    16. Window[window_16]: 2025-09-15 to 2025-09-28 (14d (overlap: 7d))
+    17. Window[window_17]: 2025-09-22 to 2025-10-05 (14d (overlap: 7d))
+    18. Window[window_18]: 2025-09-29 to 2025-10-12 (14d (overlap: 7d))
+    19. Window[window_19]: 2025-10-06 to 2025-10-19 (14d (overlap: 7d))
+    20. Window[window_20]: 2025-10-13 to 2025-10-26 (14d (overlap: 7d))
+    21. Window[window_21]: 2025-10-20 to 2025-11-02 (14d (overlap: 7d))
+    22. Window[window_22]: 2025-10-27 to 2025-11-09 (14d (overlap: 7d))
+    23. Window[window_23]: 2025-11-03 to 2025-11-16 (14d (overlap: 7d))
+    24. Window[window_24]: 2025-11-10 to 2025-11-23 (14d (overlap: 7d))
+    25. Window[window_25]: 2025-11-17 to 2025-11-30 (14d (overlap: 7d))
+    26. Window[window_26]: 2025-11-24 to 2025-12-07 (14d (overlap: 7d))
+    27. Window[window_27]: 2025-12-01 to 2025-12-14 (14d (overlap: 7d))
+    28. Window[window_28]: 2025-12-08 to 2025-12-21 (14d (overlap: 7d))
+    29. Window[window_29]: 2025-12-15 to 2025-12-22 (8d)
+    30. Window[window_30]: 2025-12-22 to 2025-12-22 (1d)
+
+======================================================================
+SOLVING WINDOW 1/30: window_1
+======================================================================
+  Dates: 2025-06-02 to 2025-06-15 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...

@@ -1,0 +1,217 @@
+================================================================================
+OVERLAP DIAGNOSTIC: 11-DAY OVERLAP (3-DAY COMMITTED)
+================================================================================
+
+Loading data...
+
+Test Dataset:
+  Total demand: 249,436 units
+  Date range: 2025-06-02 to 2025-06-22 (21 days)
+
+================================================================================
+CONFIGURATION: 14-DAY WINDOW, 11-DAY OVERLAP (3-DAY COMMITTED)
+================================================================================
+  Window size: 14 days
+  Overlap: 11 days
+  Committed: 3 days per window
+  Expected windows: ~8
+
+================================================================================
+WINDOW STRUCTURE ANALYSIS
+================================================================================
+
+Expected window boundaries:
+  Window 1:
+    Full window: 2025-06-02 to 2025-06-15 (14 days)
+    Committed:   2025-06-02 to 2025-06-04 (3 days)
+    Overlap:     2025-06-05 to 2025-06-15 (11 days)
+    Inventory handoff: from 2025-06-04 to Window 2
+  Window 2:
+    Full window: 2025-06-05 to 2025-06-18 (14 days)
+    Committed:   2025-06-05 to 2025-06-07 (3 days)
+    Overlap:     2025-06-08 to 2025-06-18 (11 days)
+    Inventory handoff: from 2025-06-07 to Window 3
+  Window 3:
+    Full window: 2025-06-08 to 2025-06-21 (14 days)
+    Committed:   2025-06-08 to 2025-06-10 (3 days)
+    Overlap:     2025-06-11 to 2025-06-21 (11 days)
+    Inventory handoff: from 2025-06-10 to Window 4
+  Window 4:
+    Full window: 2025-06-11 to 2025-06-22 (12 days)
+    Committed:   2025-06-11 to 2025-06-22 (12 days)
+  Window 5:
+    Full window: 2025-06-14 to 2025-06-22 (9 days)
+    Committed:   2025-06-14 to 2025-06-22 (9 days)
+  Window 6:
+    Full window: 2025-06-17 to 2025-06-22 (6 days)
+    Committed:   2025-06-17 to 2025-06-22 (6 days)
+  Window 7:
+    Full window: 2025-06-20 to 2025-06-22 (3 days)
+    Committed:   2025-06-20 to 2025-06-22 (3 days)
+
+================================================================================
+SOLVING WITH VERBOSE OUTPUT
+================================================================================
+======================================================================
+ROLLING HORIZON SOLVER
+======================================================================
+
+Planning horizon: 2025-06-02 to 2025-06-22 (21 days)
+Window size: 14 days
+Overlap: 11 days
+Temporal aggregation: No
+
+Creating windows...
+  Created 7 windows
+    1. Window[window_1]: 2025-06-02 to 2025-06-15 (14d (overlap: 11d))
+    2. Window[window_2]: 2025-06-05 to 2025-06-18 (14d (overlap: 11d))
+    3. Window[window_3]: 2025-06-08 to 2025-06-21 (14d (overlap: 11d))
+    4. Window[window_4]: 2025-06-11 to 2025-06-22 (12d)
+    5. Window[window_5]: 2025-06-14 to 2025-06-22 (9d)
+    6. Window[window_6]: 2025-06-17 to 2025-06-22 (6d)
+    7. Window[window_7]: 2025-06-20 to 2025-06-22 (3d)
+
+======================================================================
+SOLVING WINDOW 1/7: window_1
+======================================================================
+  Dates: 2025-06-02 to 2025-06-15 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_1 solved: OPTIMAL
+     Cost: $483,385.13
+     Time: 2.32s
+     → Inventory passed to Window window_2
+
+======================================================================
+SOLVING WINDOW 2/7: window_2
+======================================================================
+  Dates: 2025-06-05 to 2025-06-18 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_2 solved: OPTIMAL
+     Cost: $603,554.41
+     Time: 2.68s
+     → Inventory passed to Window window_3
+
+======================================================================
+SOLVING WINDOW 3/7: window_3
+======================================================================
+  Dates: 2025-06-08 to 2025-06-21 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Window window_3 is INFEASIBLE
+     Model is infeasible. Constraints cannot all be satisfied simultaneously.
+     ⚠ Preserving inventory for Window window_4 (window was infeasible)
+
+======================================================================
+SOLVING WINDOW 4/7: window_4
+======================================================================
+  Dates: 2025-06-11 to 2025-06-22 (12 days)
+  Demand entries: 540
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Window window_4 is INFEASIBLE
+     Model is infeasible. Constraints cannot all be satisfied simultaneously.
+     ⚠ Preserving inventory for Window window_5 (window was infeasible)
+
+======================================================================
+SOLVING WINDOW 5/7: window_5
+======================================================================
+  Dates: 2025-06-14 to 2025-06-22 (9 days)
+  Demand entries: 405
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_5 solved: OPTIMAL
+     Cost: $332,311.63
+     Time: 1.39s
+     → Inventory passed to Window window_6
+
+======================================================================
+SOLVING WINDOW 6/7: window_6
+======================================================================
+  Dates: 2025-06-17 to 2025-06-22 (6 days)
+  Demand entries: 270
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Window window_6 is INFEASIBLE
+     Model is infeasible. Constraints cannot all be satisfied simultaneously.
+     ⚠ Preserving inventory for Window window_7 (window was infeasible)
+
+======================================================================
+SOLVING WINDOW 7/7: window_7
+======================================================================
+  Dates: 2025-06-20 to 2025-06-22 (3 days)
+  Demand entries: 135
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_7 solved: OPTIMAL
+     Cost: $138,088.77
+     Time: 0.38s
+
+======================================================================
+STITCHING SOLUTIONS
+======================================================================
+  window_1: Using 3 committed days (2025-06-02 to 2025-06-04)
+  window_2: Using 3 committed days (2025-06-05 to 2025-06-07)
+  window_5: Using 9 committed days (2025-06-14 to 2025-06-22)
+  window_7: Using 3 committed days (2025-06-20 to 2025-06-22)
+
+======================================================================
+ROLLING HORIZON COMPLETE
+======================================================================
+
+RollingHorizonResult: INFEASIBLE: 3 windows, 7 windows, cost=$703,316.01, time=7.96s (1.14s/window)
+
+  Infeasible windows: ['window_3', 'window_4', 'window_6']
+
+================================================================================
+DIAGNOSTIC RESULTS
+================================================================================
+
+Status: ❌ SOME INFEASIBLE
+Windows: 7
+Feasible: 4
+Infeasible: 3
+
+Infeasible windows: ['window_3', 'window_4', 'window_6']
+
+Infeasibility pattern analysis:
+  First infeasible: window_3
+  Last infeasible: window_6
+  Gaps between infeasible windows: [1, 2]
+
+Total time: 7.99s
+Avg time per window: 1.14s
+
+================================================================================
+HYPOTHESIS
+================================================================================
+
+With 11-day overlap and 3-day committed region:
+
+Window 1: Days 0-13 (committed 0-2, overlap 3-13)
+  - Solves for all 14 days
+  - Commits production/shipments for days 0-2
+  - Extracts inventory from day 2 (committed_end_date)
+  - Days 3-13 plan is DISCARDED
+
+Window 2: Days 3-16 (committed 3-5, overlap 6-16)
+  - Starts with inventory from day 2
+  - Must satisfy demand for days 3-16
+  - BUT: May need production from day 2 (D-1 production for day 3 morning truck)
+  - Production from day 2 was not committed in Window 1!
+  - → INFEASIBLE due to insufficient starting inventory + production lead time
+
+If this is correct, we would expect Window 2 or 3 to fail first.
+
+================================================================================

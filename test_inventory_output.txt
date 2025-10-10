@@ -1,0 +1,85 @@
+================================================================================
+INVENTORY-BASED TRUCK LOADING TEST
+================================================================================
+
+Loading data...
+Filtered to 2025-10-13 - 2025-11-02: 945 forecast entries
+Products: 5
+Locations: 11
+
+Initial inventory at 6122: 50,000 units across 5 products
+
+Building optimization model...
+Model built successfully
+  Planning dates: 25 days
+  Routes: 9 routes
+
+================================================================================
+SOLVING OPTIMIZATION MODEL
+================================================================================
+This may take 1-2 minutes...
+
+Welcome to the CBC MILP Solver 
+Version: 2.10.8 
+Build Date: May  9 2022 
+
+command line - /usr/bin/cbc -seconds 120 -ratio 0.01 -preprocess sos -passPresolve 10 -heuristics on -feaspump on -rins on -diving on -proximity on -combine on -cuts on -gomory on -knapsack on -probing on -clique on -strategy 1 -tune 2 -printingOptions all -import /tmp/tmp3yydw6vm.pyomo.lp -stat=1 -solve -solu /tmp/tmp3yydw6vm.pyomo.soln
+seconds was changed from 1e+100 to 120
+ratioGap was changed from 0 to 0.01
+passPresolve was changed from 5 to 10
+No match for feaspump - ? for list of commands
+No match for on - ? for list of commands
+Multiple matches for diving - possible completions:
+DivingS(ome)
+DivingC(oefficient)
+DivingF(ractional)
+DivingG(uided)
+DivingL(ineSearch)
+DivingP(seudoCost)
+DivingV(ectorLength)
+No match for on - ? for list of commands
+Option for proximitySearch changed from off to on
+tunePreProcess was changed from 6 to 2
+Option for printingOptions changed from normal to all
+Presolve determined that the problem was infeasible with tolerance of 1e-08
+Presolved model looks infeasible - will use unpresolved
+Original problem has 300 integers (300 of which binary)
+==== 83 zero objective 17 different
+==== absolute objective values 17 different
+==== for integers 25 zero objective 2 different
+25 variables have objective of 0
+275 variables have objective of 100
+==== for integers absolute objective values 2 different
+25 variables have objective of 0
+275 variables have objective of 100
+===== end objective counts
+
+
+Problem has 8531 rows, 9845 columns (9762 with objective) and 31939 elements
+There are 1159 singletons with objective 25 singletons with no objective 
+Column breakdown:
+9545 of type 0.0->inf, 0 of type 0.0->up, 0 of type lo->inf, 
+0 of type lo->up, 0 of type free, 0 of type fixed, 
+0 of type -inf->0.0, 0 of type -inf->up, 300 of type 0.0->1.0 
+Row breakdown:
+1923 of type E 0.0, 0 of type E 1.0, 0 of type E -1.0, 
+925 of type E other, 30 of type G 0.0, 0 of type G 1.0, 
+0 of type G other, 5586 of type L 0.0, 0 of type L 1.0, 
+67 of type L other, 0 of type Range 0.0->1.0, 0 of type Range other, 
+0 of type Free 
+Problem is infeasible - 0.40 seconds
+Total time (CPU seconds):       0.48   (Wallclock seconds):       0.51
+
+
+================================================================================
+RESULTS
+================================================================================
+
+Success: False
+Termination: infeasible
+Solve Time: 0.81s
+
+❌ INFEASIBLE: Model is infeasible. Constraints cannot all be satisfied simultaneously.
+
+This indicates an error in the inventory-based truck loading implementation.
+The model constraints are over-constrained or incorrectly formulated.

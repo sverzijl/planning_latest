@@ -1,0 +1,2003 @@
+================================================================================
+COMPREHENSIVE AGGRESSIVE HEURISTICS TEST
+================================================================================
+
+Loading data...
+Dataset: 2,407,299 units across 204 days
+
+================================================================================
+TEST 1/5: 14d/7d Baseline (No Heuristics)
+================================================================================
+  Window: 14 days
+  Overlap: 7 days
+  Committed region: 7 days
+  Aggressive heuristics: NO
+
+Solving full 29-week dataset...
+======================================================================
+ROLLING HORIZON SOLVER
+======================================================================
+
+Planning horizon: 2025-06-02 to 2025-12-22 (204 days)
+Window size: 14 days
+Overlap: 7 days
+Temporal aggregation: No
+
+Creating windows...
+  Created 29 windows
+    1. Window[window_1]: 2025-06-02 to 2025-06-15 (14d (overlap: 7d))
+    2. Window[window_2]: 2025-06-09 to 2025-06-22 (14d (overlap: 7d))
+    3. Window[window_3]: 2025-06-16 to 2025-06-29 (14d (overlap: 7d))
+    4. Window[window_4]: 2025-06-23 to 2025-07-06 (14d (overlap: 7d))
+    5. Window[window_5]: 2025-06-30 to 2025-07-13 (14d (overlap: 7d))
+    6. Window[window_6]: 2025-07-07 to 2025-07-20 (14d (overlap: 7d))
+    7. Window[window_7]: 2025-07-14 to 2025-07-27 (14d (overlap: 7d))
+    8. Window[window_8]: 2025-07-21 to 2025-08-03 (14d (overlap: 7d))
+    9. Window[window_9]: 2025-07-28 to 2025-08-10 (14d (overlap: 7d))
+    10. Window[window_10]: 2025-08-04 to 2025-08-17 (14d (overlap: 7d))
+    11. Window[window_11]: 2025-08-11 to 2025-08-24 (14d (overlap: 7d))
+    12. Window[window_12]: 2025-08-18 to 2025-08-31 (14d (overlap: 7d))
+    13. Window[window_13]: 2025-08-25 to 2025-09-07 (14d (overlap: 7d))
+    14. Window[window_14]: 2025-09-01 to 2025-09-14 (14d (overlap: 7d))
+    15. Window[window_15]: 2025-09-08 to 2025-09-21 (14d (overlap: 7d))
+    16. Window[window_16]: 2025-09-15 to 2025-09-28 (14d (overlap: 7d))
+    17. Window[window_17]: 2025-09-22 to 2025-10-05 (14d (overlap: 7d))
+    18. Window[window_18]: 2025-09-29 to 2025-10-12 (14d (overlap: 7d))
+    19. Window[window_19]: 2025-10-06 to 2025-10-19 (14d (overlap: 7d))
+    20. Window[window_20]: 2025-10-13 to 2025-10-26 (14d (overlap: 7d))
+    21. Window[window_21]: 2025-10-20 to 2025-11-02 (14d (overlap: 7d))
+    22. Window[window_22]: 2025-10-27 to 2025-11-09 (14d (overlap: 7d))
+    23. Window[window_23]: 2025-11-03 to 2025-11-16 (14d (overlap: 7d))
+    24. Window[window_24]: 2025-11-10 to 2025-11-23 (14d (overlap: 7d))
+    25. Window[window_25]: 2025-11-17 to 2025-11-30 (14d (overlap: 7d))
+    26. Window[window_26]: 2025-11-24 to 2025-12-07 (14d (overlap: 7d))
+    27. Window[window_27]: 2025-12-01 to 2025-12-14 (14d (overlap: 7d))
+    28. Window[window_28]: 2025-12-08 to 2025-12-21 (14d (overlap: 7d))
+    29. Window[window_29]: 2025-12-15 to 2025-12-22 (8d)
+
+======================================================================
+SOLVING WINDOW 1/29: window_1
+======================================================================
+  Dates: 2025-06-02 to 2025-06-15 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_1 solved: OPTIMAL
+     Cost: $483,385.13
+     Time: 3.63s
+     → Inventory passed to Window window_2
+
+======================================================================
+SOLVING WINDOW 2/29: window_2
+======================================================================
+  Dates: 2025-06-09 to 2025-06-22 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_2 solved: OPTIMAL
+     Cost: $482,063.16
+     Time: 3.54s
+     → Inventory passed to Window window_3
+
+======================================================================
+SOLVING WINDOW 3/29: window_3
+======================================================================
+  Dates: 2025-06-16 to 2025-06-29 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_3 solved: OPTIMAL
+     Cost: $482,569.65
+     Time: 4.36s
+     → Inventory passed to Window window_4
+
+======================================================================
+SOLVING WINDOW 4/29: window_4
+======================================================================
+  Dates: 2025-06-23 to 2025-07-06 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_4 solved: OPTIMAL
+     Cost: $486,070.94
+     Time: 3.25s
+     → Inventory passed to Window window_5
+
+======================================================================
+SOLVING WINDOW 5/29: window_5
+======================================================================
+  Dates: 2025-06-30 to 2025-07-13 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_5 solved: OPTIMAL
+     Cost: $498,714.79
+     Time: 2.51s
+     → Inventory passed to Window window_6
+
+======================================================================
+SOLVING WINDOW 6/29: window_6
+======================================================================
+  Dates: 2025-07-07 to 2025-07-20 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_6 solved: OPTIMAL
+     Cost: $499,007.17
+     Time: 3.65s
+     → Inventory passed to Window window_7
+
+======================================================================
+SOLVING WINDOW 7/29: window_7
+======================================================================
+  Dates: 2025-07-14 to 2025-07-27 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_7 solved: OPTIMAL
+     Cost: $499,018.28
+     Time: 2.93s
+     → Inventory passed to Window window_8
+
+======================================================================
+SOLVING WINDOW 8/29: window_8
+======================================================================
+  Dates: 2025-07-21 to 2025-08-03 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_8 solved: OPTIMAL
+     Cost: $495,157.55
+     Time: 2.62s
+     → Inventory passed to Window window_9
+
+======================================================================
+SOLVING WINDOW 9/29: window_9
+======================================================================
+  Dates: 2025-07-28 to 2025-08-10 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_9 solved: OPTIMAL
+     Cost: $476,382.71
+     Time: 3.24s
+     → Inventory passed to Window window_10
+
+======================================================================
+SOLVING WINDOW 10/29: window_10
+======================================================================
+  Dates: 2025-08-04 to 2025-08-17 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_10 solved: OPTIMAL
+     Cost: $485,466.41
+     Time: 4.93s
+     → Inventory passed to Window window_11
+
+======================================================================
+SOLVING WINDOW 11/29: window_11
+======================================================================
+  Dates: 2025-08-11 to 2025-08-24 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_11 solved: OPTIMAL
+     Cost: $489,158.53
+     Time: 2.24s
+     → Inventory passed to Window window_12
+
+======================================================================
+SOLVING WINDOW 12/29: window_12
+======================================================================
+  Dates: 2025-08-18 to 2025-08-31 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_12 solved: OPTIMAL
+     Cost: $480,163.84
+     Time: 2.78s
+     → Inventory passed to Window window_13
+
+======================================================================
+SOLVING WINDOW 13/29: window_13
+======================================================================
+  Dates: 2025-08-25 to 2025-09-07 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_13 solved: OPTIMAL
+     Cost: $471,268.95
+     Time: 2.54s
+     → Inventory passed to Window window_14
+
+======================================================================
+SOLVING WINDOW 14/29: window_14
+======================================================================
+  Dates: 2025-09-01 to 2025-09-14 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_14 solved: OPTIMAL
+     Cost: $464,423.93
+     Time: 3.03s
+     → Inventory passed to Window window_15
+
+======================================================================
+SOLVING WINDOW 15/29: window_15
+======================================================================
+  Dates: 2025-09-08 to 2025-09-21 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_15 solved: OPTIMAL
+     Cost: $482,368.92
+     Time: 2.81s
+     → Inventory passed to Window window_16
+
+======================================================================
+SOLVING WINDOW 16/29: window_16
+======================================================================
+  Dates: 2025-09-15 to 2025-09-28 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_16 solved: OPTIMAL
+     Cost: $487,161.32
+     Time: 3.62s
+     → Inventory passed to Window window_17
+
+======================================================================
+SOLVING WINDOW 17/29: window_17
+======================================================================
+  Dates: 2025-09-22 to 2025-10-05 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_17 solved: OPTIMAL
+     Cost: $463,205.86
+     Time: 1.86s
+     → Inventory passed to Window window_18
+
+======================================================================
+SOLVING WINDOW 18/29: window_18
+======================================================================
+  Dates: 2025-09-29 to 2025-10-12 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_18 solved: OPTIMAL
+     Cost: $463,648.05
+     Time: 2.23s
+     → Inventory passed to Window window_19
+
+======================================================================
+SOLVING WINDOW 19/29: window_19
+======================================================================
+  Dates: 2025-10-06 to 2025-10-19 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_19 solved: OPTIMAL
+     Cost: $470,728.09
+     Time: 3.30s
+     → Inventory passed to Window window_20
+
+======================================================================
+SOLVING WINDOW 20/29: window_20
+======================================================================
+  Dates: 2025-10-13 to 2025-10-26 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_20 solved: OPTIMAL
+     Cost: $476,898.00
+     Time: 3.82s
+     → Inventory passed to Window window_21
+
+======================================================================
+SOLVING WINDOW 21/29: window_21
+======================================================================
+  Dates: 2025-10-20 to 2025-11-02 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_21 solved: OPTIMAL
+     Cost: $473,619.58
+     Time: 3.78s
+     → Inventory passed to Window window_22
+
+======================================================================
+SOLVING WINDOW 22/29: window_22
+======================================================================
+  Dates: 2025-10-27 to 2025-11-09 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_22 solved: OPTIMAL
+     Cost: $463,244.00
+     Time: 3.61s
+     → Inventory passed to Window window_23
+
+======================================================================
+SOLVING WINDOW 23/29: window_23
+======================================================================
+  Dates: 2025-11-03 to 2025-11-16 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_23 solved: OPTIMAL
+     Cost: $457,541.83
+     Time: 5.48s
+     → Inventory passed to Window window_24
+
+======================================================================
+SOLVING WINDOW 24/29: window_24
+======================================================================
+  Dates: 2025-11-10 to 2025-11-23 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_24 solved: OPTIMAL
+     Cost: $457,083.14
+     Time: 4.19s
+     → Inventory passed to Window window_25
+
+======================================================================
+SOLVING WINDOW 25/29: window_25
+======================================================================
+  Dates: 2025-11-17 to 2025-11-30 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_25 solved: OPTIMAL
+     Cost: $462,891.93
+     Time: 5.43s
+     → Inventory passed to Window window_26
+
+======================================================================
+SOLVING WINDOW 26/29: window_26
+======================================================================
+  Dates: 2025-11-24 to 2025-12-07 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_26 solved: OPTIMAL
+     Cost: $463,335.67
+     Time: 3.51s
+     → Inventory passed to Window window_27
+
+======================================================================
+SOLVING WINDOW 27/29: window_27
+======================================================================
+  Dates: 2025-12-01 to 2025-12-14 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_27 solved: OPTIMAL
+     Cost: $467,970.79
+     Time: 3.45s
+     → Inventory passed to Window window_28
+
+======================================================================
+SOLVING WINDOW 28/29: window_28
+======================================================================
+  Dates: 2025-12-08 to 2025-12-21 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_28 solved: OPTIMAL
+     Cost: $475,310.44
+     Time: 3.46s
+     → Inventory passed to Window window_29
+
+======================================================================
+SOLVING WINDOW 29/29: window_29
+======================================================================
+  Dates: 2025-12-15 to 2025-12-22 (8 days)
+  Demand entries: 360
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_29 solved: OPTIMAL
+     Cost: $209,125.77
+     Time: 1.19s
+
+======================================================================
+STITCHING SOLUTIONS
+======================================================================
+  window_1: Using 7 committed days (2025-06-02 to 2025-06-08)
+  window_2: Using 7 committed days (2025-06-09 to 2025-06-15)
+  window_3: Using 7 committed days (2025-06-16 to 2025-06-22)
+  window_4: Using 7 committed days (2025-06-23 to 2025-06-29)
+  window_5: Using 7 committed days (2025-06-30 to 2025-07-06)
+  window_6: Using 7 committed days (2025-07-07 to 2025-07-13)
+  window_7: Using 7 committed days (2025-07-14 to 2025-07-20)
+  window_8: Using 7 committed days (2025-07-21 to 2025-07-27)
+  window_9: Using 7 committed days (2025-07-28 to 2025-08-03)
+  window_10: Using 7 committed days (2025-08-04 to 2025-08-10)
+  window_11: Using 7 committed days (2025-08-11 to 2025-08-17)
+  window_12: Using 7 committed days (2025-08-18 to 2025-08-24)
+  window_13: Using 7 committed days (2025-08-25 to 2025-08-31)
+  window_14: Using 7 committed days (2025-09-01 to 2025-09-07)
+  window_15: Using 7 committed days (2025-09-08 to 2025-09-14)
+  window_16: Using 7 committed days (2025-09-15 to 2025-09-21)
+  window_17: Using 7 committed days (2025-09-22 to 2025-09-28)
+  window_18: Using 7 committed days (2025-09-29 to 2025-10-05)
+  window_19: Using 7 committed days (2025-10-06 to 2025-10-12)
+  window_20: Using 7 committed days (2025-10-13 to 2025-10-19)
+  window_21: Using 7 committed days (2025-10-20 to 2025-10-26)
+  window_22: Using 7 committed days (2025-10-27 to 2025-11-02)
+  window_23: Using 7 committed days (2025-11-03 to 2025-11-09)
+  window_24: Using 7 committed days (2025-11-10 to 2025-11-16)
+  window_25: Using 7 committed days (2025-11-17 to 2025-11-23)
+  window_26: Using 7 committed days (2025-11-24 to 2025-11-30)
+  window_27: Using 7 committed days (2025-12-01 to 2025-12-07)
+  window_28: Using 7 committed days (2025-12-08 to 2025-12-14)
+  window_29: Using 8 committed days (2025-12-15 to 2025-12-22)
+
+======================================================================
+ROLLING HORIZON COMPLETE
+======================================================================
+
+RollingHorizonResult: ALL FEASIBLE, 29 windows, cost=$6,888,055.11, time=96.97s (3.34s/window)
+
+Results:
+  Total time: 97.2s (1.6 min)
+  Windows: 29
+  Feasible: 29/29
+  ✅ ALL FEASIBLE
+  Total cost: $6,888,055.11
+  Avg time/window: 3.4s
+
+================================================================================
+TEST 2/5: 14d/7d with Aggressive Heuristics
+================================================================================
+  Window: 14 days
+  Overlap: 7 days
+  Committed region: 7 days
+  Aggressive heuristics: YES
+
+Solving full 29-week dataset...
+======================================================================
+ROLLING HORIZON SOLVER
+======================================================================
+
+Planning horizon: 2025-06-02 to 2025-12-22 (204 days)
+Window size: 14 days
+Overlap: 7 days
+Temporal aggregation: No
+
+Creating windows...
+  Created 29 windows
+    1. Window[window_1]: 2025-06-02 to 2025-06-15 (14d (overlap: 7d))
+    2. Window[window_2]: 2025-06-09 to 2025-06-22 (14d (overlap: 7d))
+    3. Window[window_3]: 2025-06-16 to 2025-06-29 (14d (overlap: 7d))
+    4. Window[window_4]: 2025-06-23 to 2025-07-06 (14d (overlap: 7d))
+    5. Window[window_5]: 2025-06-30 to 2025-07-13 (14d (overlap: 7d))
+    6. Window[window_6]: 2025-07-07 to 2025-07-20 (14d (overlap: 7d))
+    7. Window[window_7]: 2025-07-14 to 2025-07-27 (14d (overlap: 7d))
+    8. Window[window_8]: 2025-07-21 to 2025-08-03 (14d (overlap: 7d))
+    9. Window[window_9]: 2025-07-28 to 2025-08-10 (14d (overlap: 7d))
+    10. Window[window_10]: 2025-08-04 to 2025-08-17 (14d (overlap: 7d))
+    11. Window[window_11]: 2025-08-11 to 2025-08-24 (14d (overlap: 7d))
+    12. Window[window_12]: 2025-08-18 to 2025-08-31 (14d (overlap: 7d))
+    13. Window[window_13]: 2025-08-25 to 2025-09-07 (14d (overlap: 7d))
+    14. Window[window_14]: 2025-09-01 to 2025-09-14 (14d (overlap: 7d))
+    15. Window[window_15]: 2025-09-08 to 2025-09-21 (14d (overlap: 7d))
+    16. Window[window_16]: 2025-09-15 to 2025-09-28 (14d (overlap: 7d))
+    17. Window[window_17]: 2025-09-22 to 2025-10-05 (14d (overlap: 7d))
+    18. Window[window_18]: 2025-09-29 to 2025-10-12 (14d (overlap: 7d))
+    19. Window[window_19]: 2025-10-06 to 2025-10-19 (14d (overlap: 7d))
+    20. Window[window_20]: 2025-10-13 to 2025-10-26 (14d (overlap: 7d))
+    21. Window[window_21]: 2025-10-20 to 2025-11-02 (14d (overlap: 7d))
+    22. Window[window_22]: 2025-10-27 to 2025-11-09 (14d (overlap: 7d))
+    23. Window[window_23]: 2025-11-03 to 2025-11-16 (14d (overlap: 7d))
+    24. Window[window_24]: 2025-11-10 to 2025-11-23 (14d (overlap: 7d))
+    25. Window[window_25]: 2025-11-17 to 2025-11-30 (14d (overlap: 7d))
+    26. Window[window_26]: 2025-11-24 to 2025-12-07 (14d (overlap: 7d))
+    27. Window[window_27]: 2025-12-01 to 2025-12-14 (14d (overlap: 7d))
+    28. Window[window_28]: 2025-12-08 to 2025-12-21 (14d (overlap: 7d))
+    29. Window[window_29]: 2025-12-15 to 2025-12-22 (8d)
+
+======================================================================
+SOLVING WINDOW 1/29: window_1
+======================================================================
+  Dates: 2025-06-02 to 2025-06-15 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_1 solved: OPTIMAL
+     Cost: $483,385.13
+     Time: 1.81s
+     → Inventory passed to Window window_2
+
+======================================================================
+SOLVING WINDOW 2/29: window_2
+======================================================================
+  Dates: 2025-06-09 to 2025-06-22 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_2 solved: OPTIMAL
+     Cost: $482,142.97
+     Time: 1.40s
+     → Inventory passed to Window window_3
+
+======================================================================
+SOLVING WINDOW 3/29: window_3
+======================================================================
+  Dates: 2025-06-16 to 2025-06-29 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_3 solved: OPTIMAL
+     Cost: $482,569.65
+     Time: 1.94s
+     → Inventory passed to Window window_4
+
+======================================================================
+SOLVING WINDOW 4/29: window_4
+======================================================================
+  Dates: 2025-06-23 to 2025-07-06 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_4 solved: OPTIMAL
+     Cost: $486,070.94
+     Time: 1.34s
+     → Inventory passed to Window window_5
+
+======================================================================
+SOLVING WINDOW 5/29: window_5
+======================================================================
+  Dates: 2025-06-30 to 2025-07-13 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_5 solved: OPTIMAL
+     Cost: $498,714.79
+     Time: 1.36s
+     → Inventory passed to Window window_6
+
+======================================================================
+SOLVING WINDOW 6/29: window_6
+======================================================================
+  Dates: 2025-07-07 to 2025-07-20 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_6 solved: OPTIMAL
+     Cost: $499,122.98
+     Time: 1.56s
+     → Inventory passed to Window window_7
+
+======================================================================
+SOLVING WINDOW 7/29: window_7
+======================================================================
+  Dates: 2025-07-14 to 2025-07-27 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_7 solved: OPTIMAL
+     Cost: $499,247.69
+     Time: 1.56s
+     → Inventory passed to Window window_8
+
+======================================================================
+SOLVING WINDOW 8/29: window_8
+======================================================================
+  Dates: 2025-07-21 to 2025-08-03 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_8 solved: OPTIMAL
+     Cost: $495,309.29
+     Time: 1.34s
+     → Inventory passed to Window window_9
+
+======================================================================
+SOLVING WINDOW 9/29: window_9
+======================================================================
+  Dates: 2025-07-28 to 2025-08-10 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_9 solved: OPTIMAL
+     Cost: $476,382.71
+     Time: 1.44s
+     → Inventory passed to Window window_10
+
+======================================================================
+SOLVING WINDOW 10/29: window_10
+======================================================================
+  Dates: 2025-08-04 to 2025-08-17 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_10 solved: OPTIMAL
+     Cost: $485,797.41
+     Time: 1.44s
+     → Inventory passed to Window window_11
+
+======================================================================
+SOLVING WINDOW 11/29: window_11
+======================================================================
+  Dates: 2025-08-11 to 2025-08-24 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_11 solved: OPTIMAL
+     Cost: $489,190.15
+     Time: 1.42s
+     → Inventory passed to Window window_12
+
+======================================================================
+SOLVING WINDOW 12/29: window_12
+======================================================================
+  Dates: 2025-08-18 to 2025-08-31 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_12 solved: OPTIMAL
+     Cost: $480,163.84
+     Time: 1.52s
+     → Inventory passed to Window window_13
+
+======================================================================
+SOLVING WINDOW 13/29: window_13
+======================================================================
+  Dates: 2025-08-25 to 2025-09-07 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_13 solved: OPTIMAL
+     Cost: $471,268.95
+     Time: 1.42s
+     → Inventory passed to Window window_14
+
+======================================================================
+SOLVING WINDOW 14/29: window_14
+======================================================================
+  Dates: 2025-09-01 to 2025-09-14 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_14 solved: OPTIMAL
+     Cost: $464,615.56
+     Time: 1.20s
+     → Inventory passed to Window window_15
+
+======================================================================
+SOLVING WINDOW 15/29: window_15
+======================================================================
+  Dates: 2025-09-08 to 2025-09-21 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_15 solved: OPTIMAL
+     Cost: $482,368.92
+     Time: 1.46s
+     → Inventory passed to Window window_16
+
+======================================================================
+SOLVING WINDOW 16/29: window_16
+======================================================================
+  Dates: 2025-09-15 to 2025-09-28 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_16 solved: OPTIMAL
+     Cost: $487,337.16
+     Time: 2.34s
+     → Inventory passed to Window window_17
+
+======================================================================
+SOLVING WINDOW 17/29: window_17
+======================================================================
+  Dates: 2025-09-22 to 2025-10-05 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_17 solved: OPTIMAL
+     Cost: $463,205.86
+     Time: 1.12s
+     → Inventory passed to Window window_18
+
+======================================================================
+SOLVING WINDOW 18/29: window_18
+======================================================================
+  Dates: 2025-09-29 to 2025-10-12 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_18 solved: OPTIMAL
+     Cost: $463,988.94
+     Time: 0.89s
+     → Inventory passed to Window window_19
+
+======================================================================
+SOLVING WINDOW 19/29: window_19
+======================================================================
+  Dates: 2025-10-06 to 2025-10-19 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_19 solved: OPTIMAL
+     Cost: $470,735.90
+     Time: 1.27s
+     → Inventory passed to Window window_20
+
+======================================================================
+SOLVING WINDOW 20/29: window_20
+======================================================================
+  Dates: 2025-10-13 to 2025-10-26 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_20 solved: OPTIMAL
+     Cost: $476,898.00
+     Time: 1.49s
+     → Inventory passed to Window window_21
+
+======================================================================
+SOLVING WINDOW 21/29: window_21
+======================================================================
+  Dates: 2025-10-20 to 2025-11-02 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_21 solved: OPTIMAL
+     Cost: $473,619.58
+     Time: 1.25s
+     → Inventory passed to Window window_22
+
+======================================================================
+SOLVING WINDOW 22/29: window_22
+======================================================================
+  Dates: 2025-10-27 to 2025-11-09 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_22 solved: OPTIMAL
+     Cost: $463,244.00
+     Time: 1.30s
+     → Inventory passed to Window window_23
+
+======================================================================
+SOLVING WINDOW 23/29: window_23
+======================================================================
+  Dates: 2025-11-03 to 2025-11-16 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_23 solved: OPTIMAL
+     Cost: $457,718.31
+     Time: 1.10s
+     → Inventory passed to Window window_24
+
+======================================================================
+SOLVING WINDOW 24/29: window_24
+======================================================================
+  Dates: 2025-11-10 to 2025-11-23 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_24 solved: OPTIMAL
+     Cost: $457,193.84
+     Time: 1.41s
+     → Inventory passed to Window window_25
+
+======================================================================
+SOLVING WINDOW 25/29: window_25
+======================================================================
+  Dates: 2025-11-17 to 2025-11-30 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_25 solved: OPTIMAL
+     Cost: $462,970.10
+     Time: 1.69s
+     → Inventory passed to Window window_26
+
+======================================================================
+SOLVING WINDOW 26/29: window_26
+======================================================================
+  Dates: 2025-11-24 to 2025-12-07 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_26 solved: OPTIMAL
+     Cost: $463,335.67
+     Time: 1.44s
+     → Inventory passed to Window window_27
+
+======================================================================
+SOLVING WINDOW 27/29: window_27
+======================================================================
+  Dates: 2025-12-01 to 2025-12-14 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_27 solved: OPTIMAL
+     Cost: $467,970.79
+     Time: 1.37s
+     → Inventory passed to Window window_28
+
+======================================================================
+SOLVING WINDOW 28/29: window_28
+======================================================================
+  Dates: 2025-12-08 to 2025-12-21 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_28 solved: OPTIMAL
+     Cost: $475,326.69
+     Time: 1.12s
+     → Inventory passed to Window window_29
+
+======================================================================
+SOLVING WINDOW 29/29: window_29
+======================================================================
+  Dates: 2025-12-15 to 2025-12-22 (8 days)
+  Demand entries: 360
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_29 solved: OPTIMAL
+     Cost: $209,236.47
+     Time: 0.53s
+
+======================================================================
+STITCHING SOLUTIONS
+======================================================================
+  window_1: Using 7 committed days (2025-06-02 to 2025-06-08)
+  window_2: Using 7 committed days (2025-06-09 to 2025-06-15)
+  window_3: Using 7 committed days (2025-06-16 to 2025-06-22)
+  window_4: Using 7 committed days (2025-06-23 to 2025-06-29)
+  window_5: Using 7 committed days (2025-06-30 to 2025-07-06)
+  window_6: Using 7 committed days (2025-07-07 to 2025-07-13)
+  window_7: Using 7 committed days (2025-07-14 to 2025-07-20)
+  window_8: Using 7 committed days (2025-07-21 to 2025-07-27)
+  window_9: Using 7 committed days (2025-07-28 to 2025-08-03)
+  window_10: Using 7 committed days (2025-08-04 to 2025-08-10)
+  window_11: Using 7 committed days (2025-08-11 to 2025-08-17)
+  window_12: Using 7 committed days (2025-08-18 to 2025-08-24)
+  window_13: Using 7 committed days (2025-08-25 to 2025-08-31)
+  window_14: Using 7 committed days (2025-09-01 to 2025-09-07)
+  window_15: Using 7 committed days (2025-09-08 to 2025-09-14)
+  window_16: Using 7 committed days (2025-09-15 to 2025-09-21)
+  window_17: Using 7 committed days (2025-09-22 to 2025-09-28)
+  window_18: Using 7 committed days (2025-09-29 to 2025-10-05)
+  window_19: Using 7 committed days (2025-10-06 to 2025-10-12)
+  window_20: Using 7 committed days (2025-10-13 to 2025-10-19)
+  window_21: Using 7 committed days (2025-10-20 to 2025-10-26)
+  window_22: Using 7 committed days (2025-10-27 to 2025-11-02)
+  window_23: Using 7 committed days (2025-11-03 to 2025-11-09)
+  window_24: Using 7 committed days (2025-11-10 to 2025-11-16)
+  window_25: Using 7 committed days (2025-11-17 to 2025-11-23)
+  window_26: Using 7 committed days (2025-11-24 to 2025-11-30)
+  window_27: Using 7 committed days (2025-12-01 to 2025-12-07)
+  window_28: Using 7 committed days (2025-12-08 to 2025-12-14)
+  window_29: Using 8 committed days (2025-12-15 to 2025-12-22)
+
+======================================================================
+ROLLING HORIZON COMPLETE
+======================================================================
+
+RollingHorizonResult: ALL FEASIBLE, 29 windows, cost=$6,889,184.39, time=40.55s (1.40s/window)
+
+Results:
+  Total time: 40.8s (0.7 min)
+  Windows: 29
+  Feasible: 29/29
+  ✅ ALL FEASIBLE
+  Total cost: $6,889,184.39
+  Avg time/window: 1.4s
+
+================================================================================
+TEST 3/5: 21d/7d with Aggressive Heuristics
+================================================================================
+  Window: 21 days
+  Overlap: 7 days
+  Committed region: 14 days
+  Aggressive heuristics: YES
+
+Solving full 29-week dataset...
+======================================================================
+ROLLING HORIZON SOLVER
+======================================================================
+
+Planning horizon: 2025-06-02 to 2025-12-22 (204 days)
+Window size: 21 days
+Overlap: 7 days
+Temporal aggregation: No
+
+Creating windows...
+  Created 15 windows
+    1. Window[window_1]: 2025-06-02 to 2025-06-22 (21d (overlap: 7d))
+    2. Window[window_2]: 2025-06-16 to 2025-07-06 (21d (overlap: 7d))
+    3. Window[window_3]: 2025-06-30 to 2025-07-20 (21d (overlap: 7d))
+    4. Window[window_4]: 2025-07-14 to 2025-08-03 (21d (overlap: 7d))
+    5. Window[window_5]: 2025-07-28 to 2025-08-17 (21d (overlap: 7d))
+    6. Window[window_6]: 2025-08-11 to 2025-08-31 (21d (overlap: 7d))
+    7. Window[window_7]: 2025-08-25 to 2025-09-14 (21d (overlap: 7d))
+    8. Window[window_8]: 2025-09-08 to 2025-09-28 (21d (overlap: 7d))
+    9. Window[window_9]: 2025-09-22 to 2025-10-12 (21d (overlap: 7d))
+    10. Window[window_10]: 2025-10-06 to 2025-10-26 (21d (overlap: 7d))
+    11. Window[window_11]: 2025-10-20 to 2025-11-09 (21d (overlap: 7d))
+    12. Window[window_12]: 2025-11-03 to 2025-11-23 (21d (overlap: 7d))
+    13. Window[window_13]: 2025-11-17 to 2025-12-07 (21d (overlap: 7d))
+    14. Window[window_14]: 2025-12-01 to 2025-12-21 (21d (overlap: 7d))
+    15. Window[window_15]: 2025-12-15 to 2025-12-22 (8d)
+
+======================================================================
+SOLVING WINDOW 1/15: window_1
+======================================================================
+  Dates: 2025-06-02 to 2025-06-22 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_1 solved: OPTIMAL
+     Cost: $937,331.20
+     Time: 6.51s
+     → Inventory passed to Window window_2
+
+======================================================================
+SOLVING WINDOW 2/15: window_2
+======================================================================
+  Dates: 2025-06-16 to 2025-07-06 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_2 solved: OPTIMAL
+     Cost: $925,866.68
+     Time: 4.65s
+     → Inventory passed to Window window_3
+
+======================================================================
+SOLVING WINDOW 3/15: window_3
+======================================================================
+  Dates: 2025-06-30 to 2025-07-20 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_3 solved: OPTIMAL
+     Cost: $940,058.70
+     Time: 6.35s
+     → Inventory passed to Window window_4
+
+======================================================================
+SOLVING WINDOW 4/15: window_4
+======================================================================
+  Dates: 2025-07-14 to 2025-08-03 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_4 solved: OPTIMAL
+     Cost: $935,038.29
+     Time: 1.91s
+     → Inventory passed to Window window_5
+
+======================================================================
+SOLVING WINDOW 5/15: window_5
+======================================================================
+  Dates: 2025-07-28 to 2025-08-17 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_5 solved: OPTIMAL
+     Cost: $933,588.80
+     Time: 5.53s
+     → Inventory passed to Window window_6
+
+======================================================================
+SOLVING WINDOW 6/15: window_6
+======================================================================
+  Dates: 2025-08-11 to 2025-08-31 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_6 solved: OPTIMAL
+     Cost: $937,808.00
+     Time: 6.14s
+     → Inventory passed to Window window_7
+
+======================================================================
+SOLVING WINDOW 7/15: window_7
+======================================================================
+  Dates: 2025-08-25 to 2025-09-14 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_7 solved: OPTIMAL
+     Cost: $906,173.30
+     Time: 5.02s
+     → Inventory passed to Window window_8
+
+======================================================================
+SOLVING WINDOW 8/15: window_8
+======================================================================
+  Dates: 2025-09-08 to 2025-09-28 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_8 solved: OPTIMAL
+     Cost: $928,110.35
+     Time: 4.56s
+     → Inventory passed to Window window_9
+
+======================================================================
+SOLVING WINDOW 9/15: window_9
+======================================================================
+  Dates: 2025-09-22 to 2025-10-12 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_9 solved: OPTIMAL
+     Cost: $908,284.19
+     Time: 5.09s
+     → Inventory passed to Window window_10
+
+======================================================================
+SOLVING WINDOW 10/15: window_10
+======================================================================
+  Dates: 2025-10-06 to 2025-10-26 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_10 solved: OPTIMAL
+     Cost: $938,480.94
+     Time: 6.08s
+     → Inventory passed to Window window_11
+
+======================================================================
+SOLVING WINDOW 11/15: window_11
+======================================================================
+  Dates: 2025-10-20 to 2025-11-09 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_11 solved: OPTIMAL
+     Cost: $928,663.37
+     Time: 4.82s
+     → Inventory passed to Window window_12
+
+======================================================================
+SOLVING WINDOW 12/15: window_12
+======================================================================
+  Dates: 2025-11-03 to 2025-11-23 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_12 solved: OPTIMAL
+     Cost: $902,157.38
+     Time: 5.03s
+     → Inventory passed to Window window_13
+
+======================================================================
+SOLVING WINDOW 13/15: window_13
+======================================================================
+  Dates: 2025-11-17 to 2025-12-07 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_13 solved: OPTIMAL
+     Cost: $928,061.64
+     Time: 6.09s
+     → Inventory passed to Window window_14
+
+======================================================================
+SOLVING WINDOW 14/15: window_14
+======================================================================
+  Dates: 2025-12-01 to 2025-12-21 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_14 solved: OPTIMAL
+     Cost: $947,669.95
+     Time: 5.48s
+     → Inventory passed to Window window_15
+
+======================================================================
+SOLVING WINDOW 15/15: window_15
+======================================================================
+  Dates: 2025-12-15 to 2025-12-22 (8 days)
+  Demand entries: 360
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_15 solved: OPTIMAL
+     Cost: $209,236.47
+     Time: 0.64s
+
+======================================================================
+STITCHING SOLUTIONS
+======================================================================
+  window_1: Using 14 committed days (2025-06-02 to 2025-06-15)
+  window_2: Using 14 committed days (2025-06-16 to 2025-06-29)
+  window_3: Using 14 committed days (2025-06-30 to 2025-07-13)
+  window_4: Using 14 committed days (2025-07-14 to 2025-07-27)
+  window_5: Using 14 committed days (2025-07-28 to 2025-08-10)
+  window_6: Using 14 committed days (2025-08-11 to 2025-08-24)
+  window_7: Using 14 committed days (2025-08-25 to 2025-09-07)
+  window_8: Using 14 committed days (2025-09-08 to 2025-09-21)
+  window_9: Using 14 committed days (2025-09-22 to 2025-10-05)
+  window_10: Using 14 committed days (2025-10-06 to 2025-10-19)
+  window_11: Using 14 committed days (2025-10-20 to 2025-11-02)
+  window_12: Using 14 committed days (2025-11-03 to 2025-11-16)
+  window_13: Using 14 committed days (2025-11-17 to 2025-11-30)
+  window_14: Using 14 committed days (2025-12-01 to 2025-12-14)
+  window_15: Using 8 committed days (2025-12-15 to 2025-12-22)
+
+======================================================================
+ROLLING HORIZON COMPLETE
+======================================================================
+
+RollingHorizonResult: ALL FEASIBLE, 15 windows, cost=$8,874,098.34, time=73.89s (4.93s/window)
+
+Results:
+  Total time: 74.0s (1.2 min)
+  Windows: 15
+  Feasible: 15/15
+  ✅ ALL FEASIBLE
+  Total cost: $8,874,098.34
+  Avg time/window: 4.9s
+
+================================================================================
+TEST 4/5: 21d/10d with Aggressive Heuristics
+================================================================================
+  Window: 21 days
+  Overlap: 10 days
+  Committed region: 11 days
+  Aggressive heuristics: YES
+
+Solving full 29-week dataset...
+======================================================================
+ROLLING HORIZON SOLVER
+======================================================================
+
+Planning horizon: 2025-06-02 to 2025-12-22 (204 days)
+Window size: 21 days
+Overlap: 10 days
+Temporal aggregation: No
+
+Creating windows...
+  Created 18 windows
+    1. Window[window_1]: 2025-06-02 to 2025-06-22 (21d (overlap: 10d))
+    2. Window[window_2]: 2025-06-13 to 2025-07-03 (21d (overlap: 10d))
+    3. Window[window_3]: 2025-06-24 to 2025-07-14 (21d (overlap: 10d))
+    4. Window[window_4]: 2025-07-05 to 2025-07-25 (21d (overlap: 10d))
+    5. Window[window_5]: 2025-07-16 to 2025-08-05 (21d (overlap: 10d))
+    6. Window[window_6]: 2025-07-27 to 2025-08-16 (21d (overlap: 10d))
+    7. Window[window_7]: 2025-08-07 to 2025-08-27 (21d (overlap: 10d))
+    8. Window[window_8]: 2025-08-18 to 2025-09-07 (21d (overlap: 10d))
+    9. Window[window_9]: 2025-08-29 to 2025-09-18 (21d (overlap: 10d))
+    10. Window[window_10]: 2025-09-09 to 2025-09-29 (21d (overlap: 10d))
+    11. Window[window_11]: 2025-09-20 to 2025-10-10 (21d (overlap: 10d))
+    12. Window[window_12]: 2025-10-01 to 2025-10-21 (21d (overlap: 10d))
+    13. Window[window_13]: 2025-10-12 to 2025-11-01 (21d (overlap: 10d))
+    14. Window[window_14]: 2025-10-23 to 2025-11-12 (21d (overlap: 10d))
+    15. Window[window_15]: 2025-11-03 to 2025-11-23 (21d (overlap: 10d))
+    16. Window[window_16]: 2025-11-14 to 2025-12-04 (21d (overlap: 10d))
+    17. Window[window_17]: 2025-11-25 to 2025-12-15 (21d (overlap: 10d))
+    18. Window[window_18]: 2025-12-06 to 2025-12-22 (17d)
+
+======================================================================
+SOLVING WINDOW 1/18: window_1
+======================================================================
+  Dates: 2025-06-02 to 2025-06-22 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_1 solved: OPTIMAL
+     Cost: $937,331.20
+     Time: 6.79s
+     → Inventory passed to Window window_2
+
+======================================================================
+SOLVING WINDOW 2/18: window_2
+======================================================================
+  Dates: 2025-06-13 to 2025-07-03 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_2 solved: OPTIMAL
+     Cost: $1,142,445.13
+     Time: 5.31s
+     → Inventory passed to Window window_3
+
+======================================================================
+SOLVING WINDOW 3/18: window_3
+======================================================================
+  Dates: 2025-06-24 to 2025-07-14 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Window window_3 is INFEASIBLE
+     Model is infeasible. Constraints cannot all be satisfied simultaneously.
+     ⚠ Preserving inventory for Window window_4 (window was infeasible)
+
+======================================================================
+SOLVING WINDOW 4/18: window_4
+======================================================================
+  Dates: 2025-07-05 to 2025-07-25 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_4 solved: OPTIMAL
+     Cost: $1,037,490.59
+     Time: 6.31s
+     → Inventory passed to Window window_5
+
+======================================================================
+SOLVING WINDOW 5/18: window_5
+======================================================================
+  Dates: 2025-07-16 to 2025-08-05 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Window window_5 is INFEASIBLE
+     Model is infeasible. Constraints cannot all be satisfied simultaneously.
+     ⚠ Preserving inventory for Window window_6 (window was infeasible)
+
+======================================================================
+SOLVING WINDOW 6/18: window_6
+======================================================================
+  Dates: 2025-07-27 to 2025-08-16 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Window window_6 is INFEASIBLE
+     Model is infeasible. Constraints cannot all be satisfied simultaneously.
+     ⚠ Preserving inventory for Window window_7 (window was infeasible)
+
+======================================================================
+SOLVING WINDOW 7/18: window_7
+======================================================================
+  Dates: 2025-08-07 to 2025-08-27 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_7 solved: OPTIMAL
+     Cost: $1,079,417.37
+     Time: 4.54s
+     → Inventory passed to Window window_8
+
+======================================================================
+SOLVING WINDOW 8/18: window_8
+======================================================================
+  Dates: 2025-08-18 to 2025-09-07 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_8 solved: OPTIMAL
+     Cost: $911,909.86
+     Time: 4.74s
+     → Inventory passed to Window window_9
+
+======================================================================
+SOLVING WINDOW 9/18: window_9
+======================================================================
+  Dates: 2025-08-29 to 2025-09-18 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_9 solved: OPTIMAL
+     Cost: $1,125,891.34
+     Time: 4.03s
+     → Inventory passed to Window window_10
+
+======================================================================
+SOLVING WINDOW 10/18: window_10
+======================================================================
+  Dates: 2025-09-09 to 2025-09-29 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Window window_10 is INFEASIBLE
+     Model is infeasible. Constraints cannot all be satisfied simultaneously.
+     ⚠ Preserving inventory for Window window_11 (window was infeasible)
+
+======================================================================
+SOLVING WINDOW 11/18: window_11
+======================================================================
+  Dates: 2025-09-20 to 2025-10-10 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_11 solved: OPTIMAL
+     Cost: $996,405.46
+     Time: 4.51s
+     → Inventory passed to Window window_12
+
+======================================================================
+SOLVING WINDOW 12/18: window_12
+======================================================================
+  Dates: 2025-10-01 to 2025-10-21 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Window window_12 is INFEASIBLE
+     Model is infeasible. Constraints cannot all be satisfied simultaneously.
+     ⚠ Preserving inventory for Window window_13 (window was infeasible)
+
+======================================================================
+SOLVING WINDOW 13/18: window_13
+======================================================================
+  Dates: 2025-10-12 to 2025-11-01 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Window window_13 is INFEASIBLE
+     Model is infeasible. Constraints cannot all be satisfied simultaneously.
+     ⚠ Preserving inventory for Window window_14 (window was infeasible)
+
+======================================================================
+SOLVING WINDOW 14/18: window_14
+======================================================================
+  Dates: 2025-10-23 to 2025-11-12 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_14 solved: OPTIMAL
+     Cost: $1,057,317.54
+     Time: 5.19s
+     → Inventory passed to Window window_15
+
+======================================================================
+SOLVING WINDOW 15/18: window_15
+======================================================================
+  Dates: 2025-11-03 to 2025-11-23 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_15 solved: OPTIMAL
+     Cost: $902,157.38
+     Time: 5.07s
+     → Inventory passed to Window window_16
+
+======================================================================
+SOLVING WINDOW 16/18: window_16
+======================================================================
+  Dates: 2025-11-14 to 2025-12-04 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_16 solved: OPTIMAL
+     Cost: $1,126,689.78
+     Time: 4.96s
+     → Inventory passed to Window window_17
+
+======================================================================
+SOLVING WINDOW 17/18: window_17
+======================================================================
+  Dates: 2025-11-25 to 2025-12-15 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Window window_17 is INFEASIBLE
+     Model is infeasible. Constraints cannot all be satisfied simultaneously.
+     ⚠ Preserving inventory for Window window_18 (window was infeasible)
+
+======================================================================
+SOLVING WINDOW 18/18: window_18
+======================================================================
+  Dates: 2025-12-06 to 2025-12-22 (17 days)
+  Demand entries: 765
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_18 solved: OPTIMAL
+     Cost: $763,250.88
+     Time: 4.38s
+
+======================================================================
+STITCHING SOLUTIONS
+======================================================================
+  window_1: Using 11 committed days (2025-06-02 to 2025-06-12)
+  window_2: Using 11 committed days (2025-06-13 to 2025-06-23)
+  window_4: Using 11 committed days (2025-07-05 to 2025-07-15)
+  window_7: Using 11 committed days (2025-08-07 to 2025-08-17)
+  window_8: Using 11 committed days (2025-08-18 to 2025-08-28)
+  window_9: Using 11 committed days (2025-08-29 to 2025-09-08)
+  window_11: Using 11 committed days (2025-09-20 to 2025-09-30)
+  window_14: Using 11 committed days (2025-10-23 to 2025-11-02)
+  window_15: Using 11 committed days (2025-11-03 to 2025-11-13)
+  window_16: Using 11 committed days (2025-11-14 to 2025-11-24)
+  window_18: Using 17 committed days (2025-12-06 to 2025-12-22)
+
+======================================================================
+ROLLING HORIZON COMPLETE
+======================================================================
+
+RollingHorizonResult: INFEASIBLE: 7 windows, 18 windows, cost=$6,167,422.89, time=61.64s (3.42s/window)
+
+  Infeasible windows: ['window_3', 'window_5', 'window_6', 'window_10', 'window_12', 'window_13', 'window_17']
+
+Results:
+  Total time: 61.8s (1.0 min)
+  Windows: 18
+  Feasible: 11/18
+  ❌ INFEASIBLE
+  Infeasible windows: ['window_3', 'window_5', 'window_6', 'window_10', 'window_12', 'window_13', 'window_17']
+
+================================================================================
+TEST 5/5: 21d/14d with Aggressive Heuristics
+================================================================================
+  Window: 21 days
+  Overlap: 14 days
+  Committed region: 7 days
+  Aggressive heuristics: YES
+
+Solving full 29-week dataset...
+======================================================================
+ROLLING HORIZON SOLVER
+======================================================================
+
+Planning horizon: 2025-06-02 to 2025-12-22 (204 days)
+Window size: 21 days
+Overlap: 14 days
+Temporal aggregation: No
+
+Creating windows...
+  Created 28 windows
+    1. Window[window_1]: 2025-06-02 to 2025-06-22 (21d (overlap: 14d))
+    2. Window[window_2]: 2025-06-09 to 2025-06-29 (21d (overlap: 14d))
+    3. Window[window_3]: 2025-06-16 to 2025-07-06 (21d (overlap: 14d))
+    4. Window[window_4]: 2025-06-23 to 2025-07-13 (21d (overlap: 14d))
+    5. Window[window_5]: 2025-06-30 to 2025-07-20 (21d (overlap: 14d))
+    6. Window[window_6]: 2025-07-07 to 2025-07-27 (21d (overlap: 14d))
+    7. Window[window_7]: 2025-07-14 to 2025-08-03 (21d (overlap: 14d))
+    8. Window[window_8]: 2025-07-21 to 2025-08-10 (21d (overlap: 14d))
+    9. Window[window_9]: 2025-07-28 to 2025-08-17 (21d (overlap: 14d))
+    10. Window[window_10]: 2025-08-04 to 2025-08-24 (21d (overlap: 14d))
+    11. Window[window_11]: 2025-08-11 to 2025-08-31 (21d (overlap: 14d))
+    12. Window[window_12]: 2025-08-18 to 2025-09-07 (21d (overlap: 14d))
+    13. Window[window_13]: 2025-08-25 to 2025-09-14 (21d (overlap: 14d))
+    14. Window[window_14]: 2025-09-01 to 2025-09-21 (21d (overlap: 14d))
+    15. Window[window_15]: 2025-09-08 to 2025-09-28 (21d (overlap: 14d))
+    16. Window[window_16]: 2025-09-15 to 2025-10-05 (21d (overlap: 14d))
+    17. Window[window_17]: 2025-09-22 to 2025-10-12 (21d (overlap: 14d))
+    18. Window[window_18]: 2025-09-29 to 2025-10-19 (21d (overlap: 14d))
+    19. Window[window_19]: 2025-10-06 to 2025-10-26 (21d (overlap: 14d))
+    20. Window[window_20]: 2025-10-13 to 2025-11-02 (21d (overlap: 14d))
+    21. Window[window_21]: 2025-10-20 to 2025-11-09 (21d (overlap: 14d))
+    22. Window[window_22]: 2025-10-27 to 2025-11-16 (21d (overlap: 14d))
+    23. Window[window_23]: 2025-11-03 to 2025-11-23 (21d (overlap: 14d))
+    24. Window[window_24]: 2025-11-10 to 2025-11-30 (21d (overlap: 14d))
+    25. Window[window_25]: 2025-11-17 to 2025-12-07 (21d (overlap: 14d))
+    26. Window[window_26]: 2025-11-24 to 2025-12-14 (21d (overlap: 14d))
+    27. Window[window_27]: 2025-12-01 to 2025-12-21 (21d (overlap: 14d))
+    28. Window[window_28]: 2025-12-08 to 2025-12-22 (15d)
+
+======================================================================
+SOLVING WINDOW 1/28: window_1
+======================================================================
+  Dates: 2025-06-02 to 2025-06-22 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_1 solved: OPTIMAL
+     Cost: $937,331.20
+     Time: 6.55s
+     → Inventory passed to Window window_2
+
+======================================================================
+SOLVING WINDOW 2/28: window_2
+======================================================================
+  Dates: 2025-06-09 to 2025-06-29 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_2 solved: OPTIMAL
+     Cost: $933,171.05
+     Time: 5.26s
+     → Inventory passed to Window window_3
+
+======================================================================
+SOLVING WINDOW 3/28: window_3
+======================================================================
+  Dates: 2025-06-16 to 2025-07-06 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_3 solved: OPTIMAL
+     Cost: $925,866.68
+     Time: 4.92s
+     → Inventory passed to Window window_4
+
+======================================================================
+SOLVING WINDOW 4/28: window_4
+======================================================================
+  Dates: 2025-06-23 to 2025-07-13 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_4 solved: OPTIMAL
+     Cost: $937,067.09
+     Time: 5.84s
+     → Inventory passed to Window window_5
+
+======================================================================
+SOLVING WINDOW 5/28: window_5
+======================================================================
+  Dates: 2025-06-30 to 2025-07-20 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_5 solved: OPTIMAL
+     Cost: $940,058.70
+     Time: 6.44s
+     → Inventory passed to Window window_6
+
+======================================================================
+SOLVING WINDOW 6/28: window_6
+======================================================================
+  Dates: 2025-07-07 to 2025-07-27 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_6 solved: OPTIMAL
+     Cost: $956,267.06
+     Time: 5.73s
+     → Inventory passed to Window window_7
+
+======================================================================
+SOLVING WINDOW 7/28: window_7
+======================================================================
+  Dates: 2025-07-14 to 2025-08-03 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_7 solved: OPTIMAL
+     Cost: $935,038.29
+     Time: 1.85s
+     → Inventory passed to Window window_8
+
+======================================================================
+SOLVING WINDOW 8/28: window_8
+======================================================================
+  Dates: 2025-07-21 to 2025-08-10 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_8 solved: OPTIMAL
+     Cost: $927,858.79
+     Time: 4.20s
+     → Inventory passed to Window window_9
+
+======================================================================
+SOLVING WINDOW 9/28: window_9
+======================================================================
+  Dates: 2025-07-28 to 2025-08-17 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_9 solved: OPTIMAL
+     Cost: $933,588.80
+     Time: 5.47s
+     → Inventory passed to Window window_10
+
+======================================================================
+SOLVING WINDOW 10/28: window_10
+======================================================================
+  Dates: 2025-08-04 to 2025-08-24 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_10 solved: OPTIMAL
+     Cost: $936,462.15
+     Time: 7.55s
+     → Inventory passed to Window window_11
+
+======================================================================
+SOLVING WINDOW 11/28: window_11
+======================================================================
+  Dates: 2025-08-11 to 2025-08-31 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_11 solved: OPTIMAL
+     Cost: $937,808.00
+     Time: 6.16s
+     → Inventory passed to Window window_12
+
+======================================================================
+SOLVING WINDOW 12/28: window_12
+======================================================================
+  Dates: 2025-08-18 to 2025-09-07 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_12 solved: OPTIMAL
+     Cost: $911,909.86
+     Time: 4.80s
+     → Inventory passed to Window window_13
+
+======================================================================
+SOLVING WINDOW 13/28: window_13
+======================================================================
+  Dates: 2025-08-25 to 2025-09-14 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_13 solved: OPTIMAL
+     Cost: $906,173.30
+     Time: 8.23s
+     → Inventory passed to Window window_14
+
+======================================================================
+SOLVING WINDOW 14/28: window_14
+======================================================================
+  Dates: 2025-09-01 to 2025-09-21 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_14 solved: OPTIMAL
+     Cost: $921,929.88
+     Time: 7.37s
+     → Inventory passed to Window window_15
+
+======================================================================
+SOLVING WINDOW 15/28: window_15
+======================================================================
+  Dates: 2025-09-08 to 2025-09-28 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_15 solved: OPTIMAL
+     Cost: $928,110.35
+     Time: 4.82s
+     → Inventory passed to Window window_16
+
+======================================================================
+SOLVING WINDOW 16/28: window_16
+======================================================================
+  Dates: 2025-09-15 to 2025-10-05 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_16 solved: OPTIMAL
+     Cost: $923,305.39
+     Time: 6.58s
+     → Inventory passed to Window window_17
+
+======================================================================
+SOLVING WINDOW 17/28: window_17
+======================================================================
+  Dates: 2025-09-22 to 2025-10-12 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_17 solved: OPTIMAL
+     Cost: $908,284.19
+     Time: 5.17s
+     → Inventory passed to Window window_18
+
+======================================================================
+SOLVING WINDOW 18/28: window_18
+======================================================================
+  Dates: 2025-09-29 to 2025-10-19 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_18 solved: OPTIMAL
+     Cost: $912,250.10
+     Time: 5.26s
+     → Inventory passed to Window window_19
+
+======================================================================
+SOLVING WINDOW 19/28: window_19
+======================================================================
+  Dates: 2025-10-06 to 2025-10-26 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_19 solved: OPTIMAL
+     Cost: $938,480.94
+     Time: 6.02s
+     → Inventory passed to Window window_20
+
+======================================================================
+SOLVING WINDOW 20/28: window_20
+======================================================================
+  Dates: 2025-10-13 to 2025-11-02 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_20 solved: OPTIMAL
+     Cost: $934,274.38
+     Time: 5.39s
+     → Inventory passed to Window window_21
+
+======================================================================
+SOLVING WINDOW 21/28: window_21
+======================================================================
+  Dates: 2025-10-20 to 2025-11-09 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_21 solved: OPTIMAL
+     Cost: $928,663.37
+     Time: 4.85s
+     → Inventory passed to Window window_22
+
+======================================================================
+SOLVING WINDOW 22/28: window_22
+======================================================================
+  Dates: 2025-10-27 to 2025-11-16 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_22 solved: OPTIMAL
+     Cost: $897,928.08
+     Time: 5.93s
+     → Inventory passed to Window window_23
+
+======================================================================
+SOLVING WINDOW 23/28: window_23
+======================================================================
+  Dates: 2025-11-03 to 2025-11-23 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_23 solved: OPTIMAL
+     Cost: $902,157.38
+     Time: 5.16s
+     → Inventory passed to Window window_24
+
+======================================================================
+SOLVING WINDOW 24/28: window_24
+======================================================================
+  Dates: 2025-11-10 to 2025-11-30 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_24 solved: OPTIMAL
+     Cost: $905,058.97
+     Time: 6.70s
+     → Inventory passed to Window window_25
+
+======================================================================
+SOLVING WINDOW 25/28: window_25
+======================================================================
+  Dates: 2025-11-17 to 2025-12-07 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_25 solved: OPTIMAL
+     Cost: $928,061.64
+     Time: 5.70s
+     → Inventory passed to Window window_26
+
+======================================================================
+SOLVING WINDOW 26/28: window_26
+======================================================================
+  Dates: 2025-11-24 to 2025-12-14 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_26 solved: OPTIMAL
+     Cost: $933,200.09
+     Time: 5.86s
+     → Inventory passed to Window window_27
+
+======================================================================
+SOLVING WINDOW 27/28: window_27
+======================================================================
+  Dates: 2025-12-01 to 2025-12-21 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_27 solved: OPTIMAL
+     Cost: $947,669.95
+     Time: 5.09s
+     → Inventory passed to Window window_28
+
+======================================================================
+SOLVING WINDOW 28/28: window_28
+======================================================================
+  Dates: 2025-12-08 to 2025-12-22 (15 days)
+  Demand entries: 675
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_28 solved: OPTIMAL
+     Cost: $520,473.65
+     Time: 2.01s
+
+======================================================================
+STITCHING SOLUTIONS
+======================================================================
+  window_1: Using 7 committed days (2025-06-02 to 2025-06-08)
+  window_2: Using 7 committed days (2025-06-09 to 2025-06-15)
+  window_3: Using 7 committed days (2025-06-16 to 2025-06-22)
+  window_4: Using 7 committed days (2025-06-23 to 2025-06-29)
+  window_5: Using 7 committed days (2025-06-30 to 2025-07-06)
+  window_6: Using 7 committed days (2025-07-07 to 2025-07-13)
+  window_7: Using 7 committed days (2025-07-14 to 2025-07-20)
+  window_8: Using 7 committed days (2025-07-21 to 2025-07-27)
+  window_9: Using 7 committed days (2025-07-28 to 2025-08-03)
+  window_10: Using 7 committed days (2025-08-04 to 2025-08-10)
+  window_11: Using 7 committed days (2025-08-11 to 2025-08-17)
+  window_12: Using 7 committed days (2025-08-18 to 2025-08-24)
+  window_13: Using 7 committed days (2025-08-25 to 2025-08-31)
+  window_14: Using 7 committed days (2025-09-01 to 2025-09-07)
+  window_15: Using 7 committed days (2025-09-08 to 2025-09-14)
+  window_16: Using 7 committed days (2025-09-15 to 2025-09-21)
+  window_17: Using 7 committed days (2025-09-22 to 2025-09-28)
+  window_18: Using 7 committed days (2025-09-29 to 2025-10-05)
+  window_19: Using 7 committed days (2025-10-06 to 2025-10-12)
+  window_20: Using 7 committed days (2025-10-13 to 2025-10-19)
+  window_21: Using 7 committed days (2025-10-20 to 2025-10-26)
+  window_22: Using 7 committed days (2025-10-27 to 2025-11-02)
+  window_23: Using 7 committed days (2025-11-03 to 2025-11-09)
+  window_24: Using 7 committed days (2025-11-10 to 2025-11-16)
+  window_25: Using 7 committed days (2025-11-17 to 2025-11-23)
+  window_26: Using 7 committed days (2025-11-24 to 2025-11-30)
+  window_27: Using 7 committed days (2025-12-01 to 2025-12-07)
+  window_28: Using 15 committed days (2025-12-08 to 2025-12-22)
+
+======================================================================
+ROLLING HORIZON COMPLETE
+======================================================================
+
+RollingHorizonResult: ALL FEASIBLE, 28 windows, cost=$8,863,132.21, time=154.91s (5.53s/window)
+
+Results:
+  Total time: 155.5s (2.6 min)
+  Windows: 28
+  Feasible: 28/28
+  ✅ ALL FEASIBLE
+  Total cost: $8,863,132.21
+  Avg time/window: 5.6s
+
+================================================================================
+SUMMARY OF ALL TESTS
+================================================================================
+
+Configuration                                 Feasible   Cost            Time      
+--------------------------------------------------------------------------------
+14d/7d Baseline (No Heuristics)               ✅ Yes      $6,888,055      97s       
+14d/7d with Aggressive Heuristics             ✅ Yes      $6,889,184      41s       
+21d/7d with Aggressive Heuristics             ✅ Yes      $8,874,098      74s       
+21d/10d with Aggressive Heuristics            ❌ No       -               62s       
+21d/14d with Aggressive Heuristics            ✅ Yes      $8,863,132      155s      
+
+================================================================================
+COST COMPARISON vs BASELINE
+================================================================================
+
+14d/7d with Aggressive Heuristics             ↑ $     1,129 ( +0.02%)
+21d/7d with Aggressive Heuristics             ↑ $ 1,986,043 (+28.83%)
+21d/14d with Aggressive Heuristics            ↑ $ 1,975,077 (+28.67%)
+
+================================================================================
+RECOMMENDATIONS
+================================================================================
+
+✅ 21-DAY WINDOWS ARE FEASIBLE with aggressive heuristics!
+
+Best 21-day configuration: 21d/14d with Aggressive Heuristics
+  Cost: $8,863,132.21
+  Time: 155s (2.6 min)
+  Cost vs baseline: +$1,975,077 (+28.67% more expensive)
+
+→ Can now use hierarchical 3-week configurations for better lookahead
+
+================================================================================

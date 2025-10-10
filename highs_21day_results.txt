@@ -1,0 +1,14 @@
+Loading data...
+
+21-day window: 2025-06-02 to 2025-06-22
+Total demand: 249,436 units
+
+Building model...
+Model built: 9220 variables, 2505 constraints
+
+================================================================================
+21-DAY WINDOW SCALING TEST: CBC vs HiGHS
+================================================================================
+
+Test 1: CBC on 21-day window
+  Timeout: 5 minutes

@@ -1,0 +1,90 @@
+Loading data...
+
+======================================================================
+ROUTE SHELF LIFE ANALYSIS
+======================================================================
+
+Shelf life rules:
+  Ambient: 17 days
+  Frozen: 120 days
+  Thawed (6130): 14 days
+  Minimum at delivery: 7 days
+  Maximum transit time: 10 days
+
+Enumerating routes for 9 destinations...
+
+======================================================================
+ENUMERATED ROUTES: 9 total
+======================================================================
+
+6103:
+  Total routes enumerated: 1
+  Feasible routes: 1
+  Infeasible routes: 0
+  Feasible route details:
+    - 2.0d transit, 15d remaining (ambient)
+
+6104:
+  Total routes enumerated: 1
+  Feasible routes: 1
+  Infeasible routes: 0
+  Feasible route details:
+    - 1.0d transit, 16d remaining (ambient)
+
+6105:
+  Total routes enumerated: 1
+  Feasible routes: 1
+  Infeasible routes: 0
+  Feasible route details:
+    - 1.5d transit, 16d remaining (ambient)
+
+6110:
+  Total routes enumerated: 1
+  Feasible routes: 1
+  Infeasible routes: 0
+  Feasible route details:
+    - 1.5d transit, 16d remaining (ambient)
+
+6120:
+  Total routes enumerated: 1
+  Feasible routes: 1
+  Infeasible routes: 0
+  Feasible route details:
+    - 3.0d transit, 14d remaining (ambient)
+
+6123:
+  Total routes enumerated: 1
+  Feasible routes: 1
+  Infeasible routes: 0
+  Feasible route details:
+    - 1.5d transit, 16d remaining (ambient)
+
+6125:
+  Total routes enumerated: 1
+  Feasible routes: 1
+  Infeasible routes: 0
+  Feasible route details:
+    - 1.0d transit, 16d remaining (ambient)
+
+6130:
+  Total routes enumerated: 1
+  Feasible routes: 1
+  Infeasible routes: 0
+  Feasible route details:
+    - 3.5d transit, 14d remaining (frozen)
+
+6134:
+  Total routes enumerated: 1
+  Feasible routes: 1
+  Infeasible routes: 0
+  Feasible route details:
+    - 2.5d transit, 14d remaining (ambient)
+
+======================================================================
+SUMMARY
+======================================================================
+Total routes: 9
+  Feasible: 9
+  Infeasible: 0
+
+Destinations with no feasible routes: 0

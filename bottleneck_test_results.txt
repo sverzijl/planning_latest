@@ -1,0 +1,28 @@
+======================================================================
+BOTTLENECK HYPOTHESIS TEST
+======================================================================
+
+Hypothesis:
+  Week 2 capacity bottleneck (demand > capacity) causes the cliff
+  by creating temporal symmetry in production timing decisions.
+
+Prediction:
+  - WITH bottleneck (original demand):    >60s or timeout
+  - WITHOUT bottleneck (reduced demand):  <5s (fast)
+
+Loading data...
+
+======================================================================
+TEST: ORIGINAL FORECAST (With Week 2 Bottleneck)
+======================================================================
+
+Total demand (3 weeks): 249,436 units
+  Week 1: 83,142 units
+  Week 2: 82,893 units
+  Week 3: 83,401 units
+
+Building model...
+  Variables: 5,220
+  Binary variables: 300
+
+Solving (timeout: 60s)...

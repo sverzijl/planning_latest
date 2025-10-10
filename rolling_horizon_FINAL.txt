@@ -1,0 +1,784 @@
+======================================================================
+ROLLING HORIZON - FULL 29-WEEK DATASET (7-DAY WINDOWS)
+======================================================================
+
+Loading data...
+
+Full Dataset:
+  Total demand: 2,407,299 units
+  Date range: 2025-06-02 to 2025-12-22 (204 days)
+
+======================================================================
+CONFIGURATION
+======================================================================
+
+Rolling Horizon:
+  Window size: 7 days
+  Overlap: 3 days
+  Expected windows: ~51
+  Expected time: <60s per window
+
+======================================================================
+SOLVING
+======================================================================
+======================================================================
+ROLLING HORIZON SOLVER
+======================================================================
+
+Planning horizon: 2025-06-02 to 2025-12-22 (204 days)
+Window size: 7 days
+Overlap: 3 days
+Temporal aggregation: No
+
+Creating windows...
+  Created 51 windows
+    1. Window[window_1]: 2025-06-02 to 2025-06-08 (7d (overlap: 3d))
+    2. Window[window_2]: 2025-06-06 to 2025-06-12 (7d (overlap: 3d))
+    3. Window[window_3]: 2025-06-10 to 2025-06-16 (7d (overlap: 3d))
+    4. Window[window_4]: 2025-06-14 to 2025-06-20 (7d (overlap: 3d))
+    5. Window[window_5]: 2025-06-18 to 2025-06-24 (7d (overlap: 3d))
+    6. Window[window_6]: 2025-06-22 to 2025-06-28 (7d (overlap: 3d))
+    7. Window[window_7]: 2025-06-26 to 2025-07-02 (7d (overlap: 3d))
+    8. Window[window_8]: 2025-06-30 to 2025-07-06 (7d (overlap: 3d))
+    9. Window[window_9]: 2025-07-04 to 2025-07-10 (7d (overlap: 3d))
+    10. Window[window_10]: 2025-07-08 to 2025-07-14 (7d (overlap: 3d))
+    11. Window[window_11]: 2025-07-12 to 2025-07-18 (7d (overlap: 3d))
+    12. Window[window_12]: 2025-07-16 to 2025-07-22 (7d (overlap: 3d))
+    13. Window[window_13]: 2025-07-20 to 2025-07-26 (7d (overlap: 3d))
+    14. Window[window_14]: 2025-07-24 to 2025-07-30 (7d (overlap: 3d))
+    15. Window[window_15]: 2025-07-28 to 2025-08-03 (7d (overlap: 3d))
+    16. Window[window_16]: 2025-08-01 to 2025-08-07 (7d (overlap: 3d))
+    17. Window[window_17]: 2025-08-05 to 2025-08-11 (7d (overlap: 3d))
+    18. Window[window_18]: 2025-08-09 to 2025-08-15 (7d (overlap: 3d))
+    19. Window[window_19]: 2025-08-13 to 2025-08-19 (7d (overlap: 3d))
+    20. Window[window_20]: 2025-08-17 to 2025-08-23 (7d (overlap: 3d))
+    21. Window[window_21]: 2025-08-21 to 2025-08-27 (7d (overlap: 3d))
+    22. Window[window_22]: 2025-08-25 to 2025-08-31 (7d (overlap: 3d))
+    23. Window[window_23]: 2025-08-29 to 2025-09-04 (7d (overlap: 3d))
+    24. Window[window_24]: 2025-09-02 to 2025-09-08 (7d (overlap: 3d))
+    25. Window[window_25]: 2025-09-06 to 2025-09-12 (7d (overlap: 3d))
+    26. Window[window_26]: 2025-09-10 to 2025-09-16 (7d (overlap: 3d))
+    27. Window[window_27]: 2025-09-14 to 2025-09-20 (7d (overlap: 3d))
+    28. Window[window_28]: 2025-09-18 to 2025-09-24 (7d (overlap: 3d))
+    29. Window[window_29]: 2025-09-22 to 2025-09-28 (7d (overlap: 3d))
+    30. Window[window_30]: 2025-09-26 to 2025-10-02 (7d (overlap: 3d))
+    31. Window[window_31]: 2025-09-30 to 2025-10-06 (7d (overlap: 3d))
+    32. Window[window_32]: 2025-10-04 to 2025-10-10 (7d (overlap: 3d))
+    33. Window[window_33]: 2025-10-08 to 2025-10-14 (7d (overlap: 3d))
+    34. Window[window_34]: 2025-10-12 to 2025-10-18 (7d (overlap: 3d))
+    35. Window[window_35]: 2025-10-16 to 2025-10-22 (7d (overlap: 3d))
+    36. Window[window_36]: 2025-10-20 to 2025-10-26 (7d (overlap: 3d))
+    37. Window[window_37]: 2025-10-24 to 2025-10-30 (7d (overlap: 3d))
+    38. Window[window_38]: 2025-10-28 to 2025-11-03 (7d (overlap: 3d))
+    39. Window[window_39]: 2025-11-01 to 2025-11-07 (7d (overlap: 3d))
+    40. Window[window_40]: 2025-11-05 to 2025-11-11 (7d (overlap: 3d))
+    41. Window[window_41]: 2025-11-09 to 2025-11-15 (7d (overlap: 3d))
+    42. Window[window_42]: 2025-11-13 to 2025-11-19 (7d (overlap: 3d))
+    43. Window[window_43]: 2025-11-17 to 2025-11-23 (7d (overlap: 3d))
+    44. Window[window_44]: 2025-11-21 to 2025-11-27 (7d (overlap: 3d))
+    45. Window[window_45]: 2025-11-25 to 2025-12-01 (7d (overlap: 3d))
+    46. Window[window_46]: 2025-11-29 to 2025-12-05 (7d (overlap: 3d))
+    47. Window[window_47]: 2025-12-03 to 2025-12-09 (7d (overlap: 3d))
+    48. Window[window_48]: 2025-12-07 to 2025-12-13 (7d (overlap: 3d))
+    49. Window[window_49]: 2025-12-11 to 2025-12-17 (7d (overlap: 3d))
+    50. Window[window_50]: 2025-12-15 to 2025-12-21 (7d (overlap: 3d))
+    51. Window[window_51]: 2025-12-19 to 2025-12-22 (4d)
+
+======================================================================
+SOLVING WINDOW 1/51: window_1
+======================================================================
+  Dates: 2025-06-02 to 2025-06-08 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_1 solved: OPTIMAL
+     Cost: $170,900.17
+     Time: 1.18s
+
+======================================================================
+SOLVING WINDOW 2/51: window_2
+======================================================================
+  Dates: 2025-06-06 to 2025-06-12 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_2 solved: OPTIMAL
+     Cost: $333,621.11
+     Time: 1.79s
+
+======================================================================
+SOLVING WINDOW 3/51: window_3
+======================================================================
+  Dates: 2025-06-10 to 2025-06-16 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Window window_3 is INFEASIBLE
+     Model is infeasible. Constraints cannot all be satisfied simultaneously.
+
+======================================================================
+SOLVING WINDOW 4/51: window_4
+======================================================================
+  Dates: 2025-06-14 to 2025-06-20 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_4 solved: OPTIMAL
+     Cost: $244,317.20
+     Time: 0.91s
+
+======================================================================
+SOLVING WINDOW 5/51: window_5
+======================================================================
+  Dates: 2025-06-18 to 2025-06-24 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Window window_5 is INFEASIBLE
+     Model is infeasible. Constraints cannot all be satisfied simultaneously.
+
+======================================================================
+SOLVING WINDOW 6/51: window_6
+======================================================================
+  Dates: 2025-06-22 to 2025-06-28 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Window window_6 is INFEASIBLE
+     Model is infeasible. Constraints cannot all be satisfied simultaneously.
+
+======================================================================
+SOLVING WINDOW 7/51: window_7
+======================================================================
+  Dates: 2025-06-26 to 2025-07-02 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_7 solved: OPTIMAL
+     Cost: $263,805.31
+     Time: 0.86s
+
+======================================================================
+SOLVING WINDOW 8/51: window_8
+======================================================================
+  Dates: 2025-06-30 to 2025-07-06 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_8 solved: OPTIMAL
+     Cost: $173,028.11
+     Time: 1.12s
+
+======================================================================
+SOLVING WINDOW 9/51: window_9
+======================================================================
+  Dates: 2025-07-04 to 2025-07-10 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_9 solved: OPTIMAL
+     Cost: $336,996.08
+     Time: 1.06s
+
+======================================================================
+SOLVING WINDOW 10/51: window_10
+======================================================================
+  Dates: 2025-07-08 to 2025-07-14 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Window window_10 is INFEASIBLE
+     Model is infeasible. Constraints cannot all be satisfied simultaneously.
+
+======================================================================
+SOLVING WINDOW 11/51: window_11
+======================================================================
+  Dates: 2025-07-12 to 2025-07-18 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_11 solved: OPTIMAL
+     Cost: $248,034.76
+     Time: 1.26s
+
+======================================================================
+SOLVING WINDOW 12/51: window_12
+======================================================================
+  Dates: 2025-07-16 to 2025-07-22 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Window window_12 is INFEASIBLE
+     Model is infeasible. Constraints cannot all be satisfied simultaneously.
+
+======================================================================
+SOLVING WINDOW 13/51: window_13
+======================================================================
+  Dates: 2025-07-20 to 2025-07-26 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Window window_13 is INFEASIBLE
+     Model is infeasible. Constraints cannot all be satisfied simultaneously.
+
+======================================================================
+SOLVING WINDOW 14/51: window_14
+======================================================================
+  Dates: 2025-07-24 to 2025-07-30 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_14 solved: OPTIMAL
+     Cost: $265,672.29
+     Time: 0.71s
+
+======================================================================
+SOLVING WINDOW 15/51: window_15
+======================================================================
+  Dates: 2025-07-28 to 2025-08-03 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_15 solved: OPTIMAL
+     Cost: $169,313.64
+     Time: 1.20s
+
+======================================================================
+SOLVING WINDOW 16/51: window_16
+======================================================================
+  Dates: 2025-08-01 to 2025-08-07 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_16 solved: OPTIMAL
+     Cost: $325,482.33
+     Time: 1.54s
+
+======================================================================
+SOLVING WINDOW 17/51: window_17
+======================================================================
+  Dates: 2025-08-05 to 2025-08-11 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Window window_17 is INFEASIBLE
+     Model is infeasible. Constraints cannot all be satisfied simultaneously.
+
+======================================================================
+SOLVING WINDOW 18/51: window_18
+======================================================================
+  Dates: 2025-08-09 to 2025-08-15 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_18 solved: OPTIMAL
+     Cost: $245,546.98
+     Time: 0.99s
+
+======================================================================
+SOLVING WINDOW 19/51: window_19
+======================================================================
+  Dates: 2025-08-13 to 2025-08-19 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Window window_19 is INFEASIBLE
+     Model is infeasible. Constraints cannot all be satisfied simultaneously.
+
+======================================================================
+SOLVING WINDOW 20/51: window_20
+======================================================================
+  Dates: 2025-08-17 to 2025-08-23 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Window window_20 is INFEASIBLE
+     Model is infeasible. Constraints cannot all be satisfied simultaneously.
+
+======================================================================
+SOLVING WINDOW 21/51: window_21
+======================================================================
+  Dates: 2025-08-21 to 2025-08-27 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_21 solved: OPTIMAL
+     Cost: $257,233.32
+     Time: 0.86s
+
+======================================================================
+SOLVING WINDOW 22/51: window_22
+======================================================================
+  Dates: 2025-08-25 to 2025-08-31 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_22 solved: OPTIMAL
+     Cost: $169,122.28
+     Time: 1.48s
+
+======================================================================
+SOLVING WINDOW 23/51: window_23
+======================================================================
+  Dates: 2025-08-29 to 2025-09-04 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_23 solved: OPTIMAL
+     Cost: $323,359.40
+     Time: 1.03s
+
+======================================================================
+SOLVING WINDOW 24/51: window_24
+======================================================================
+  Dates: 2025-09-02 to 2025-09-08 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Window window_24 is INFEASIBLE
+     Model is infeasible. Constraints cannot all be satisfied simultaneously.
+
+======================================================================
+SOLVING WINDOW 25/51: window_25
+======================================================================
+  Dates: 2025-09-06 to 2025-09-12 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_25 solved: OPTIMAL
+     Cost: $232,023.42
+     Time: 0.78s
+
+======================================================================
+SOLVING WINDOW 26/51: window_26
+======================================================================
+  Dates: 2025-09-10 to 2025-09-16 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Window window_26 is INFEASIBLE
+     Model is infeasible. Constraints cannot all be satisfied simultaneously.
+
+======================================================================
+SOLVING WINDOW 27/51: window_27
+======================================================================
+  Dates: 2025-09-14 to 2025-09-20 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Window window_27 is INFEASIBLE
+     Model is infeasible. Constraints cannot all be satisfied simultaneously.
+
+======================================================================
+SOLVING WINDOW 28/51: window_28
+======================================================================
+  Dates: 2025-09-18 to 2025-09-24 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_28 solved: OPTIMAL
+     Cost: $266,533.29
+     Time: 0.65s
+
+======================================================================
+SOLVING WINDOW 29/51: window_29
+======================================================================
+  Dates: 2025-09-22 to 2025-09-28 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_29 solved: OPTIMAL
+     Cost: $166,967.76
+     Time: 1.01s
+
+======================================================================
+SOLVING WINDOW 30/51: window_30
+======================================================================
+  Dates: 2025-09-26 to 2025-10-02 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_30 solved: OPTIMAL
+     Cost: $318,383.28
+     Time: 0.77s
+
+======================================================================
+SOLVING WINDOW 31/51: window_31
+======================================================================
+  Dates: 2025-09-30 to 2025-10-06 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Window window_31 is INFEASIBLE
+     Model is infeasible. Constraints cannot all be satisfied simultaneously.
+
+======================================================================
+SOLVING WINDOW 32/51: window_32
+======================================================================
+  Dates: 2025-10-04 to 2025-10-10 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_32 solved: OPTIMAL
+     Cost: $234,352.37
+     Time: 0.61s
+
+======================================================================
+SOLVING WINDOW 33/51: window_33
+======================================================================
+  Dates: 2025-10-08 to 2025-10-14 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Window window_33 is INFEASIBLE
+     Model is infeasible. Constraints cannot all be satisfied simultaneously.
+
+======================================================================
+SOLVING WINDOW 34/51: window_34
+======================================================================
+  Dates: 2025-10-12 to 2025-10-18 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Window window_34 is INFEASIBLE
+     Model is infeasible. Constraints cannot all be satisfied simultaneously.
+
+======================================================================
+SOLVING WINDOW 35/51: window_35
+======================================================================
+  Dates: 2025-10-16 to 2025-10-22 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_35 solved: OPTIMAL
+     Cost: $258,683.71
+     Time: 0.61s
+
+======================================================================
+SOLVING WINDOW 36/51: window_36
+======================================================================
+  Dates: 2025-10-20 to 2025-10-26 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_36 solved: OPTIMAL
+     Cost: $173,451.87
+     Time: 1.16s
+
+======================================================================
+SOLVING WINDOW 37/51: window_37
+======================================================================
+  Dates: 2025-10-24 to 2025-10-30 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_37 solved: OPTIMAL
+     Cost: $326,758.09
+     Time: 1.02s
+
+======================================================================
+SOLVING WINDOW 38/51: window_38
+======================================================================
+  Dates: 2025-10-28 to 2025-11-03 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Window window_38 is INFEASIBLE
+     Model is infeasible. Constraints cannot all be satisfied simultaneously.
+
+======================================================================
+SOLVING WINDOW 39/51: window_39
+======================================================================
+  Dates: 2025-11-01 to 2025-11-07 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_39 solved: OPTIMAL
+     Cost: $232,699.42
+     Time: 0.90s
+
+======================================================================
+SOLVING WINDOW 40/51: window_40
+======================================================================
+  Dates: 2025-11-05 to 2025-11-11 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Window window_40 is INFEASIBLE
+     Model is infeasible. Constraints cannot all be satisfied simultaneously.
+
+======================================================================
+SOLVING WINDOW 41/51: window_41
+======================================================================
+  Dates: 2025-11-09 to 2025-11-15 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Window window_41 is INFEASIBLE
+     Model is infeasible. Constraints cannot all be satisfied simultaneously.
+
+======================================================================
+SOLVING WINDOW 42/51: window_42
+======================================================================
+  Dates: 2025-11-13 to 2025-11-19 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_42 solved: OPTIMAL
+     Cost: $245,273.01
+     Time: 0.74s
+
+======================================================================
+SOLVING WINDOW 43/51: window_43
+======================================================================
+  Dates: 2025-11-17 to 2025-11-23 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_43 solved: OPTIMAL
+     Cost: $162,650.10
+     Time: 1.16s
+
+======================================================================
+SOLVING WINDOW 44/51: window_44
+======================================================================
+  Dates: 2025-11-21 to 2025-11-27 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_44 solved: OPTIMAL
+     Cost: $320,325.72
+     Time: 1.19s
+
+======================================================================
+SOLVING WINDOW 45/51: window_45
+======================================================================
+  Dates: 2025-11-25 to 2025-12-01 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Window window_45 is INFEASIBLE
+     Model is infeasible. Constraints cannot all be satisfied simultaneously.
+
+======================================================================
+SOLVING WINDOW 46/51: window_46
+======================================================================
+  Dates: 2025-11-29 to 2025-12-05 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_46 solved: OPTIMAL
+     Cost: $232,711.46
+     Time: 0.81s
+
+======================================================================
+SOLVING WINDOW 47/51: window_47
+======================================================================
+  Dates: 2025-12-03 to 2025-12-09 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Window window_47 is INFEASIBLE
+     Model is infeasible. Constraints cannot all be satisfied simultaneously.
+
+======================================================================
+SOLVING WINDOW 48/51: window_48
+======================================================================
+  Dates: 2025-12-07 to 2025-12-13 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Window window_48 is INFEASIBLE
+     Model is infeasible. Constraints cannot all be satisfied simultaneously.
+
+======================================================================
+SOLVING WINDOW 49/51: window_49
+======================================================================
+  Dates: 2025-12-11 to 2025-12-17 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_49 solved: OPTIMAL
+     Cost: $254,887.16
+     Time: 0.87s
+
+======================================================================
+SOLVING WINDOW 50/51: window_50
+======================================================================
+  Dates: 2025-12-15 to 2025-12-21 (7 days)
+  Demand entries: 315
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_50 solved: OPTIMAL
+     Cost: $170,324.81
+     Time: 1.05s
+
+======================================================================
+SOLVING WINDOW 51/51: window_51
+======================================================================
+  Dates: 2025-12-19 to 2025-12-22 (4 days)
+  Demand entries: 180
+  Building optimization model...
+  Solving with cbc...
+
+  ✅ Window window_51 solved: OPTIMAL
+     Cost: $176,327.72
+     Time: 0.61s
+
+======================================================================
+STITCHING SOLUTIONS
+======================================================================
+  window_1: Using 4 committed days (2025-06-02 to 2025-06-05)
+  window_2: Using 4 committed days (2025-06-06 to 2025-06-09)
+  window_4: Using 4 committed days (2025-06-14 to 2025-06-17)
+  window_7: Using 4 committed days (2025-06-26 to 2025-06-29)
+  window_8: Using 4 committed days (2025-06-30 to 2025-07-03)
+  window_9: Using 4 committed days (2025-07-04 to 2025-07-07)
+  window_11: Using 4 committed days (2025-07-12 to 2025-07-15)
+  window_14: Using 4 committed days (2025-07-24 to 2025-07-27)
+  window_15: Using 4 committed days (2025-07-28 to 2025-07-31)
+  window_16: Using 4 committed days (2025-08-01 to 2025-08-04)
+  window_18: Using 4 committed days (2025-08-09 to 2025-08-12)
+  window_21: Using 4 committed days (2025-08-21 to 2025-08-24)
+  window_22: Using 4 committed days (2025-08-25 to 2025-08-28)
+  window_23: Using 4 committed days (2025-08-29 to 2025-09-01)
+  window_25: Using 4 committed days (2025-09-06 to 2025-09-09)
+  window_28: Using 4 committed days (2025-09-18 to 2025-09-21)
+  window_29: Using 4 committed days (2025-09-22 to 2025-09-25)
+  window_30: Using 4 committed days (2025-09-26 to 2025-09-29)
+  window_32: Using 4 committed days (2025-10-04 to 2025-10-07)
+  window_35: Using 4 committed days (2025-10-16 to 2025-10-19)
+  window_36: Using 4 committed days (2025-10-20 to 2025-10-23)
+  window_37: Using 4 committed days (2025-10-24 to 2025-10-27)
+  window_39: Using 4 committed days (2025-11-01 to 2025-11-04)
+  window_42: Using 4 committed days (2025-11-13 to 2025-11-16)
+  window_43: Using 4 committed days (2025-11-17 to 2025-11-20)
+  window_44: Using 4 committed days (2025-11-21 to 2025-11-24)
+  window_46: Using 4 committed days (2025-11-29 to 2025-12-02)
+  window_49: Using 4 committed days (2025-12-11 to 2025-12-14)
+  window_50: Using 4 committed days (2025-12-15 to 2025-12-18)
+  window_51: Using 4 committed days (2025-12-19 to 2025-12-22)
+
+======================================================================
+ROLLING HORIZON COMPLETE
+======================================================================
+
+RollingHorizonResult: INFEASIBLE: 21 windows, 51 windows, cost=$4,246,303.98, time=36.49s (0.72s/window)
+
+  Infeasible windows: ['window_3', 'window_5', 'window_6', 'window_10', 'window_12', 'window_13', 'window_17', 'window_19', 'window_20', 'window_24', 'window_26', 'window_27', 'window_31', 'window_33', 'window_34', 'window_38', 'window_40', 'window_41', 'window_45', 'window_47', 'window_48']
+
+======================================================================
+RESULTS
+======================================================================
+
+Status: ❌ INFEASIBLE
+Windows: 51
+Total solve time: 36.5s (0.6 min)
+Average per window: 0.7s
+
+======================================================================
+PER-WINDOW TIMES
+======================================================================
+ 1. window_1: ✅   1.2s
+ 2. window_2: ✅   1.8s
+ 3. window_3: ❌   0.4s
+ 4. window_4: ✅   0.9s
+ 5. window_5: ❌   0.3s
+ 6. window_6: ❌   0.3s
+ 7. window_7: ✅   0.9s
+ 8. window_8: ✅   1.1s
+ 9. window_9: ✅   1.1s
+10. window_10: ❌   0.3s
+11. window_11: ✅   1.3s
+12. window_12: ❌   0.2s
+13. window_13: ❌   0.3s
+14. window_14: ✅   0.7s
+15. window_15: ✅   1.2s
+16. window_16: ✅   1.5s
+17. window_17: ❌   0.3s
+18. window_18: ✅   1.0s
+19. window_19: ❌   0.2s
+20. window_20: ❌   0.3s
+21. window_21: ✅   0.9s
+22. window_22: ✅   1.5s
+23. window_23: ✅   1.0s
+24. window_24: ❌   0.2s
+25. window_25: ✅   0.8s
+26. window_26: ❌   0.3s
+27. window_27: ❌   0.5s
+28. window_28: ✅   0.6s
+29. window_29: ✅   1.0s
+30. window_30: ✅   0.8s
+31. window_31: ❌   0.2s
+32. window_32: ✅   0.6s
+33. window_33: ❌   0.2s
+34. window_34: ❌   0.4s
+35. window_35: ✅   0.6s
+36. window_36: ✅   1.2s
+37. window_37: ✅   1.0s
+38. window_38: ❌   0.2s
+39. window_39: ✅   0.9s
+40. window_40: ❌   0.6s
+41. window_41: ❌   0.2s
+42. window_42: ✅   0.7s
+43. window_43: ✅   1.2s
+44. window_44: ✅   1.2s
+45. window_45: ❌   0.2s
+46. window_46: ✅   0.8s
+47. window_47: ❌   0.4s
+48. window_48: ❌   0.3s
+49. window_49: ✅   0.9s
+50. window_50: ✅   1.0s
+51. window_51: ✅   0.6s
+
+======================================================================

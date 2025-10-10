@@ -1,0 +1,75 @@
+================================================================================
+INVENTORY INFEASIBILITY DIAGNOSIS
+================================================================================
+
+Loading data...
+Filtered to 2025-10-13 - 2025-11-02: 945 forecast entries
+Products: 5
+Locations: 11
+
+================================================================================
+TESTING WITH INITIAL INVENTORY: 0 units per product
+Total initial inventory: 0 units
+================================================================================
+
+Building optimization model...
+Model built:
+  Planning dates: 25 days
+  Routes: 9 routes
+
+Writing LP file for examination...
+✗ Failed to write LP file: 'IntegratedProductionDistributionModel' object has no attribute '_build_optimization_model'
+
+Solving...
+
+Result: infeasible
+✗ INFEASIBLE with 0 units initial inventory
+
+================================================================================
+TESTING WITH INITIAL INVENTORY: 10,000 units per product
+Total initial inventory: 50,000 units
+================================================================================
+
+Building optimization model...
+Model built:
+  Planning dates: 25 days
+  Routes: 9 routes
+
+Solving...
+
+Result: infeasible
+✗ INFEASIBLE with 10,000 units initial inventory
+
+================================================================================
+TESTING WITH INITIAL INVENTORY: 50,000 units per product
+Total initial inventory: 250,000 units
+================================================================================
+
+Building optimization model...
+Model built:
+  Planning dates: 25 days
+  Routes: 9 routes
+
+Solving...
+
+Result: infeasible
+✗ INFEASIBLE with 50,000 units initial inventory
+
+================================================================================
+TESTING WITH INITIAL INVENTORY: 100,000 units per product
+Total initial inventory: 500,000 units
+================================================================================
+
+Building optimization model...
+Model built:
+  Planning dates: 25 days
+  Routes: 9 routes
+
+Solving...
+
+Result: infeasible
+✗ INFEASIBLE with 100,000 units initial inventory
+
+================================================================================
+DIAGNOSIS COMPLETE
+================================================================================

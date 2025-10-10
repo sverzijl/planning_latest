@@ -1,0 +1,16 @@
+================================================================================
+FULL 29-WEEK MONOLITHIC SOLVE WITH STATE TRACKING
+================================================================================
+
+1. Loading data...
+   Locations: 11
+   Routes: 10
+   Products: 5
+   Forecast entries: 9180
+Traceback (most recent call last):
+  File "/home/sverzijl/planning_latest/test_full_29weeks_with_state_tracking.py", line 34, in <module>
+    print(f"   Date range: {forecast.start_date} to {forecast.end_date}")
+                            ^^^^^^^^^^^^^^^^^^^
+  File "/home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pydantic/main.py", line 991, in __getattr__
+    raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+AttributeError: 'Forecast' object has no attribute 'start_date'

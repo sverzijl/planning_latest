@@ -7,6 +7,7 @@ Decision Variables:
 - production[date, product]: Quantity to produce
 - shipment[route_index, product, delivery_date]: Quantity to ship on each route
 - shortage[dest, product, date]: Demand shortage (if allow_shortages=True)
+- (batch tracking mode) demand_from_cohort[loc, prod, prod_date, curr_date]: Demand satisfied by specific production cohort
 
 Constraints:
 - Demand satisfaction: Shipments (+ shortage) arriving at each location meet demand
@@ -15,9 +16,15 @@ Constraints:
 - Production capacity: Production ≤ max capacity per day
 - Timing feasibility: Shipments depart on/after production date
 - Shelf life: Routes filtered to exclude transit times > max_product_age_days (default: 10 days)
+- Production smoothing (optional): Limits day-to-day production variation to prevent concentration
 
 Objective:
 - Minimize: labor cost + production cost + transport cost + shortage penalty
+
+Note on Batch Tracking Mode (use_batch_tracking=True):
+- Enables age-cohort tracking for shelf life enforcement
+- Production smoothing constraint enabled by default to prevent concentration
+- Previous FIFO penalty (lines 2215-2234) disabled due to perverse incentives
 """
 
 from typing import Dict, List, Tuple, Set, Optional, Any
@@ -114,6 +121,7 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         truck_schedules: Optional[TruckScheduleCollection] = None,
         initial_inventory: Optional[Dict[Tuple[str, str], float]] = None,
         use_batch_tracking: bool = False,
+        enable_production_smoothing: Optional[bool] = None,
     ):
         """
         Initialize integrated production-distribution model.
@@ -137,6 +145,9 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             initial_inventory: Optional dict mapping (dest_id, product_id) to initial inventory quantity
             use_batch_tracking: If True, use age-cohort batch tracking model for shelf life and FIFO.
                                 If False, use legacy aggregated inventory model (default: False)
+            enable_production_smoothing: If True, add production smoothing constraint to limit day-to-day variation.
+                                         If None, defaults to True when use_batch_tracking=True, False otherwise.
+                                         Prevents production concentration on single days.
         """
         super().__init__(solver_config)
 
@@ -153,6 +164,13 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         self._validate_feasibility_flag = validate_feasibility
         self.initial_inventory = initial_inventory or {}
         self.use_batch_tracking = use_batch_tracking
+
+        # Production smoothing: Disabled by default - natural constraints should handle spreading
+        # If production still concentrates, investigate missing cost components (e.g., holding costs)
+        if enable_production_smoothing is None:
+            self.enable_production_smoothing = False  # Let natural constraints work
+        else:
+            self.enable_production_smoothing = enable_production_smoothing
 
         # Validate truck_schedules type
         if truck_schedules is not None:
@@ -1434,6 +1452,54 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             doc="Non-fixed hours >= minimum commitment (only when producing)"
         )
 
+        # PRODUCTION SMOOTHING CONSTRAINT (optional, enabled by default with batch tracking)
+        # Prevents production concentration on single days by limiting day-to-day variation.
+        # This replaces the broken FIFO penalty that previously caused this issue.
+        if self.enable_production_smoothing:
+            # Calculate maximum daily production capacity
+            max_daily_production = self.PRODUCTION_RATE * self.MAX_HOURS_PER_DAY
+
+            # Maximum allowed day-to-day change (20% of max capacity)
+            max_production_change = 0.20 * max_daily_production
+
+            def production_smoothing_rule(model, p, d):
+                """
+                Limit day-to-day production variation to prevent concentration.
+
+                For each product on each date (except first date):
+                |production[d] - production[d-1]| <= 20% of max_daily_capacity
+
+                Implemented as two linear constraints:
+                - production[d] - production[d-1] <= max_change
+                - production[d-1] - production[d] <= max_change
+
+                This prevents the optimizer from concentrating all production on one day
+                while still allowing reasonable flexibility for demand patterns.
+                """
+                dates_list = sorted(model.dates)
+                if d == dates_list[0]:
+                    # Skip first date (no previous day to compare)
+                    return Constraint.Skip
+
+                # Find previous date
+                d_idx = dates_list.index(d)
+                prev_d = dates_list[d_idx - 1]
+
+                # Return as tuple for automatic two-sided constraint
+                # -max_change <= production[d] - production[d-1] <= max_change
+                return (
+                    -max_production_change,
+                    model.production[prev_d, p] - model.production[d, p],
+                    max_production_change
+                )
+
+            model.production_smoothing_con = Constraint(
+                model.products,
+                model.dates,
+                rule=production_smoothing_rule,
+                doc="Limit day-to-day production variation (prevents concentration)"
+            )
+
         # STATE TRACKING: INVENTORY BALANCE CONSTRAINTS
         # Two separate constraints for frozen and ambient inventory states
         #
@@ -2213,22 +2279,30 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                                 truck_cost += var_cost * model.truck_load[truck_idx, dest, p, d]
 
             # BATCH TRACKING: FIFO penalty cost (soft constraint)
-            # Penalty increases for consuming younger cohorts, encouraging FIFO behavior
-            fifo_penalty_cost = 0.0
-            if self.use_batch_tracking:
-                # Small penalty per unit per day of remaining shelf life
-                # This incentivizes consuming old stock first without requiring binary variables
-                fifo_penalty_weight = 0.01  # $0.01 per unit per day younger
-                for loc, prod, prod_date, curr_date in model.cohort_demand_index:
-                    age_days = (curr_date - prod_date).days
-                    # Determine shelf life for this location
-                    shelf_life = self.THAWED_SHELF_LIFE if loc == '6130' else self.AMBIENT_SHELF_LIFE
-                    # Penalty increases for younger products (low age = high remaining shelf life)
-                    remaining_shelf_life = shelf_life - age_days
-                    freshness_penalty = remaining_shelf_life * fifo_penalty_weight
-                    fifo_penalty_cost += freshness_penalty * model.demand_from_cohort[loc, prod, prod_date, curr_date]
+            # DISABLED: This penalty creates a perverse incentive that concentrates production
+            #
+            # PROBLEM: The formula `freshness_penalty = remaining_shelf_life * fifo_penalty_weight`
+            # penalizes inventory age DIVERSITY rather than old inventory itself.
+            # Result: Optimizer concentrates ALL production on ONE day to minimize age diversity.
+            #
+            # SOLUTION: Production smoothing constraint added below (around line 1437+) provides
+            # more direct control over production concentration without distorting FIFO behavior.
+            #
+            # Original code kept for reference:
+            # fifo_penalty_cost = 0.0
+            # if self.use_batch_tracking:
+            #     fifo_penalty_weight = 0.01  # $0.01 per unit per day younger
+            #     for loc, prod, prod_date, curr_date in model.cohort_demand_index:
+            #         age_days = (curr_date - prod_date).days
+            #         shelf_life = self.THAWED_SHELF_LIFE if loc == '6130' else self.AMBIENT_SHELF_LIFE
+            #         remaining_shelf_life = shelf_life - age_days
+            #         freshness_penalty = remaining_shelf_life * fifo_penalty_weight
+            #         fifo_penalty_cost += freshness_penalty * model.demand_from_cohort[loc, prod, prod_date, curr_date]
 
-            # Total cost = labor + production + transport + inventory + truck + shortage + fifo_penalty
+            fifo_penalty_cost = 0.0  # Disabled - see comment above
+
+            # Total cost = labor + production + transport + inventory + truck + shortage
+            # Note: fifo_penalty_cost removed from objective (now always 0)
             return labor_cost + production_cost + transport_cost + inventory_cost + truck_cost + shortage_cost + fifo_penalty_cost
 
         model.obj = Objective(

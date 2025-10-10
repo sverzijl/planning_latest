@@ -1,0 +1,1596 @@
+================================================================================
+COMPREHENSIVE AGGRESSIVE HEURISTICS TEST
+================================================================================
+
+Loading data...
+Dataset: 2,407,299 units across 204 days
+
+================================================================================
+TEST 1/5: 14d/7d Baseline (No Heuristics)
+================================================================================
+  Window: 14 days
+  Overlap: 7 days
+  Committed region: 7 days
+  Aggressive heuristics: NO
+
+Solving full 29-week dataset...
+======================================================================
+ROLLING HORIZON SOLVER
+======================================================================
+
+Planning horizon: 2025-06-02 to 2025-12-22 (204 days)
+Window size: 14 days
+Overlap: 7 days
+Temporal aggregation: No
+
+Creating windows...
+  Created 30 windows
+    1. Window[window_1]: 2025-06-02 to 2025-06-15 (14d (overlap: 7d))
+    2. Window[window_2]: 2025-06-09 to 2025-06-22 (14d (overlap: 7d))
+    3. Window[window_3]: 2025-06-16 to 2025-06-29 (14d (overlap: 7d))
+    4. Window[window_4]: 2025-06-23 to 2025-07-06 (14d (overlap: 7d))
+    5. Window[window_5]: 2025-06-30 to 2025-07-13 (14d (overlap: 7d))
+    6. Window[window_6]: 2025-07-07 to 2025-07-20 (14d (overlap: 7d))
+    7. Window[window_7]: 2025-07-14 to 2025-07-27 (14d (overlap: 7d))
+    8. Window[window_8]: 2025-07-21 to 2025-08-03 (14d (overlap: 7d))
+    9. Window[window_9]: 2025-07-28 to 2025-08-10 (14d (overlap: 7d))
+    10. Window[window_10]: 2025-08-04 to 2025-08-17 (14d (overlap: 7d))
+    11. Window[window_11]: 2025-08-11 to 2025-08-24 (14d (overlap: 7d))
+    12. Window[window_12]: 2025-08-18 to 2025-08-31 (14d (overlap: 7d))
+    13. Window[window_13]: 2025-08-25 to 2025-09-07 (14d (overlap: 7d))
+    14. Window[window_14]: 2025-09-01 to 2025-09-14 (14d (overlap: 7d))
+    15. Window[window_15]: 2025-09-08 to 2025-09-21 (14d (overlap: 7d))
+    16. Window[window_16]: 2025-09-15 to 2025-09-28 (14d (overlap: 7d))
+    17. Window[window_17]: 2025-09-22 to 2025-10-05 (14d (overlap: 7d))
+    18. Window[window_18]: 2025-09-29 to 2025-10-12 (14d (overlap: 7d))
+    19. Window[window_19]: 2025-10-06 to 2025-10-19 (14d (overlap: 7d))
+    20. Window[window_20]: 2025-10-13 to 2025-10-26 (14d (overlap: 7d))
+    21. Window[window_21]: 2025-10-20 to 2025-11-02 (14d (overlap: 7d))
+    22. Window[window_22]: 2025-10-27 to 2025-11-09 (14d (overlap: 7d))
+    23. Window[window_23]: 2025-11-03 to 2025-11-16 (14d (overlap: 7d))
+    24. Window[window_24]: 2025-11-10 to 2025-11-23 (14d (overlap: 7d))
+    25. Window[window_25]: 2025-11-17 to 2025-11-30 (14d (overlap: 7d))
+    26. Window[window_26]: 2025-11-24 to 2025-12-07 (14d (overlap: 7d))
+    27. Window[window_27]: 2025-12-01 to 2025-12-14 (14d (overlap: 7d))
+    28. Window[window_28]: 2025-12-08 to 2025-12-21 (14d (overlap: 7d))
+    29. Window[window_29]: 2025-12-15 to 2025-12-22 (8d)
+    30. Window[window_30]: 2025-12-22 to 2025-12-22 (1d)
+
+======================================================================
+SOLVING WINDOW 1/30: window_1
+======================================================================
+  Dates: 2025-06-02 to 2025-06-15 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_1: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 2/30: window_2
+======================================================================
+  Dates: 2025-06-09 to 2025-06-22 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_2: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 3/30: window_3
+======================================================================
+  Dates: 2025-06-16 to 2025-06-29 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_3: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 4/30: window_4
+======================================================================
+  Dates: 2025-06-23 to 2025-07-06 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_4: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 5/30: window_5
+======================================================================
+  Dates: 2025-06-30 to 2025-07-13 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_5: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 6/30: window_6
+======================================================================
+  Dates: 2025-07-07 to 2025-07-20 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_6: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 7/30: window_7
+======================================================================
+  Dates: 2025-07-14 to 2025-07-27 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_7: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 8/30: window_8
+======================================================================
+  Dates: 2025-07-21 to 2025-08-03 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_8: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 9/30: window_9
+======================================================================
+  Dates: 2025-07-28 to 2025-08-10 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_9: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 10/30: window_10
+======================================================================
+  Dates: 2025-08-04 to 2025-08-17 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_10: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 11/30: window_11
+======================================================================
+  Dates: 2025-08-11 to 2025-08-24 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_11: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 12/30: window_12
+======================================================================
+  Dates: 2025-08-18 to 2025-08-31 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_12: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 13/30: window_13
+======================================================================
+  Dates: 2025-08-25 to 2025-09-07 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_13: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 14/30: window_14
+======================================================================
+  Dates: 2025-09-01 to 2025-09-14 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_14: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 15/30: window_15
+======================================================================
+  Dates: 2025-09-08 to 2025-09-21 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_15: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 16/30: window_16
+======================================================================
+  Dates: 2025-09-15 to 2025-09-28 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_16: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 17/30: window_17
+======================================================================
+  Dates: 2025-09-22 to 2025-10-05 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_17: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 18/30: window_18
+======================================================================
+  Dates: 2025-09-29 to 2025-10-12 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_18: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 19/30: window_19
+======================================================================
+  Dates: 2025-10-06 to 2025-10-19 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_19: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 20/30: window_20
+======================================================================
+  Dates: 2025-10-13 to 2025-10-26 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_20: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 21/30: window_21
+======================================================================
+  Dates: 2025-10-20 to 2025-11-02 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_21: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 22/30: window_22
+======================================================================
+  Dates: 2025-10-27 to 2025-11-09 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_22: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 23/30: window_23
+======================================================================
+  Dates: 2025-11-03 to 2025-11-16 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_23: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 24/30: window_24
+======================================================================
+  Dates: 2025-11-10 to 2025-11-23 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_24: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 25/30: window_25
+======================================================================
+  Dates: 2025-11-17 to 2025-11-30 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_25: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 26/30: window_26
+======================================================================
+  Dates: 2025-11-24 to 2025-12-07 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_26: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 27/30: window_27
+======================================================================
+  Dates: 2025-12-01 to 2025-12-14 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_27: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 28/30: window_28
+======================================================================
+  Dates: 2025-12-08 to 2025-12-21 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_28: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 29/30: window_29
+======================================================================
+  Dates: 2025-12-15 to 2025-12-22 (8 days)
+  Demand entries: 360
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_29: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 30/30: window_30
+======================================================================
+  Dates: 2025-12-22 to 2025-12-22 (1 days)
+  Demand entries: 45
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_30: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+STITCHING SOLUTIONS
+======================================================================
+
+======================================================================
+ROLLING HORIZON COMPLETE
+======================================================================
+
+RollingHorizonResult: INFEASIBLE: 30 windows, 30 windows, cost=$0.00, time=0.00s (0.00s/window)
+
+  Infeasible windows: ['window_1', 'window_2', 'window_3', 'window_4', 'window_5', 'window_6', 'window_7', 'window_8', 'window_9', 'window_10', 'window_11', 'window_12', 'window_13', 'window_14', 'window_15', 'window_16', 'window_17', 'window_18', 'window_19', 'window_20', 'window_21', 'window_22', 'window_23', 'window_24', 'window_25', 'window_26', 'window_27', 'window_28', 'window_29', 'window_30']
+
+Results:
+  Total time: 0.3s (0.0 min)
+  Windows: 30
+  Feasible: 0/30
+  ❌ INFEASIBLE
+  Infeasible windows: ['window_1', 'window_2', 'window_3', 'window_4', 'window_5', 'window_6', 'window_7', 'window_8', 'window_9', 'window_10', 'window_11', 'window_12', 'window_13', 'window_14', 'window_15', 'window_16', 'window_17', 'window_18', 'window_19', 'window_20', 'window_21', 'window_22', 'window_23', 'window_24', 'window_25', 'window_26', 'window_27', 'window_28', 'window_29', 'window_30']
+
+================================================================================
+TEST 2/5: 14d/7d with Aggressive Heuristics
+================================================================================
+  Window: 14 days
+  Overlap: 7 days
+  Committed region: 7 days
+  Aggressive heuristics: YES
+
+Solving full 29-week dataset...
+======================================================================
+ROLLING HORIZON SOLVER
+======================================================================
+
+Planning horizon: 2025-06-02 to 2025-12-22 (204 days)
+Window size: 14 days
+Overlap: 7 days
+Temporal aggregation: No
+
+Creating windows...
+  Created 30 windows
+    1. Window[window_1]: 2025-06-02 to 2025-06-15 (14d (overlap: 7d))
+    2. Window[window_2]: 2025-06-09 to 2025-06-22 (14d (overlap: 7d))
+    3. Window[window_3]: 2025-06-16 to 2025-06-29 (14d (overlap: 7d))
+    4. Window[window_4]: 2025-06-23 to 2025-07-06 (14d (overlap: 7d))
+    5. Window[window_5]: 2025-06-30 to 2025-07-13 (14d (overlap: 7d))
+    6. Window[window_6]: 2025-07-07 to 2025-07-20 (14d (overlap: 7d))
+    7. Window[window_7]: 2025-07-14 to 2025-07-27 (14d (overlap: 7d))
+    8. Window[window_8]: 2025-07-21 to 2025-08-03 (14d (overlap: 7d))
+    9. Window[window_9]: 2025-07-28 to 2025-08-10 (14d (overlap: 7d))
+    10. Window[window_10]: 2025-08-04 to 2025-08-17 (14d (overlap: 7d))
+    11. Window[window_11]: 2025-08-11 to 2025-08-24 (14d (overlap: 7d))
+    12. Window[window_12]: 2025-08-18 to 2025-08-31 (14d (overlap: 7d))
+    13. Window[window_13]: 2025-08-25 to 2025-09-07 (14d (overlap: 7d))
+    14. Window[window_14]: 2025-09-01 to 2025-09-14 (14d (overlap: 7d))
+    15. Window[window_15]: 2025-09-08 to 2025-09-21 (14d (overlap: 7d))
+    16. Window[window_16]: 2025-09-15 to 2025-09-28 (14d (overlap: 7d))
+    17. Window[window_17]: 2025-09-22 to 2025-10-05 (14d (overlap: 7d))
+    18. Window[window_18]: 2025-09-29 to 2025-10-12 (14d (overlap: 7d))
+    19. Window[window_19]: 2025-10-06 to 2025-10-19 (14d (overlap: 7d))
+    20. Window[window_20]: 2025-10-13 to 2025-10-26 (14d (overlap: 7d))
+    21. Window[window_21]: 2025-10-20 to 2025-11-02 (14d (overlap: 7d))
+    22. Window[window_22]: 2025-10-27 to 2025-11-09 (14d (overlap: 7d))
+    23. Window[window_23]: 2025-11-03 to 2025-11-16 (14d (overlap: 7d))
+    24. Window[window_24]: 2025-11-10 to 2025-11-23 (14d (overlap: 7d))
+    25. Window[window_25]: 2025-11-17 to 2025-11-30 (14d (overlap: 7d))
+    26. Window[window_26]: 2025-11-24 to 2025-12-07 (14d (overlap: 7d))
+    27. Window[window_27]: 2025-12-01 to 2025-12-14 (14d (overlap: 7d))
+    28. Window[window_28]: 2025-12-08 to 2025-12-21 (14d (overlap: 7d))
+    29. Window[window_29]: 2025-12-15 to 2025-12-22 (8d)
+    30. Window[window_30]: 2025-12-22 to 2025-12-22 (1d)
+
+======================================================================
+SOLVING WINDOW 1/30: window_1
+======================================================================
+  Dates: 2025-06-02 to 2025-06-15 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_1: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 2/30: window_2
+======================================================================
+  Dates: 2025-06-09 to 2025-06-22 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_2: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 3/30: window_3
+======================================================================
+  Dates: 2025-06-16 to 2025-06-29 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_3: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 4/30: window_4
+======================================================================
+  Dates: 2025-06-23 to 2025-07-06 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_4: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 5/30: window_5
+======================================================================
+  Dates: 2025-06-30 to 2025-07-13 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_5: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 6/30: window_6
+======================================================================
+  Dates: 2025-07-07 to 2025-07-20 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_6: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 7/30: window_7
+======================================================================
+  Dates: 2025-07-14 to 2025-07-27 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_7: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 8/30: window_8
+======================================================================
+  Dates: 2025-07-21 to 2025-08-03 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_8: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 9/30: window_9
+======================================================================
+  Dates: 2025-07-28 to 2025-08-10 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_9: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 10/30: window_10
+======================================================================
+  Dates: 2025-08-04 to 2025-08-17 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_10: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 11/30: window_11
+======================================================================
+  Dates: 2025-08-11 to 2025-08-24 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_11: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 12/30: window_12
+======================================================================
+  Dates: 2025-08-18 to 2025-08-31 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_12: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 13/30: window_13
+======================================================================
+  Dates: 2025-08-25 to 2025-09-07 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_13: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 14/30: window_14
+======================================================================
+  Dates: 2025-09-01 to 2025-09-14 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_14: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 15/30: window_15
+======================================================================
+  Dates: 2025-09-08 to 2025-09-21 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_15: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 16/30: window_16
+======================================================================
+  Dates: 2025-09-15 to 2025-09-28 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_16: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 17/30: window_17
+======================================================================
+  Dates: 2025-09-22 to 2025-10-05 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_17: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 18/30: window_18
+======================================================================
+  Dates: 2025-09-29 to 2025-10-12 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_18: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 19/30: window_19
+======================================================================
+  Dates: 2025-10-06 to 2025-10-19 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_19: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 20/30: window_20
+======================================================================
+  Dates: 2025-10-13 to 2025-10-26 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_20: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 21/30: window_21
+======================================================================
+  Dates: 2025-10-20 to 2025-11-02 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_21: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 22/30: window_22
+======================================================================
+  Dates: 2025-10-27 to 2025-11-09 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_22: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 23/30: window_23
+======================================================================
+  Dates: 2025-11-03 to 2025-11-16 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_23: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 24/30: window_24
+======================================================================
+  Dates: 2025-11-10 to 2025-11-23 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_24: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 25/30: window_25
+======================================================================
+  Dates: 2025-11-17 to 2025-11-30 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_25: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 26/30: window_26
+======================================================================
+  Dates: 2025-11-24 to 2025-12-07 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_26: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 27/30: window_27
+======================================================================
+  Dates: 2025-12-01 to 2025-12-14 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_27: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 28/30: window_28
+======================================================================
+  Dates: 2025-12-08 to 2025-12-21 (14 days)
+  Demand entries: 630
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_28: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 29/30: window_29
+======================================================================
+  Dates: 2025-12-15 to 2025-12-22 (8 days)
+  Demand entries: 360
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_29: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 30/30: window_30
+======================================================================
+  Dates: 2025-12-22 to 2025-12-22 (1 days)
+  Demand entries: 45
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_30: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+STITCHING SOLUTIONS
+======================================================================
+
+======================================================================
+ROLLING HORIZON COMPLETE
+======================================================================
+
+RollingHorizonResult: INFEASIBLE: 30 windows, 30 windows, cost=$0.00, time=0.00s (0.00s/window)
+
+  Infeasible windows: ['window_1', 'window_2', 'window_3', 'window_4', 'window_5', 'window_6', 'window_7', 'window_8', 'window_9', 'window_10', 'window_11', 'window_12', 'window_13', 'window_14', 'window_15', 'window_16', 'window_17', 'window_18', 'window_19', 'window_20', 'window_21', 'window_22', 'window_23', 'window_24', 'window_25', 'window_26', 'window_27', 'window_28', 'window_29', 'window_30']
+
+Results:
+  Total time: 0.3s (0.0 min)
+  Windows: 30
+  Feasible: 0/30
+  ❌ INFEASIBLE
+  Infeasible windows: ['window_1', 'window_2', 'window_3', 'window_4', 'window_5', 'window_6', 'window_7', 'window_8', 'window_9', 'window_10', 'window_11', 'window_12', 'window_13', 'window_14', 'window_15', 'window_16', 'window_17', 'window_18', 'window_19', 'window_20', 'window_21', 'window_22', 'window_23', 'window_24', 'window_25', 'window_26', 'window_27', 'window_28', 'window_29', 'window_30']
+
+================================================================================
+TEST 3/5: 21d/7d with Aggressive Heuristics
+================================================================================
+  Window: 21 days
+  Overlap: 7 days
+  Committed region: 14 days
+  Aggressive heuristics: YES
+
+Solving full 29-week dataset...
+======================================================================
+ROLLING HORIZON SOLVER
+======================================================================
+
+Planning horizon: 2025-06-02 to 2025-12-22 (204 days)
+Window size: 21 days
+Overlap: 7 days
+Temporal aggregation: No
+
+Creating windows...
+  Created 15 windows
+    1. Window[window_1]: 2025-06-02 to 2025-06-22 (21d (overlap: 7d))
+    2. Window[window_2]: 2025-06-16 to 2025-07-06 (21d (overlap: 7d))
+    3. Window[window_3]: 2025-06-30 to 2025-07-20 (21d (overlap: 7d))
+    4. Window[window_4]: 2025-07-14 to 2025-08-03 (21d (overlap: 7d))
+    5. Window[window_5]: 2025-07-28 to 2025-08-17 (21d (overlap: 7d))
+    6. Window[window_6]: 2025-08-11 to 2025-08-31 (21d (overlap: 7d))
+    7. Window[window_7]: 2025-08-25 to 2025-09-14 (21d (overlap: 7d))
+    8. Window[window_8]: 2025-09-08 to 2025-09-28 (21d (overlap: 7d))
+    9. Window[window_9]: 2025-09-22 to 2025-10-12 (21d (overlap: 7d))
+    10. Window[window_10]: 2025-10-06 to 2025-10-26 (21d (overlap: 7d))
+    11. Window[window_11]: 2025-10-20 to 2025-11-09 (21d (overlap: 7d))
+    12. Window[window_12]: 2025-11-03 to 2025-11-23 (21d (overlap: 7d))
+    13. Window[window_13]: 2025-11-17 to 2025-12-07 (21d (overlap: 7d))
+    14. Window[window_14]: 2025-12-01 to 2025-12-21 (21d (overlap: 7d))
+    15. Window[window_15]: 2025-12-15 to 2025-12-22 (8d)
+
+======================================================================
+SOLVING WINDOW 1/15: window_1
+======================================================================
+  Dates: 2025-06-02 to 2025-06-22 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_1: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 2/15: window_2
+======================================================================
+  Dates: 2025-06-16 to 2025-07-06 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_2: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 3/15: window_3
+======================================================================
+  Dates: 2025-06-30 to 2025-07-20 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_3: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 4/15: window_4
+======================================================================
+  Dates: 2025-07-14 to 2025-08-03 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_4: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 5/15: window_5
+======================================================================
+  Dates: 2025-07-28 to 2025-08-17 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_5: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 6/15: window_6
+======================================================================
+  Dates: 2025-08-11 to 2025-08-31 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_6: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 7/15: window_7
+======================================================================
+  Dates: 2025-08-25 to 2025-09-14 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_7: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 8/15: window_8
+======================================================================
+  Dates: 2025-09-08 to 2025-09-28 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_8: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 9/15: window_9
+======================================================================
+  Dates: 2025-09-22 to 2025-10-12 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_9: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 10/15: window_10
+======================================================================
+  Dates: 2025-10-06 to 2025-10-26 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_10: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 11/15: window_11
+======================================================================
+  Dates: 2025-10-20 to 2025-11-09 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_11: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 12/15: window_12
+======================================================================
+  Dates: 2025-11-03 to 2025-11-23 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_12: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 13/15: window_13
+======================================================================
+  Dates: 2025-11-17 to 2025-12-07 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_13: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 14/15: window_14
+======================================================================
+  Dates: 2025-12-01 to 2025-12-21 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_14: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 15/15: window_15
+======================================================================
+  Dates: 2025-12-15 to 2025-12-22 (8 days)
+  Demand entries: 360
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_15: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+STITCHING SOLUTIONS
+======================================================================
+
+======================================================================
+ROLLING HORIZON COMPLETE
+======================================================================
+
+RollingHorizonResult: INFEASIBLE: 15 windows, 15 windows, cost=$0.00, time=0.00s (0.00s/window)
+
+  Infeasible windows: ['window_1', 'window_2', 'window_3', 'window_4', 'window_5', 'window_6', 'window_7', 'window_8', 'window_9', 'window_10', 'window_11', 'window_12', 'window_13', 'window_14', 'window_15']
+
+Results:
+  Total time: 0.2s (0.0 min)
+  Windows: 15
+  Feasible: 0/15
+  ❌ INFEASIBLE
+  Infeasible windows: ['window_1', 'window_2', 'window_3', 'window_4', 'window_5', 'window_6', 'window_7', 'window_8', 'window_9', 'window_10', 'window_11', 'window_12', 'window_13', 'window_14', 'window_15']
+
+================================================================================
+TEST 4/5: 21d/10d with Aggressive Heuristics
+================================================================================
+  Window: 21 days
+  Overlap: 10 days
+  Committed region: 11 days
+  Aggressive heuristics: YES
+
+Solving full 29-week dataset...
+======================================================================
+ROLLING HORIZON SOLVER
+======================================================================
+
+Planning horizon: 2025-06-02 to 2025-12-22 (204 days)
+Window size: 21 days
+Overlap: 10 days
+Temporal aggregation: No
+
+Creating windows...
+  Created 19 windows
+    1. Window[window_1]: 2025-06-02 to 2025-06-22 (21d (overlap: 10d))
+    2. Window[window_2]: 2025-06-13 to 2025-07-03 (21d (overlap: 10d))
+    3. Window[window_3]: 2025-06-24 to 2025-07-14 (21d (overlap: 10d))
+    4. Window[window_4]: 2025-07-05 to 2025-07-25 (21d (overlap: 10d))
+    5. Window[window_5]: 2025-07-16 to 2025-08-05 (21d (overlap: 10d))
+    6. Window[window_6]: 2025-07-27 to 2025-08-16 (21d (overlap: 10d))
+    7. Window[window_7]: 2025-08-07 to 2025-08-27 (21d (overlap: 10d))
+    8. Window[window_8]: 2025-08-18 to 2025-09-07 (21d (overlap: 10d))
+    9. Window[window_9]: 2025-08-29 to 2025-09-18 (21d (overlap: 10d))
+    10. Window[window_10]: 2025-09-09 to 2025-09-29 (21d (overlap: 10d))
+    11. Window[window_11]: 2025-09-20 to 2025-10-10 (21d (overlap: 10d))
+    12. Window[window_12]: 2025-10-01 to 2025-10-21 (21d (overlap: 10d))
+    13. Window[window_13]: 2025-10-12 to 2025-11-01 (21d (overlap: 10d))
+    14. Window[window_14]: 2025-10-23 to 2025-11-12 (21d (overlap: 10d))
+    15. Window[window_15]: 2025-11-03 to 2025-11-23 (21d (overlap: 10d))
+    16. Window[window_16]: 2025-11-14 to 2025-12-04 (21d (overlap: 10d))
+    17. Window[window_17]: 2025-11-25 to 2025-12-15 (21d (overlap: 10d))
+    18. Window[window_18]: 2025-12-06 to 2025-12-22 (17d)
+    19. Window[window_19]: 2025-12-17 to 2025-12-22 (6d)
+
+======================================================================
+SOLVING WINDOW 1/19: window_1
+======================================================================
+  Dates: 2025-06-02 to 2025-06-22 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_1: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 2/19: window_2
+======================================================================
+  Dates: 2025-06-13 to 2025-07-03 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_2: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 3/19: window_3
+======================================================================
+  Dates: 2025-06-24 to 2025-07-14 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_3: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 4/19: window_4
+======================================================================
+  Dates: 2025-07-05 to 2025-07-25 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_4: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 5/19: window_5
+======================================================================
+  Dates: 2025-07-16 to 2025-08-05 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_5: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 6/19: window_6
+======================================================================
+  Dates: 2025-07-27 to 2025-08-16 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_6: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 7/19: window_7
+======================================================================
+  Dates: 2025-08-07 to 2025-08-27 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_7: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 8/19: window_8
+======================================================================
+  Dates: 2025-08-18 to 2025-09-07 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_8: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 9/19: window_9
+======================================================================
+  Dates: 2025-08-29 to 2025-09-18 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_9: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 10/19: window_10
+======================================================================
+  Dates: 2025-09-09 to 2025-09-29 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_10: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 11/19: window_11
+======================================================================
+  Dates: 2025-09-20 to 2025-10-10 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_11: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 12/19: window_12
+======================================================================
+  Dates: 2025-10-01 to 2025-10-21 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_12: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 13/19: window_13
+======================================================================
+  Dates: 2025-10-12 to 2025-11-01 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_13: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 14/19: window_14
+======================================================================
+  Dates: 2025-10-23 to 2025-11-12 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_14: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 15/19: window_15
+======================================================================
+  Dates: 2025-11-03 to 2025-11-23 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_15: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 16/19: window_16
+======================================================================
+  Dates: 2025-11-14 to 2025-12-04 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_16: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 17/19: window_17
+======================================================================
+  Dates: 2025-11-25 to 2025-12-15 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_17: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 18/19: window_18
+======================================================================
+  Dates: 2025-12-06 to 2025-12-22 (17 days)
+  Demand entries: 765
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_18: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 19/19: window_19
+======================================================================
+  Dates: 2025-12-17 to 2025-12-22 (6 days)
+  Demand entries: 270
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_19: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+STITCHING SOLUTIONS
+======================================================================
+
+======================================================================
+ROLLING HORIZON COMPLETE
+======================================================================
+
+RollingHorizonResult: INFEASIBLE: 19 windows, 19 windows, cost=$0.00, time=0.00s (0.00s/window)
+
+  Infeasible windows: ['window_1', 'window_2', 'window_3', 'window_4', 'window_5', 'window_6', 'window_7', 'window_8', 'window_9', 'window_10', 'window_11', 'window_12', 'window_13', 'window_14', 'window_15', 'window_16', 'window_17', 'window_18', 'window_19']
+
+Results:
+  Total time: 0.2s (0.0 min)
+  Windows: 19
+  Feasible: 0/19
+  ❌ INFEASIBLE
+  Infeasible windows: ['window_1', 'window_2', 'window_3', 'window_4', 'window_5', 'window_6', 'window_7', 'window_8', 'window_9', 'window_10', 'window_11', 'window_12', 'window_13', 'window_14', 'window_15', 'window_16', 'window_17', 'window_18', 'window_19']
+
+================================================================================
+TEST 5/5: 21d/14d with Aggressive Heuristics
+================================================================================
+  Window: 21 days
+  Overlap: 14 days
+  Committed region: 7 days
+  Aggressive heuristics: YES
+
+Solving full 29-week dataset...
+======================================================================
+ROLLING HORIZON SOLVER
+======================================================================
+
+Planning horizon: 2025-06-02 to 2025-12-22 (204 days)
+Window size: 21 days
+Overlap: 14 days
+Temporal aggregation: No
+
+Creating windows...
+  Created 30 windows
+    1. Window[window_1]: 2025-06-02 to 2025-06-22 (21d (overlap: 14d))
+    2. Window[window_2]: 2025-06-09 to 2025-06-29 (21d (overlap: 14d))
+    3. Window[window_3]: 2025-06-16 to 2025-07-06 (21d (overlap: 14d))
+    4. Window[window_4]: 2025-06-23 to 2025-07-13 (21d (overlap: 14d))
+    5. Window[window_5]: 2025-06-30 to 2025-07-20 (21d (overlap: 14d))
+    6. Window[window_6]: 2025-07-07 to 2025-07-27 (21d (overlap: 14d))
+    7. Window[window_7]: 2025-07-14 to 2025-08-03 (21d (overlap: 14d))
+    8. Window[window_8]: 2025-07-21 to 2025-08-10 (21d (overlap: 14d))
+    9. Window[window_9]: 2025-07-28 to 2025-08-17 (21d (overlap: 14d))
+    10. Window[window_10]: 2025-08-04 to 2025-08-24 (21d (overlap: 14d))
+    11. Window[window_11]: 2025-08-11 to 2025-08-31 (21d (overlap: 14d))
+    12. Window[window_12]: 2025-08-18 to 2025-09-07 (21d (overlap: 14d))
+    13. Window[window_13]: 2025-08-25 to 2025-09-14 (21d (overlap: 14d))
+    14. Window[window_14]: 2025-09-01 to 2025-09-21 (21d (overlap: 14d))
+    15. Window[window_15]: 2025-09-08 to 2025-09-28 (21d (overlap: 14d))
+    16. Window[window_16]: 2025-09-15 to 2025-10-05 (21d (overlap: 14d))
+    17. Window[window_17]: 2025-09-22 to 2025-10-12 (21d (overlap: 14d))
+    18. Window[window_18]: 2025-09-29 to 2025-10-19 (21d (overlap: 14d))
+    19. Window[window_19]: 2025-10-06 to 2025-10-26 (21d (overlap: 14d))
+    20. Window[window_20]: 2025-10-13 to 2025-11-02 (21d (overlap: 14d))
+    21. Window[window_21]: 2025-10-20 to 2025-11-09 (21d (overlap: 14d))
+    22. Window[window_22]: 2025-10-27 to 2025-11-16 (21d (overlap: 14d))
+    23. Window[window_23]: 2025-11-03 to 2025-11-23 (21d (overlap: 14d))
+    24. Window[window_24]: 2025-11-10 to 2025-11-30 (21d (overlap: 14d))
+    25. Window[window_25]: 2025-11-17 to 2025-12-07 (21d (overlap: 14d))
+    26. Window[window_26]: 2025-11-24 to 2025-12-14 (21d (overlap: 14d))
+    27. Window[window_27]: 2025-12-01 to 2025-12-21 (21d (overlap: 14d))
+    28. Window[window_28]: 2025-12-08 to 2025-12-22 (15d)
+    29. Window[window_29]: 2025-12-15 to 2025-12-22 (8d)
+    30. Window[window_30]: 2025-12-22 to 2025-12-22 (1d)
+
+======================================================================
+SOLVING WINDOW 1/30: window_1
+======================================================================
+  Dates: 2025-06-02 to 2025-06-22 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_1: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 2/30: window_2
+======================================================================
+  Dates: 2025-06-09 to 2025-06-29 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_2: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 3/30: window_3
+======================================================================
+  Dates: 2025-06-16 to 2025-07-06 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_3: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 4/30: window_4
+======================================================================
+  Dates: 2025-06-23 to 2025-07-13 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_4: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 5/30: window_5
+======================================================================
+  Dates: 2025-06-30 to 2025-07-20 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_5: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 6/30: window_6
+======================================================================
+  Dates: 2025-07-07 to 2025-07-27 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_6: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 7/30: window_7
+======================================================================
+  Dates: 2025-07-14 to 2025-08-03 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_7: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 8/30: window_8
+======================================================================
+  Dates: 2025-07-21 to 2025-08-10 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_8: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 9/30: window_9
+======================================================================
+  Dates: 2025-07-28 to 2025-08-17 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_9: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 10/30: window_10
+======================================================================
+  Dates: 2025-08-04 to 2025-08-24 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_10: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 11/30: window_11
+======================================================================
+  Dates: 2025-08-11 to 2025-08-31 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_11: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 12/30: window_12
+======================================================================
+  Dates: 2025-08-18 to 2025-09-07 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_12: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 13/30: window_13
+======================================================================
+  Dates: 2025-08-25 to 2025-09-14 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_13: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 14/30: window_14
+======================================================================
+  Dates: 2025-09-01 to 2025-09-21 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_14: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 15/30: window_15
+======================================================================
+  Dates: 2025-09-08 to 2025-09-28 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_15: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 16/30: window_16
+======================================================================
+  Dates: 2025-09-15 to 2025-10-05 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_16: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 17/30: window_17
+======================================================================
+  Dates: 2025-09-22 to 2025-10-12 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_17: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 18/30: window_18
+======================================================================
+  Dates: 2025-09-29 to 2025-10-19 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_18: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 19/30: window_19
+======================================================================
+  Dates: 2025-10-06 to 2025-10-26 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_19: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 20/30: window_20
+======================================================================
+  Dates: 2025-10-13 to 2025-11-02 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_20: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 21/30: window_21
+======================================================================
+  Dates: 2025-10-20 to 2025-11-09 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_21: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 22/30: window_22
+======================================================================
+  Dates: 2025-10-27 to 2025-11-16 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_22: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 23/30: window_23
+======================================================================
+  Dates: 2025-11-03 to 2025-11-23 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_23: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 24/30: window_24
+======================================================================
+  Dates: 2025-11-10 to 2025-11-30 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_24: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 25/30: window_25
+======================================================================
+  Dates: 2025-11-17 to 2025-12-07 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_25: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 26/30: window_26
+======================================================================
+  Dates: 2025-11-24 to 2025-12-14 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_26: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 27/30: window_27
+======================================================================
+  Dates: 2025-12-01 to 2025-12-21 (21 days)
+  Demand entries: 945
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_27: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 28/30: window_28
+======================================================================
+  Dates: 2025-12-08 to 2025-12-22 (15 days)
+  Demand entries: 675
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_28: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 29/30: window_29
+======================================================================
+  Dates: 2025-12-15 to 2025-12-22 (8 days)
+  Demand entries: 360
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_29: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+SOLVING WINDOW 30/30: window_30
+======================================================================
+  Dates: 2025-12-22 to 2025-12-22 (1 days)
+  Demand entries: 45
+  Building optimization model...
+  Solving with cbc...
+
+  ❌ Error solving window window_30: name 'use_aggressive_heuristics' is not defined
+
+======================================================================
+STITCHING SOLUTIONS
+======================================================================
+
+======================================================================
+ROLLING HORIZON COMPLETE
+======================================================================
+
+RollingHorizonResult: INFEASIBLE: 30 windows, 30 windows, cost=$0.00, time=0.00s (0.00s/window)
+
+  Infeasible windows: ['window_1', 'window_2', 'window_3', 'window_4', 'window_5', 'window_6', 'window_7', 'window_8', 'window_9', 'window_10', 'window_11', 'window_12', 'window_13', 'window_14', 'window_15', 'window_16', 'window_17', 'window_18', 'window_19', 'window_20', 'window_21', 'window_22', 'window_23', 'window_24', 'window_25', 'window_26', 'window_27', 'window_28', 'window_29', 'window_30']
+
+Results:
+  Total time: 0.4s (0.0 min)
+  Windows: 30
+  Feasible: 0/30
+  ❌ INFEASIBLE
+  Infeasible windows: ['window_1', 'window_2', 'window_3', 'window_4', 'window_5', 'window_6', 'window_7', 'window_8', 'window_9', 'window_10', 'window_11', 'window_12', 'window_13', 'window_14', 'window_15', 'window_16', 'window_17', 'window_18', 'window_19', 'window_20', 'window_21', 'window_22', 'window_23', 'window_24', 'window_25', 'window_26', 'window_27', 'window_28', 'window_29', 'window_30']
+
+================================================================================
+SUMMARY OF ALL TESTS
+================================================================================
+
+Configuration                                 Feasible   Cost            Time      
+--------------------------------------------------------------------------------
+14d/7d Baseline (No Heuristics)               ❌ No       -               0s        
+14d/7d with Aggressive Heuristics             ❌ No       -               0s        
+21d/7d with Aggressive Heuristics             ❌ No       -               0s        
+21d/10d with Aggressive Heuristics            ❌ No       -               0s        
+21d/14d with Aggressive Heuristics            ❌ No       -               0s        
+
+================================================================================
+COST COMPARISON vs BASELINE
+================================================================================
+
+
+================================================================================
+RECOMMENDATIONS
+================================================================================
+
+❌ No 21-day configuration achieved 100% feasibility
+→ Stick with 14-day/7-day baseline
+
+================================================================================

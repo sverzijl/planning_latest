@@ -1,0 +1,98 @@
+======================================================================
+WINDOW 2: Jun 6-12 (Expected: FEASIBLE)
+======================================================================
+Demand entries: 315
+Date range: 2025-06-06 to 2025-06-12
+Planning horizon (auto-extended): 2025-06-02 to 2025-06-12
+Production dates: 11 days
+
+Result: True
+Total cost: $333,621.11
+
+Ending inventory at Jun 9 (committed_end_date): 0 SKUs
+
+======================================================================
+WINDOW 3: Jun 10-16 (Expected: INFEASIBLE)
+======================================================================
+Demand entries: 315
+Date range: 2025-06-10 to 2025-06-16
+
+Initial inventory: 0 SKUs, 0 total units
+Planning horizon (auto-extended): 2025-06-06 to 2025-06-16
+Production dates: 11 days
+
+Result: False
+Infeasibility: Model is infeasible. Constraints cannot all be satisfied simultaneously.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+DIAGNOSTIC COMPLETE
+======================================================================

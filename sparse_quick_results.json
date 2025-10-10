@@ -1,0 +1,20 @@
+{
+  "results": [
+    {
+      "weeks": 1,
+      "time": 1.0739178657531738,
+      "vars": 2196,
+      "truck_load_vars": 660,
+      "status": "optimal",
+      "objective": 170900.16560996973
+    },
+    {
+      "weeks": 2,
+      "time": 2.973593235015869,
+      "vars": 3708,
+      "truck_load_vars": 1080,
+      "status": "optimal",
+      "objective": 483385.1270339878
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+======================================================================
+TESTING: Natural Production Spreading with Batch Tracking
+======================================================================
+
+Hypothesis: Production should spread naturally across multiple days
+due to labor costs, shelf life, and transport constraints.
+
+Test setup:
+  - 4-week planning horizon (28 days)
+  - Demand: 500 units/day for 26 days = 13,000 units total
+  - Daily capacity: 16,800 units (regular), 19,600 (with OT)
+  - Labor: Weekdays cheaper than weekends
+  - Batch tracking: ENABLED
+  - FIFO penalty: DISABLED (the bug fix)
+  - Production smoothing: DISABLED (testing natural constraints)
+Traceback (most recent call last):
+  File "/home/sverzijl/planning_latest/test_natural_spreading.py", line 222, in <module>
+    main()
+  File "/home/sverzijl/planning_latest/test_natural_spreading.py", line 157, in main
+    data = create_test_data()
+           ^^^^^^^^^^^^^^^^^^
+  File "/home/sverzijl/planning_latest/test_natural_spreading.py", line 43, in create_test_data
+    Route("R1", "6122", "6104", transit_days=2, cost_per_unit=0.50, transport_mode="ambient")
+TypeError: BaseModel.__init__() takes 1 positional argument but 4 were given

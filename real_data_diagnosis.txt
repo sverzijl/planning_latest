@@ -1,0 +1,6 @@
+================================================================================
+DAILY INVENTORY SNAPSHOT DIAGNOSIS WITH REAL DATA
+================================================================================
+
+Loading data from: data/examples/Gfree Forecast.xlsm
+ERROR loading data: Worksheet named 'Locations' not found

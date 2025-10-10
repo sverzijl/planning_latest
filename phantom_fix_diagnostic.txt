@@ -1,0 +1,178 @@
+================================================================================
+PRODUCTION BOTTLENECK DIAGNOSTIC
+================================================================================
+
+📊 Loading data and solving model...
+✅ Solved in 104.8s
+   Objective: $12,455,761.07
+
+================================================================================
+1. PRODUCTION ANALYSIS
+================================================================================
+
+Total Production: 2,318,219 units
+
+First 30 Days Production:
+  2025-05-29 (Thu):          0 units
+  2025-05-30 (Fri):          0 units
+  2025-05-31 (Sat):          0 units
+  2025-06-01 (Sun):          0 units
+  2025-06-02 (Mon):          0 units
+  2025-06-03 (Tue):          0 units
+  2025-06-04 (Wed):     16,800 units
+  2025-06-05 (Thu):     16,800 units
+  2025-06-06 (Fri):     16,800 units
+  2025-06-07 (Sat):          0 units
+  2025-06-08 (Sun):          0 units
+  2025-06-09 (Mon):          0 units
+  2025-06-10 (Tue):     16,800 units
+  2025-06-11 (Wed):     16,800 units
+  2025-06-12 (Thu):     16,800 units
+  2025-06-13 (Fri):     16,800 units
+  2025-06-14 (Sat):          0 units
+  2025-06-15 (Sun):          0 units
+  2025-06-16 (Mon):     16,800 units
+  2025-06-17 (Tue):     18,853 units
+  2025-06-18 (Wed):     19,600 units
+  2025-06-19 (Thu):     19,600 units
+  2025-06-20 (Fri):     19,600 units
+  2025-06-21 (Sat):          0 units
+  2025-06-22 (Sun):          0 units
+  2025-06-23 (Mon):     12,935 units
+  2025-06-24 (Tue):     16,800 units
+  2025-06-25 (Wed):     16,800 units
+  2025-06-26 (Thu):     16,800 units
+  2025-06-27 (Fri):     16,800 units
+
+Production Pattern Analysis:
+  Days with production > 10K: 136
+  Days with production < 5K:  69
+  Days with zero production:  68
+
+================================================================================
+2. 6122_STORAGE INVENTORY FLOW
+================================================================================
+
+First 30 Days Inventory Balance:
+Date          Day     Prev Inv   Production   Truck Load      End Inv
+--------------------------------------------------------------------
+2025-05-29    Thu       75,000            0       28,160       46,840
+2025-05-30    Fri       46,840            0       14,080       32,760
+2025-05-31    Sat       32,760            0            0       32,760
+2025-06-01    Sun       32,760            0       13,908       18,852
+2025-06-02    Mon       18,852            0        7,492       11,360
+2025-06-03    Tue       11,360            0            0       11,360
+2025-06-04    Wed       11,360       16,800       14,080       14,080
+2025-06-05    Thu       14,080       16,800       30,880            0
+2025-06-06    Fri            0       16,800       12,607        4,193
+2025-06-07    Sat        4,193            0            0        4,193
+2025-06-08    Sun        4,193            0            0        4,193
+2025-06-09    Mon        4,193            0        2,732        1,461
+2025-06-10    Tue        1,461       16,800       11,088        7,172
+2025-06-11    Wed        7,172       16,800        9,892       14,080
+2025-06-12    Thu       14,080       16,800       14,080       16,800
+2025-06-13    Fri       16,800       16,800       23,785        9,815
+2025-06-14    Sat        9,815            0            0        9,815
+2025-06-15    Sun        9,815            0            0        9,815
+2025-06-16    Mon        9,815       16,800       15,897       10,718
+2025-06-17    Tue       10,718       18,853       14,080       15,491
+2025-06-18    Wed       15,491       19,600       21,011       14,080
+2025-06-19    Thu       14,080       19,600       14,080       19,600
+2025-06-20    Fri       19,600       19,600       39,200            0
+2025-06-21    Sat            0            0            0            0
+2025-06-22    Sun            0            0            0            0
+2025-06-23    Mon            0       12,935        8,589        4,346
+2025-06-24    Tue        4,346       16,800            0       21,146
+2025-06-25    Wed       21,146       16,800       21,300       16,645
+2025-06-26    Thu       16,645       16,800            0       33,445
+2025-06-27    Fri       33,445       16,800       19,042       31,203
+
+Final 6122_Storage Inventory: 0 units
+
+================================================================================
+3. TRUCK LOADING ANALYSIS
+================================================================================
+
+First 30 Days Truck Loads (by departure date):
+  2025-05-29 (Thu):     28,160 units
+  2025-05-30 (Fri):     14,080 units
+  2025-05-31 (Sat):          0 units
+  2025-06-01 (Sun):     13,908 units
+  2025-06-02 (Mon):      7,492 units
+  2025-06-03 (Tue):          0 units
+  2025-06-04 (Wed):     14,080 units
+  2025-06-05 (Thu):     30,880 units
+  2025-06-06 (Fri):     12,607 units
+  2025-06-07 (Sat):          0 units
+  2025-06-08 (Sun):          0 units
+  2025-06-09 (Mon):      2,732 units
+  2025-06-10 (Tue):     11,088 units
+  2025-06-11 (Wed):      9,892 units
+  2025-06-12 (Thu):     14,080 units
+  2025-06-13 (Fri):     23,785 units
+  2025-06-14 (Sat):          0 units
+  2025-06-15 (Sun):          0 units
+  2025-06-16 (Mon):     15,897 units
+  2025-06-17 (Tue):     14,080 units
+  2025-06-18 (Wed):     21,011 units
+  2025-06-19 (Thu):     14,080 units
+  2025-06-20 (Fri):     39,200 units
+  2025-06-21 (Sat):          0 units
+  2025-06-22 (Sun):          0 units
+  2025-06-23 (Mon):      8,589 units
+  2025-06-24 (Tue):          0 units
+  2025-06-25 (Wed):     21,300 units
+  2025-06-26 (Thu):          0 units
+  2025-06-27 (Fri):     19,042 units
+
+Total Truck Loads: 2,393,219 units
+
+================================================================================
+4. MASS BALANCE CHECK
+================================================================================
+
+Inputs:
+  Initial Inventory:        75,000 units
+  Production:            2,318,219 units
+  Total Supply:          2,393,219 units
+
+Outputs:
+  Demand:                2,407,299 units
+  Shortages:                     0 units
+  Demand Satisfied:      2,407,299 units
+  Final Inventory:               0 units
+  Total Usage:           2,407,299 units
+
+Mass Balance Gap:          -14,080 units
+⚠️  Mass balance error!
+
+================================================================================
+5. BOTTLENECK IDENTIFICATION
+================================================================================
+
+Capacity Analysis:
+  Weekdays in horizon:        148
+  Labor capacity (regular):   2,486,400 units (12h/day)
+  Labor capacity (with OT):   2,900,800 units (14h/day)
+  Actual production:          2,318,219 units
+  Utilization (regular):      93.2%
+
+Truck Capacity:
+  Truck departures (estimate): 1628
+  Truck capacity (total):      22,922,240 units
+  Actual truck loads:          2,393,219 units
+  Utilization:                 10.4%
+
+================================================================================
+DIAGNOSIS
+================================================================================
+
+Production Deficit: 89,080 units (3.7% of demand)
+Shortages: ZERO (despite 89,080 unit deficit!)
+⚠️  This suggests units are being produced but not reaching demand locations
+
+⚠️  BOTTLENECK: Production artificially limited
+   Production capacity available but not being utilized
+   Check production or truck loading constraints
+
+================================================================================

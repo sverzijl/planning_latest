@@ -1,0 +1,53 @@
+================================================================================
+CBC AGGRESSIVE HEURISTICS TEST - 21-DAY WINDOW
+================================================================================
+
+Loading data...
+21-day window: 2025-06-02 to 2025-06-22
+Demand: 249,436 units
+
+Building model...
+Model built: 9220 vars, 2505 constraints
+
+================================================================================
+TEST 1: DEFAULT CBC (30s timeout)
+================================================================================
+Solving with default CBC settings...
+❌ Failed after 30.88s
+   Status: maxTimeLimit
+
+Rebuilding model for Test 2...
+
+================================================================================
+TEST 2: AGGRESSIVE HEURISTICS (120s timeout)
+================================================================================
+
+Configuring aggressive heuristic settings:
+  - Feasibility Pump: ON
+  - RINS (TABU-like): ON
+  - Proximity Search (TABU-like): ON
+  - Diving Heuristics: ON
+  - All cutting planes: ON
+  - Auto-tuning: Level 2
+
+Solving with aggressive heuristics...
+✅ SOLVED in 4.30s
+   Cost: $937,192.53
+   Status: optimal
+
+================================================================================
+RESULTS SUMMARY
+================================================================================
+
+Default CBC (30s):         30.88s  ✗ timeout
+Aggressive Heuristics:      4.30s  ✓ solved
+
+🎯 SUCCESS! Aggressive heuristics solved where default failed!
+   Time: 4.30s
+   Cost: $937,192.53
+
+✅ CONCLUSION: Aggressive heuristics unlock 21-day windows!
+   → Can now use hierarchical 3-week configurations
+   → Approximate speedup: 7.0x faster than default
+
+================================================================================
