@@ -2,6 +2,9 @@
 
 This test suite validates the DailySnapshotGenerator and all related dataclasses,
 ensuring accurate inventory tracking, flow calculations, and demand satisfaction reporting.
+
+UPDATED: Tests now align with "end-of-day" snapshot semantics where inventory is shown
+AFTER all activities including demand consumption (FIFO strategy).
 """
 
 import pytest
@@ -562,7 +565,10 @@ def test_in_transit_after_arrival(
 
 
 def test_multi_leg_transit() -> None:
-    """Test multi-leg routes in transit."""
+    """Test multi-leg routes in transit.
+
+    UPDATED: Inventory shown AFTER demand consumption (end-of-day semantics).
+    """
     base_date = date(2025, 10, 13)
 
     # 3-leg route: 6122 -> 6125 (1d) -> 6104 (1d) -> 6130 (2d)
@@ -621,21 +627,23 @@ def test_multi_leg_transit() -> None:
     generator = DailySnapshotGenerator(schedule, [shipment], locations_dict, forecast)
 
     # Check transit on different legs
-    # Day 0 (10/13): At manufacturing (not yet departed)
+    # Day 0 (10/13): End-of-day - produced AND shipped, so in-transit 6122 -> 6125
     snapshot_d0 = generator._generate_single_snapshot(base_date)
-    assert len(snapshot_d0.in_transit) == 0
+    assert len(snapshot_d0.in_transit) == 1
+    assert snapshot_d0.in_transit[0].origin_id == "6122"
+    assert snapshot_d0.in_transit[0].destination_id == "6125"
 
-    # Day 1 (10/14): In transit 6122 -> 6125
+    # Day 1 (10/14): Arrives at 6125, departs same day for 6104, so in-transit 6125 -> 6104
     snapshot_d1 = generator._generate_single_snapshot(base_date + timedelta(days=1))
     assert len(snapshot_d1.in_transit) == 1
-    assert snapshot_d1.in_transit[0].origin_id == "6122"
-    assert snapshot_d1.in_transit[0].destination_id == "6125"
+    assert snapshot_d1.in_transit[0].origin_id == "6125"
+    assert snapshot_d1.in_transit[0].destination_id == "6104"
 
-    # Day 2 (10/15): In transit 6125 -> 6104
+    # Day 2 (10/15): Arrives at 6104, departs same day for 6130, so in-transit 6104 -> 6130
     snapshot_d2 = generator._generate_single_snapshot(base_date + timedelta(days=2))
     assert len(snapshot_d2.in_transit) == 1
-    assert snapshot_d2.in_transit[0].origin_id == "6125"
-    assert snapshot_d2.in_transit[0].destination_id == "6104"
+    assert snapshot_d2.in_transit[0].origin_id == "6104"
+    assert snapshot_d2.in_transit[0].destination_id == "6130"
 
 
 # ===========================
@@ -956,7 +964,11 @@ def test_demand_with_shortage() -> None:
 
 
 def test_demand_overfulfillment() -> None:
-    """Test handle supply > demand."""
+    """Test handle supply > demand.
+
+    UPDATED: Inventory shown AFTER demand consumption.
+    When demand=320 and available=500, demand consumes 320, leaving 180.
+    """
     base_date = date(2025, 10, 13)
     delivery_date = base_date + timedelta(days=3)
 
@@ -1024,10 +1036,13 @@ def test_demand_overfulfillment() -> None:
     record = snapshot.demand_satisfied[0]
 
     assert record.demand_quantity == 320.0
-    assert record.supplied_quantity == 500.0
-    assert record.shortage_quantity == 0.0  # No shortage
+    assert record.supplied_quantity == 320.0  # Only consume what's needed
+    assert record.shortage_quantity == 0.0
     assert record.is_satisfied
-    assert record.fill_rate == 1.0  # Capped at 100%
+    assert record.fill_rate == 1.0
+
+    # UPDATED: Inventory after consumption should be 500 - 320 = 180
+    assert snapshot.location_inventory["6103"].total_quantity == 180.0
 
 
 def test_no_demand_on_date(
@@ -1486,6 +1501,7 @@ def test_snapshot_string_representation(
 
 # ===========================
 # Tests - Pre-positioned Inventory (Bug Fix)
+# UPDATED: Tests now expect "end-of-day" semantics (after demand consumption)
 # ===========================
 
 
@@ -1495,10 +1511,9 @@ def test_demand_satisfied_from_prepositioned_inventory() -> None:
     Scenario:
     - Day 1: Deliver 1000 units to location 6103
     - Day 3: Demand 500 units at location 6103
-    - Expected: supplied=500 (from on-hand inventory), shortage=0
+    - Expected: supplied=500 (consumed from inventory), ending inventory=500
 
-    This tests the fix for the bug where demand was incorrectly shown as
-    not satisfied when inventory was available from earlier deliveries.
+    UPDATED: With new semantics, inventory shown is AFTER demand consumption.
     """
     base_date = date(2025, 10, 13)
     delivery_date = base_date + timedelta(days=1)  # Day 1
@@ -1573,14 +1588,14 @@ def test_demand_satisfied_from_prepositioned_inventory() -> None:
 
     # CRITICAL ASSERTION: Demand should be satisfied from on-hand inventory
     assert record.demand_quantity == 500.0
-    assert record.supplied_quantity == 1000.0  # Full inventory available (was 0 before fix)
+    assert record.supplied_quantity == 500.0  # Consumed 500 from available 1000
     assert record.shortage_quantity == 0.0
     assert record.is_satisfied
     assert record.fill_rate == 1.0
 
-    # Verify inventory exists at location
+    # UPDATED: Inventory after consumption should be 1000 - 500 = 500
     assert "6103" in snapshot.location_inventory
-    assert snapshot.location_inventory["6103"].total_quantity == 1000.0
+    assert snapshot.location_inventory["6103"].total_quantity == 500.0
 
 
 def test_demand_partially_satisfied_from_inventory() -> None:
@@ -1589,7 +1604,9 @@ def test_demand_partially_satisfied_from_inventory() -> None:
     Scenario:
     - Day 1: Deliver 300 units to location 6103
     - Day 3: Demand 500 units at location 6103 (no new deliveries)
-    - Expected: supplied=300 (from on-hand), shortage=200
+    - Expected: supplied=300 (all available consumed), ending inventory=0, shortage=200
+
+    UPDATED: Inventory shown AFTER demand consumption.
     """
     base_date = date(2025, 10, 13)
     delivery_date = base_date + timedelta(days=1)
@@ -1665,9 +1682,9 @@ def test_demand_partially_satisfied_from_inventory() -> None:
     assert not record.is_satisfied
     assert abs(record.fill_rate - 0.6) < 0.01  # 300/500 = 60%
 
-    # Verify inventory
+    # UPDATED: Inventory after consumption should be 0 (all consumed)
     assert "6103" in snapshot.location_inventory
-    assert snapshot.location_inventory["6103"].total_quantity == 300.0
+    assert snapshot.location_inventory["6103"].total_quantity == 0.0
 
 
 def test_demand_satisfied_from_inventory_and_delivery() -> None:
@@ -1677,7 +1694,9 @@ def test_demand_satisfied_from_inventory_and_delivery() -> None:
     - Day 1: Deliver 200 units to location 6103
     - Day 3: Demand 500 units at location 6103
     - Day 3: NEW delivery of 300 units arrives
-    - Expected: supplied=500 (200 on-hand + 300 delivered today), shortage=0
+    - Expected: supplied=500, ending inventory=0, shortage=0
+
+    UPDATED: Inventory shown AFTER demand consumption.
     """
     base_date = date(2025, 10, 13)
     first_delivery = base_date + timedelta(days=1)   # Day 1
@@ -1778,9 +1797,9 @@ def test_demand_satisfied_from_inventory_and_delivery() -> None:
     assert record.is_satisfied
     assert record.fill_rate == 1.0
 
-    # Verify total inventory includes both shipments
+    # UPDATED: Inventory after consumption should be 0 (500 arrived, 500 consumed)
     assert "6103" in snapshot.location_inventory
-    assert snapshot.location_inventory["6103"].total_quantity == 500.0
+    assert snapshot.location_inventory["6103"].total_quantity == 0.0
 
 
 # ===========================

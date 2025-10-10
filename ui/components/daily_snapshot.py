@@ -29,6 +29,26 @@ from ui.components.styling import (
 )
 
 
+def _get_freshness_status(remaining_days: int) -> Tuple[str, str]:
+    """
+    Get freshness status emoji and label based on remaining shelf life.
+
+    Args:
+        remaining_days: Days of shelf life remaining
+
+    Returns:
+        Tuple of (emoji, status_text)
+    """
+    if remaining_days >= 10:
+        return ("🟢", "Fresh")
+    elif remaining_days >= 5:
+        return ("🟡", "Aging")
+    elif remaining_days >= 0:
+        return ("🔴", "Near Expiry")
+    else:
+        return ("⚫", "Expired")
+
+
 def render_daily_snapshot(
     results: Dict[str, Any],
     locations: Dict[str, Location],
@@ -264,39 +284,58 @@ def render_daily_snapshot(
                         if not batches_by_product:
                             st.caption("_No detailed batch information available_")
                         else:
-                            # Create table
+                            # Create enhanced table with shelf life tracking
                             batch_data = []
                             for product_id, batch_list in batches_by_product.items():
                                 for batch_info in batch_list:
+                                    age_days = batch_info.get('age_days', 0)
+
+                                    # Calculate shelf life remaining
+                                    # Ambient shelf life: 17 days
+                                    # TODO: Get actual shelf life from product model
+                                    shelf_life_days = 17
+                                    remaining_days = shelf_life_days - age_days
+
+                                    # Determine freshness status
+                                    emoji, status = _get_freshness_status(remaining_days)
+
                                     batch_data.append({
                                         'Batch ID': batch_info.get('id', 'N/A'),
                                         'Product': product_id,
-                                        'Quantity': batch_info.get('quantity', 0),
-                                        'Age (days)': batch_info.get('age_days', 0),
+                                        'Quantity': f"{batch_info.get('quantity', 0):,.0f}",
                                         'Production Date': batch_info.get('production_date', 'N/A'),
+                                        'Age (days)': age_days,
+                                        'Shelf Life Left': f"{remaining_days}d",
+                                        'Status': f"{emoji} {status}",
+                                        '_remaining': remaining_days,  # Hidden column for styling
                                     })
 
                             if batch_data:
                                 df_batches = pd.DataFrame(batch_data)
 
-                                # Style based on age
-                                def highlight_age(row):
-                                    age = row['Age (days)']
-                                    if age <= 3:
+                                # Style based on shelf life remaining
+                                def highlight_shelf_life(row):
+                                    remaining = row['_remaining']
+                                    if remaining >= 10:
                                         return ['background-color: #d4edda'] * len(row)  # Green - fresh
-                                    elif age <= 7:
-                                        return ['background-color: #fff3cd'] * len(row)  # Yellow - medium
+                                    elif remaining >= 5:
+                                        return ['background-color: #fff3cd'] * len(row)  # Yellow - aging
+                                    elif remaining >= 0:
+                                        return ['background-color: #f8d7da'] * len(row)  # Red - near expiry
                                     else:
-                                        return ['background-color: #f8d7da'] * len(row)  # Red - old
+                                        return ['background-color: #dc3545; color: white'] * len(row)  # Dark red - expired
+
+                                # Drop hidden column before display
+                                display_df = df_batches.drop(columns=['_remaining'])
 
                                 st.dataframe(
-                                    df_batches.style.apply(highlight_age, axis=1),
+                                    display_df.style.apply(highlight_shelf_life, axis=1),
                                     use_container_width=True,
                                     hide_index=True
                                 )
 
-                                # Show legend
-                                st.caption("🟢 Fresh (0-3 days)  |  🟡 Medium (4-7 days)  |  🔴 Old (8+ days)")
+                                # Show enhanced legend
+                                st.caption("🟢 Fresh (10+ days)  |  🟡 Aging (5-9 days)  |  🔴 Near Expiry (<5 days)  |  ⚫ Expired")
 
     st.divider()
 
@@ -422,6 +461,54 @@ def render_daily_snapshot(
     st.divider()
 
     # ====================
+    # BATCH TRACEABILITY (if batch tracking is enabled)
+    # ====================
+
+    # Check if batch tracking is enabled in results
+    use_batch_tracking = results.get('use_batch_tracking', False)
+
+    if use_batch_tracking and production_schedule and production_schedule.production_batches:
+        st.markdown(section_header("Batch Traceability", level=3, icon="🔍"), unsafe_allow_html=True)
+
+        with st.expander("🔍 Trace Individual Batches", expanded=False):
+            # Get all batches from production schedule
+            all_batches = production_schedule.production_batches
+
+            if not all_batches:
+                st.info("ℹ️ No batches available for tracing")
+            else:
+                # Create batch selection options
+                batch_options = [
+                    f"{batch.id} - {batch.product_id} ({batch.production_date}) - {batch.quantity:,.0f} units"
+                    for batch in all_batches
+                ]
+                batch_ids = [batch.id for batch in all_batches]
+
+                # Batch selector
+                selected_idx = st.selectbox(
+                    "Select batch to trace:",
+                    range(len(batch_options)),
+                    format_func=lambda i: batch_options[i],
+                    key=f"{key_prefix}_batch_selector"
+                )
+
+                if selected_idx is not None:
+                    selected_batch_id = batch_ids[selected_idx]
+                    selected_batch = all_batches[selected_idx]
+
+                    # Display batch traceability
+                    _display_batch_traceability(
+                        batch=selected_batch,
+                        batch_id=selected_batch_id,
+                        shipments=shipments,
+                        results=results,
+                        locations=locations,
+                        key_prefix=key_prefix
+                    )
+
+    st.divider()
+
+    # ====================
     # DEMAND SATISFACTION
     # ====================
 
@@ -477,6 +564,198 @@ def render_daily_snapshot(
                 warning_badge(f"{total_shortage:.0f} units short"),
                 unsafe_allow_html=True
             )
+
+
+def _display_batch_traceability(
+    batch: ProductionBatch,
+    batch_id: str,
+    shipments: List[Shipment],
+    results: Dict[str, Any],
+    locations: Dict[str, Location],
+    key_prefix: str
+) -> None:
+    """
+    Display detailed traceability information for a specific batch.
+
+    Shows the complete journey of the batch from production through
+    the supply chain network to final delivery.
+
+    Args:
+        batch: ProductionBatch object
+        batch_id: Batch identifier
+        shipments: List of all shipments
+        results: Results dictionary
+        locations: Dictionary of locations
+        key_prefix: Session state key prefix
+    """
+    st.markdown("---")
+    st.subheader(f"Batch Journey: {batch_id}")
+
+    # ====================
+    # PRODUCTION INFO
+    # ====================
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.markdown(f"**Production Date:** {batch.production_date}")
+        location_name = locations.get(batch.manufacturing_site_id).name if locations.get(batch.manufacturing_site_id) else batch.manufacturing_site_id
+        st.markdown(f"**Manufactured at:** {location_name} ({batch.manufacturing_site_id})")
+
+    with col2:
+        st.markdown(f"**Product:** {batch.product_id}")
+        st.markdown(f"**Quantity:** {batch.quantity:,.0f} units")
+
+    with col3:
+        st.markdown(f"**Initial State:** {batch.initial_state}")
+        if batch.assigned_truck_id:
+            st.markdown(f"**Assigned Truck:** {batch.assigned_truck_id}")
+
+    st.markdown("---")
+
+    # ====================
+    # SHIPMENT HISTORY
+    # ====================
+
+    st.markdown("### 📦 Shipment History")
+
+    # Find all shipments for this batch
+    batch_shipments = [s for s in shipments if s.batch_id == batch_id]
+
+    if not batch_shipments:
+        st.info("ℹ️ No shipments found for this batch (may still be at manufacturing site)")
+    else:
+        # Sort by delivery date
+        batch_shipments = sorted(batch_shipments, key=lambda s: s.delivery_date)
+
+        shipment_data = []
+        for shipment in batch_shipments:
+            # Get origin and destination names
+            origin_name = locations.get(shipment.origin_id).name if locations.get(shipment.origin_id) else shipment.origin_id
+            dest_name = locations.get(shipment.destination_id).name if locations.get(shipment.destination_id) else shipment.destination_id
+
+            # Build route path string
+            route_path = " → ".join([leg.from_location_id for leg in shipment.route.route_legs])
+            route_path += f" → {shipment.destination_id}"
+
+            shipment_data.append({
+                'Shipment ID': shipment.id,
+                'Route': f"{origin_name} → {dest_name}",
+                'Full Path': route_path,
+                'Quantity': f"{shipment.quantity:,.0f}",
+                'Delivery Date': shipment.delivery_date,
+                'Transit Days': shipment.total_transit_days,
+                'Transport Mode': shipment.transport_mode,
+            })
+
+        df_shipments = pd.DataFrame(shipment_data)
+        st.dataframe(df_shipments, use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+
+    # ====================
+    # CURRENT LOCATIONS (from cohort inventory if available)
+    # ====================
+
+    st.markdown("### 📍 Current Locations")
+
+    cohort_inventory = results.get('cohort_inventory', {})
+
+    if cohort_inventory:
+        # Find where this batch currently is
+        # cohort_inventory format: {(loc, prod, prod_date, curr_date, state): qty}
+        current_locations = {}
+
+        for (loc, prod, prod_date, curr_date, state), qty in cohort_inventory.items():
+            if prod == batch.product_id and prod_date == batch.production_date and qty > 0.01:
+                if loc not in current_locations:
+                    current_locations[loc] = {'total': 0.0, 'by_state': {}}
+                current_locations[loc]['total'] += qty
+                if state not in current_locations[loc]['by_state']:
+                    current_locations[loc]['by_state'][state] = 0.0
+                current_locations[loc]['by_state'][state] += qty
+
+        if current_locations:
+            location_data = []
+            for loc_id, inv_info in current_locations.items():
+                loc_name = locations.get(loc_id).name if locations.get(loc_id) else loc_id
+                states = ", ".join([f"{state}: {qty:,.0f}" for state, qty in inv_info['by_state'].items()])
+
+                location_data.append({
+                    'Location': f"{loc_name} ({loc_id})",
+                    'Total Quantity': f"{inv_info['total']:,.0f} units",
+                    'State Breakdown': states,
+                })
+
+            df_locations = pd.DataFrame(location_data)
+            st.dataframe(df_locations, use_container_width=True, hide_index=True)
+        else:
+            st.info("ℹ️ Batch has been fully consumed (no remaining inventory)")
+    else:
+        st.info("ℹ️ Cohort inventory data not available (run optimization with use_batch_tracking=True)")
+
+    st.markdown("---")
+
+    # ====================
+    # TIMELINE VISUALIZATION
+    # ====================
+
+    st.markdown("### 📅 Timeline")
+
+    if batch_shipments:
+        # Create simple timeline
+        timeline_events = []
+
+        # Production event
+        timeline_events.append({
+            'Date': batch.production_date,
+            'Event': 'Production',
+            'Location': batch.manufacturing_site_id,
+            'Quantity': f"{batch.quantity:,.0f}",
+            'Details': f"Manufactured at {batch.manufacturing_site_id}"
+        })
+
+        # Shipment events
+        for shipment in batch_shipments:
+            # Departure
+            departure_date = shipment.delivery_date - timedelta(days=shipment.total_transit_days)
+            timeline_events.append({
+                'Date': departure_date,
+                'Event': 'Departure',
+                'Location': shipment.origin_id,
+                'Quantity': f"{shipment.quantity:,.0f}",
+                'Details': f"Departed {shipment.origin_id} → {shipment.destination_id}"
+            })
+
+            # Delivery
+            timeline_events.append({
+                'Date': shipment.delivery_date,
+                'Event': 'Delivery',
+                'Location': shipment.destination_id,
+                'Quantity': f"{shipment.quantity:,.0f}",
+                'Details': f"Arrived at {shipment.destination_id}"
+            })
+
+        # Sort by date
+        timeline_events = sorted(timeline_events, key=lambda e: e['Date'])
+
+        df_timeline = pd.DataFrame(timeline_events)
+
+        # Style timeline
+        def highlight_event(row):
+            event = row['Event']
+            if event == 'Production':
+                return ['background-color: #d1ecf1'] * len(row)  # Blue
+            elif event == 'Departure':
+                return ['background-color: #fff3cd'] * len(row)  # Yellow
+            else:  # Delivery
+                return ['background-color: #d4edda'] * len(row)  # Green
+
+        st.dataframe(
+            df_timeline.style.apply(highlight_event, axis=1),
+            use_container_width=True,
+            hide_index=True
+        )
 
 
 def _get_date_range(

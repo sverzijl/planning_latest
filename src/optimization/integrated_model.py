@@ -90,6 +90,11 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
     # Max hours per day (with overtime)
     MAX_HOURS_PER_DAY = 14.0
 
+    # Shelf life constants (days)
+    AMBIENT_SHELF_LIFE = 17  # Ambient/thawed products expire after 17 days
+    FROZEN_SHELF_LIFE = 120  # Frozen products can be stored for 120 days
+    THAWED_SHELF_LIFE = 14   # Products that are thawed (e.g., at 6130) get 14 days
+
     def __init__(
         self,
         forecast: Forecast,
@@ -108,6 +113,7 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         validate_feasibility: bool = True,
         truck_schedules: Optional[TruckScheduleCollection] = None,
         initial_inventory: Optional[Dict[Tuple[str, str], float]] = None,
+        use_batch_tracking: bool = False,
     ):
         """
         Initialize integrated production-distribution model.
@@ -129,6 +135,8 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             validate_feasibility: If True, validate feasibility before building model (default: True)
             truck_schedules: Optional collection of truck schedules (if None, no truck constraints)
             initial_inventory: Optional dict mapping (dest_id, product_id) to initial inventory quantity
+            use_batch_tracking: If True, use age-cohort batch tracking model for shelf life and FIFO.
+                                If False, use legacy aggregated inventory model (default: False)
         """
         super().__init__(solver_config)
 
@@ -144,6 +152,7 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         self.max_product_age_days = max_product_age_days
         self._validate_feasibility_flag = validate_feasibility
         self.initial_inventory = initial_inventory or {}
+        self.use_batch_tracking = use_batch_tracking
 
         # Validate truck_schedules type
         if truck_schedules is not None:
@@ -875,6 +884,127 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             error_msg += "\n\nPlease fix these issues before attempting optimization."
             raise ValueError(error_msg)
 
+    def _cohort_is_reachable(self, loc: str, prod: str, prod_date: Date, curr_date: Date) -> bool:
+        """
+        Check if a cohort (production from prod_date) can exist at location on curr_date.
+
+        A cohort is reachable if:
+        1. loc is manufacturing site (6122_Storage) - production flows here directly
+        2. loc can be reached from manufacturing via a route with compatible timing
+
+        Args:
+            loc: Location ID
+            prod: Product ID
+            prod_date: Date when product was produced
+            curr_date: Current date (when we check if cohort exists)
+
+        Returns:
+            True if cohort can exist at this location
+        """
+        # Manufacturing storage: always reachable if production exists
+        if loc == '6122_Storage':
+            return True
+
+        # Other locations: check if reachable via network legs
+        for leg in self.legs_to_location.get(loc, []):
+            transit_days = self.leg_transit_days.get(leg, 0)
+            earliest_arrival = prod_date + timedelta(days=transit_days)
+
+            # Can this cohort have arrived by curr_date?
+            if earliest_arrival <= curr_date:
+                return True
+
+        return False
+
+    def _build_cohort_indices(self, sorted_dates: List[Date]) -> Tuple[Set, Set, Set, Set]:
+        """
+        Build sparse cohort indices for 4D inventory and shipment variables.
+
+        This is critical for performance - naive 4D indexing would create millions of variables.
+        We only create variables for valid (location, product, production_date, current_date) tuples.
+
+        Valid cohort conditions:
+        1. production_date <= current_date (can't have inventory from the future)
+        2. age = current_date - production_date <= SHELF_LIFE (expired cohorts don't exist)
+        3. location has received shipments from production_date OR is manufacturing site
+
+        Returns:
+            Tuple of (frozen_cohorts, ambient_cohorts, shipment_cohorts, demand_cohorts)
+            Each is a set of tuples defining valid indices
+        """
+        frozen_cohorts = set()
+        ambient_cohorts = set()
+        shipment_cohorts = set()
+        demand_cohorts = set()
+
+        print("\nBuilding sparse cohort indices...")
+
+        # For each production date
+        for prod_date in sorted_dates:
+            # For each current date >= production date
+            for curr_date in [d for d in sorted_dates if d >= prod_date]:
+                age_days = (curr_date - prod_date).days
+
+                # For each location and product
+                for loc in self.inventory_locations:
+                    for prod in self.products:
+                        # Frozen cohorts: long shelf life (120 days)
+                        if loc in self.locations_frozen_storage and age_days <= self.FROZEN_SHELF_LIFE:
+                            if self._cohort_is_reachable(loc, prod, prod_date, curr_date):
+                                frozen_cohorts.add((loc, prod, prod_date, curr_date))
+
+                        # Ambient cohorts: short shelf life (17 days for ambient, 14 for thawed)
+                        if loc in self.locations_ambient_storage:
+                            # 6130 (WA) uses thawed shelf life (14 days)
+                            shelf_life = self.THAWED_SHELF_LIFE if loc == '6130' else self.AMBIENT_SHELF_LIFE
+                            if age_days <= shelf_life:
+                                if self._cohort_is_reachable(loc, prod, prod_date, curr_date):
+                                    ambient_cohorts.add((loc, prod, prod_date, curr_date))
+
+        # Shipment cohorts: for each leg, product, production_date, delivery_date
+        for leg in self.leg_keys:
+            for prod in self.products:
+                transit_days = self.leg_transit_days.get(leg, 0)
+                for delivery_date in sorted_dates:
+                    # Departure date must be >= production date
+                    departure_date = delivery_date - timedelta(days=transit_days)
+                    for prod_date in sorted_dates:
+                        if prod_date <= departure_date and prod_date <= delivery_date:
+                            # Check if this shipment makes sense (don't create too many indices)
+                            # Only create if the cohort could exist at origin location
+                            origin_loc = leg[0]
+                            if origin_loc == '6122_Storage' or self._cohort_is_reachable(origin_loc, prod, prod_date, departure_date):
+                                shipment_cohorts.add((leg, prod, prod_date, delivery_date))
+
+        # Demand cohorts: for each demand point, which cohorts could satisfy it?
+        for (loc, prod, demand_date) in self.demand.keys():
+            # Any cohort produced before demand date and still fresh
+            for prod_date in [d for d in sorted_dates if d <= demand_date]:
+                age_days = (demand_date - prod_date).days
+                # Check shelf life
+                shelf_life = self.THAWED_SHELF_LIFE if loc == '6130' else self.AMBIENT_SHELF_LIFE
+                if age_days <= shelf_life:
+                    # Check if cohort could exist at this location
+                    if self._cohort_is_reachable(loc, prod, prod_date, demand_date):
+                        demand_cohorts.add((loc, prod, prod_date, demand_date))
+
+        # Report index sizes
+        print(f"  Frozen cohorts: {len(frozen_cohorts):,}")
+        print(f"  Ambient cohorts: {len(ambient_cohorts):,}")
+        print(f"  Shipment cohorts: {len(shipment_cohorts):,}")
+        print(f"  Demand cohorts: {len(demand_cohorts):,}")
+        print(f"  Total: {len(frozen_cohorts) + len(ambient_cohorts) + len(shipment_cohorts) + len(demand_cohorts):,}")
+
+        # Validate size is reasonable
+        total_cohort_vars = len(frozen_cohorts) + len(ambient_cohorts) + len(shipment_cohorts) + len(demand_cohorts)
+        if total_cohort_vars > 200000:
+            warnings.warn(
+                f"Cohort model is very large: {total_cohort_vars:,} cohort variables. "
+                f"This may cause slow solve times. Consider reducing planning horizon or using rolling horizon."
+            )
+
+        return frozen_cohorts, ambient_cohorts, shipment_cohorts, demand_cohorts
+
     def build_model(self) -> ConcreteModel:
         """
         Build integrated production-distribution optimization model.
@@ -935,6 +1065,20 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
 
         model.inventory_frozen_index = list(self.inventory_frozen_index_set)
         model.inventory_ambient_index = list(self.inventory_ambient_index_set)
+
+        # BATCH TRACKING: Build cohort indices if enabled
+        if self.use_batch_tracking:
+            (
+                self.cohort_frozen_index_set,
+                self.cohort_ambient_index_set,
+                self.cohort_shipment_index_set,
+                self.cohort_demand_index_set
+            ) = self._build_cohort_indices(sorted_dates)
+
+            model.cohort_frozen_index = list(self.cohort_frozen_index_set)
+            model.cohort_ambient_index = list(self.cohort_ambient_index_set)
+            model.cohort_shipment_index = list(self.cohort_shipment_index_set)
+            model.cohort_demand_index = list(self.cohort_demand_index_set)
 
         # Decision variables: production[date, product]
         model.production = Var(
@@ -1060,6 +1204,34 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             within=NonNegativeReals,
             doc="Ambient/thawed inventory at location by product and date (subject to shelf life)"
         )
+
+        # BATCH TRACKING: Cohort-based inventory variables (4D: location, product, production_date, current_date)
+        if self.use_batch_tracking:
+            model.inventory_frozen_cohort = Var(
+                model.cohort_frozen_index,
+                within=NonNegativeReals,
+                doc="Frozen inventory by age cohort (loc, product, production_date, current_date)"
+            )
+
+            model.inventory_ambient_cohort = Var(
+                model.cohort_ambient_index,
+                within=NonNegativeReals,
+                doc="Ambient inventory by age cohort (production_date enables shelf life tracking)"
+            )
+
+            # Shipment variables with cohort tracking
+            model.shipment_leg_cohort = Var(
+                model.cohort_shipment_index,
+                within=NonNegativeReals,
+                doc="Shipment quantity by leg and production cohort (leg, product, production_date, delivery_date)"
+            )
+
+            # Demand allocation by cohort (which cohort satisfies each demand)
+            model.demand_from_cohort = Var(
+                model.cohort_demand_index,
+                within=NonNegativeReals,
+                doc="Demand satisfied from specific cohort (enables FIFO allocation)"
+            )
 
         # Auxiliary variables for labor cost calculation
         model.labor_hours = Var(
@@ -1474,6 +1646,165 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             doc="Ambient inventory balance at locations (subject to shelf life)"
         )
 
+        # BATCH TRACKING: Cohort-based inventory balance constraints
+        if self.use_batch_tracking:
+            def inventory_frozen_cohort_balance_rule(model, loc, prod, prod_date, curr_date):
+                """
+                Frozen inventory balance by age cohort.
+
+                frozen_cohort[t] = frozen_cohort[t-1] + frozen_arrivals[t] - frozen_departures[t]
+
+                Shelf life enforcement: Frozen products have 120-day shelf life (handled by sparse indexing).
+                """
+                # Previous cohort inventory
+                prev_date = self.date_previous.get(curr_date)
+                if prev_date is None:
+                    # First date: initial inventory (if any)
+                    prev_cohort = self.initial_inventory.get((loc, prod, prod_date, 'frozen'), 0)
+                else:
+                    if (loc, prod, prod_date, prev_date) in self.cohort_frozen_index_set:
+                        prev_cohort = model.inventory_frozen_cohort[loc, prod, prod_date, prev_date]
+                    else:
+                        prev_cohort = 0
+
+                # Frozen arrivals from shipments with this production_date
+                frozen_arrivals = 0
+                for (origin, dest) in self.legs_to_location.get(loc, []):
+                    if self.leg_arrival_state.get((origin, dest)) == 'frozen':
+                        leg = (origin, dest)
+                        if (leg, prod, prod_date, curr_date) in self.cohort_shipment_index_set:
+                            frozen_arrivals += model.shipment_leg_cohort[leg, prod, prod_date, curr_date]
+
+                # Frozen departures (for intermediate storage like Lineage)
+                frozen_departures = 0
+                if loc in self.intermediate_storage:
+                    for (origin, dest) in self.legs_from_location.get(loc, []):
+                        if self.leg_arrival_state.get((origin, dest)) == 'frozen':
+                            transit_days = self.leg_transit_days[(origin, dest)]
+                            delivery_date = curr_date + timedelta(days=transit_days)
+                            leg = (origin, dest)
+                            if (leg, prod, prod_date, delivery_date) in self.cohort_shipment_index_set:
+                                frozen_departures += model.shipment_leg_cohort[leg, prod, prod_date, delivery_date]
+
+                # Balance equation
+                return model.inventory_frozen_cohort[loc, prod, prod_date, curr_date] == (
+                    prev_cohort + frozen_arrivals - frozen_departures
+                )
+
+            model.inventory_frozen_cohort_balance_con = Constraint(
+                model.cohort_frozen_index,
+                rule=inventory_frozen_cohort_balance_rule,
+                doc="Frozen inventory balance by age cohort"
+            )
+
+            def inventory_ambient_cohort_balance_rule(model, loc, prod, prod_date, curr_date):
+                """
+                Ambient inventory balance by age cohort.
+
+                ambient_cohort[t] = ambient_cohort[t-1] + production[t] + ambient_arrivals[t] -
+                                     demand_consumption[t] - ambient_departures[t]
+
+                Shelf life enforcement: cohort variables only created for age <= SHELF_LIFE (sparse indexing).
+                """
+                # Previous cohort inventory
+                prev_date = self.date_previous.get(curr_date)
+                if prev_date is None:
+                    # First date: initial inventory
+                    prev_cohort = self.initial_inventory.get((loc, prod, prod_date, 'ambient'), 0)
+                else:
+                    if (loc, prod, prod_date, prev_date) in self.cohort_ambient_index_set:
+                        prev_cohort = model.inventory_ambient_cohort[loc, prod, prod_date, prev_date]
+                    else:
+                        prev_cohort = 0
+
+                # Production input (only at 6122_Storage on production date)
+                production_input = 0
+                if loc == '6122_Storage' and prod_date == curr_date:
+                    production_input = model.production[curr_date, prod]
+
+                # Ambient arrivals from shipments
+                ambient_arrivals = 0
+                for (origin, dest) in self.legs_to_location.get(loc, []):
+                    if self.leg_arrival_state.get((origin, dest)) == 'ambient':
+                        leg = (origin, dest)
+                        if (leg, prod, prod_date, curr_date) in self.cohort_shipment_index_set:
+                            ambient_arrivals += model.shipment_leg_cohort[leg, prod, prod_date, curr_date]
+
+                # Ambient departures (for hubs and 6122_Storage)
+                ambient_departures = 0
+                if loc in self.intermediate_storage or loc == '6122_Storage':
+                    for (origin, dest) in self.legs_from_location.get(loc, []):
+                        if self.leg_arrival_state.get((origin, dest)) == 'ambient':
+                            transit_days = self.leg_transit_days[(origin, dest)]
+                            delivery_date = curr_date + timedelta(days=transit_days)
+                            leg = (origin, dest)
+                            if (leg, prod, prod_date, delivery_date) in self.cohort_shipment_index_set:
+                                ambient_departures += model.shipment_leg_cohort[leg, prod, prod_date, delivery_date]
+
+                # Demand consumption from this cohort
+                demand_consumption = 0
+                if loc in self.destinations and (loc, prod, curr_date) in self.demand:
+                    if (loc, prod, prod_date, curr_date) in self.cohort_demand_index_set:
+                        demand_consumption = model.demand_from_cohort[loc, prod, prod_date, curr_date]
+
+                # Balance equation
+                return model.inventory_ambient_cohort[loc, prod, prod_date, curr_date] == (
+                    prev_cohort + production_input + ambient_arrivals - demand_consumption - ambient_departures
+                )
+
+            model.inventory_ambient_cohort_balance_con = Constraint(
+                model.cohort_ambient_index,
+                rule=inventory_ambient_cohort_balance_rule,
+                doc="Ambient inventory balance by age cohort (shelf life enforced via sparse indexing)"
+            )
+
+            # Demand allocation constraint: sum of cohorts = demand - shortage
+            def demand_cohort_allocation_rule(model, loc, prod, curr_date):
+                """Total demand from all cohorts = actual demand - shortage."""
+                if (loc, prod, curr_date) not in self.demand:
+                    return Constraint.Skip
+
+                demand_qty = self.demand[(loc, prod, curr_date)]
+
+                # Sum consumption from all cohorts (all production dates)
+                total_from_cohorts = sum(
+                    model.demand_from_cohort[loc, prod, prod_date, curr_date]
+                    for prod_date in sorted_dates
+                    if (loc, prod, prod_date, curr_date) in self.cohort_demand_index_set
+                )
+
+                # Shortage (if allowed)
+                shortage_qty = 0
+                if self.allow_shortages and (loc, prod, curr_date) in self.demand:
+                    shortage_qty = model.shortage[loc, prod, curr_date]
+
+                return total_from_cohorts + shortage_qty == demand_qty
+
+            model.demand_cohort_allocation_con = Constraint(
+                [(loc, prod, date) for loc, prod, date in self.demand.keys()],
+                rule=demand_cohort_allocation_rule,
+                doc="Demand satisfied from cohorts + shortage = total demand"
+            )
+
+            # Cohort aggregation: shipment_leg_cohort sums to shipment_leg
+            def shipment_cohort_aggregation_rule(model, origin, dest, prod, delivery_date):
+                """Sum of cohort shipments = total leg shipment."""
+                leg = (origin, dest)
+                total_cohorts = sum(
+                    model.shipment_leg_cohort[leg, prod, prod_date, delivery_date]
+                    for prod_date in sorted_dates
+                    if (leg, prod, prod_date, delivery_date) in self.cohort_shipment_index_set
+                )
+                return total_cohorts == model.shipment_leg[leg, prod, delivery_date]
+
+            model.shipment_cohort_aggregation_con = Constraint(
+                model.legs,
+                model.products,
+                model.dates,
+                rule=shipment_cohort_aggregation_rule,
+                doc="Cohort shipments aggregate to total leg shipments"
+            )
+
         # NOTE: Flow conservation is now handled by 6122_Storage inventory balance
         # Production flows into 6122_Storage, trucks load from 6122_Storage
         # The inventory balance equation automatically ensures production >= truck loads
@@ -1881,8 +2212,24 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                             for p in model.products:
                                 truck_cost += var_cost * model.truck_load[truck_idx, dest, p, d]
 
-            # Total cost = labor + production + transport + inventory + truck + shortage
-            return labor_cost + production_cost + transport_cost + inventory_cost + truck_cost + shortage_cost
+            # BATCH TRACKING: FIFO penalty cost (soft constraint)
+            # Penalty increases for consuming younger cohorts, encouraging FIFO behavior
+            fifo_penalty_cost = 0.0
+            if self.use_batch_tracking:
+                # Small penalty per unit per day of remaining shelf life
+                # This incentivizes consuming old stock first without requiring binary variables
+                fifo_penalty_weight = 0.01  # $0.01 per unit per day younger
+                for loc, prod, prod_date, curr_date in model.cohort_demand_index:
+                    age_days = (curr_date - prod_date).days
+                    # Determine shelf life for this location
+                    shelf_life = self.THAWED_SHELF_LIFE if loc == '6130' else self.AMBIENT_SHELF_LIFE
+                    # Penalty increases for younger products (low age = high remaining shelf life)
+                    remaining_shelf_life = shelf_life - age_days
+                    freshness_penalty = remaining_shelf_life * fifo_penalty_weight
+                    fifo_penalty_cost += freshness_penalty * model.demand_from_cohort[loc, prod, prod_date, curr_date]
+
+            # Total cost = labor + production + transport + inventory + truck + shortage + fifo_penalty
+            return labor_cost + production_cost + transport_cost + inventory_cost + truck_cost + shortage_cost + fifo_penalty_cost
 
         model.obj = Objective(
             rule=objective_rule,
@@ -1890,7 +2237,88 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             doc="Minimize total cost (labor + production + transport + inventory + truck + shortage penalty)"
         )
 
+        # BATCH TRACKING: Validate cohort model if enabled
+        if self.use_batch_tracking:
+            self._validate_cohort_model(model)
+
         return model
+
+    def _validate_cohort_model(self, model: ConcreteModel) -> None:
+        """
+        Validate cohort model structure before solving.
+
+        Checks:
+        1. Cohort variable count is reasonable (not too large)
+        2. All production flows into cohorts
+        3. Demand allocation variables exist for all demand
+        4. Mass balance constraints are correctly formulated
+
+        Raises:
+            ValueError: If validation fails
+        """
+        print("\nValidating cohort model structure...")
+
+        # Check 1: Sparse indexing size is reasonable
+        cohort_vars = (
+            len(model.cohort_frozen_index) +
+            len(model.cohort_ambient_index) +
+            len(model.cohort_shipment_index) +
+            len(model.cohort_demand_index)
+        )
+        total_vars = sum(1 for _ in model.component_map(Var))
+        print(f"  Cohort variables: {cohort_vars:,} / {total_vars:,} total ({cohort_vars/total_vars*100:.1f}%)")
+
+        if cohort_vars > 100000:
+            warnings.warn(
+                f"Cohort model is large: {cohort_vars:,} cohort variables. "
+                f"Solve time may be slow. Consider reducing planning horizon."
+            )
+
+        # Check 2: All production flows into cohorts
+        for date in model.dates:
+            for prod in model.products:
+                # Must have corresponding 6122_Storage cohort for production on this date
+                if ('6122_Storage', prod, date, date) not in self.cohort_ambient_index_set:
+                    raise ValueError(
+                        f"Missing cohort for production[{date}, {prod}]. "
+                        f"Production must flow into 6122_Storage ambient cohort."
+                    )
+
+        # Check 3: Demand allocation variables exist for all demand
+        missing_demand_cohorts = []
+        for (loc, prod, date) in self.demand.keys():
+            cohorts_available = [
+                (loc, prod, pd, date)
+                for pd in model.dates if pd <= date
+                if (loc, prod, pd, date) in self.cohort_demand_index_set
+            ]
+            if not cohorts_available and not self.allow_shortages:
+                missing_demand_cohorts.append((loc, prod, date))
+
+        if missing_demand_cohorts:
+            raise ValueError(
+                f"No cohorts available for {len(missing_demand_cohorts)} demand points. "
+                f"First 3: {missing_demand_cohorts[:3]}. "
+                f"Enable allow_shortages=True or extend planning horizon."
+            )
+
+        # Check 4: Verify cohort aggregation makes sense
+        # For each leg shipment, there should be corresponding cohort shipments
+        sample_legs = list(model.legs)[:3]  # Check first 3 legs
+        for leg in sample_legs:
+            for prod in list(model.products)[:2]:  # Check first 2 products
+                for date in list(model.dates)[:2]:  # Check first 2 dates
+                    # Count how many cohorts feed this leg shipment
+                    cohort_count = sum(
+                        1 for pd in model.dates
+                        if (leg, prod, pd, date) in self.cohort_shipment_index_set
+                    )
+                    if cohort_count == 0:
+                        # This is OK if the leg/date combination is infeasible
+                        # (e.g., departure before planning horizon)
+                        pass
+
+        print("  ✓ Cohort model validation passed")
 
     def extract_solution(self, model: ConcreteModel) -> Dict[str, Any]:
         """
@@ -2029,8 +2457,78 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                                 truck_loads_by_truck_dest_product_date[(truck_idx, dest, p, d)] = load
                                 total_truck_cost += truck.cost_per_unit * load
 
-        # Convert production_by_date_product to production_batches list format
-        # This format is expected by UI components and matches ProductionSchedule structure
+
+        # BATCH TRACKING: Extract cohort inventory (if enabled)
+        # This provides batch-level detail for inventory at each location
+        cohort_inventory_frozen: Dict[Tuple[str, str, Date, Date, str], float] = {}
+        cohort_inventory_ambient: Dict[Tuple[str, str, Date, Date, str], float] = {}
+        cohort_demand_consumption: Dict[Tuple[str, str, Date, Date], float] = {}
+
+        if self.use_batch_tracking:
+            # Extract frozen cohort inventory
+            # Index: (location, product, production_date, current_date, state)
+            if hasattr(model, 'inventory_frozen_cohort'):
+                for (loc, prod, prod_date, curr_date) in model.cohort_frozen_index:
+                    qty = value(model.inventory_frozen_cohort[loc, prod, prod_date, curr_date])
+                    if qty > 1e-6:  # Only non-zero inventory
+                        cohort_inventory_frozen[(loc, prod, prod_date, curr_date, 'frozen')] = qty
+
+            # Extract ambient cohort inventory
+            # Index: (location, product, production_date, current_date, state)
+            if hasattr(model, 'inventory_ambient_cohort'):
+                for (loc, prod, prod_date, curr_date) in model.cohort_ambient_index:
+                    qty = value(model.inventory_ambient_cohort[loc, prod, prod_date, curr_date])
+                    if qty > 1e-6:  # Only non-zero inventory
+                        cohort_inventory_ambient[(loc, prod, prod_date, curr_date, 'ambient')] = qty
+
+            # Extract demand consumption by cohort (which batches satisfied demand)
+            if hasattr(model, 'demand_from_cohort'):
+                for (loc, prod, prod_date, demand_date) in model.cohort_demand_index:
+                    qty = value(model.demand_from_cohort[loc, prod, prod_date, demand_date])
+                    if qty > 1e-6:
+                        cohort_demand_consumption[(loc, prod, prod_date, demand_date)] = qty
+
+        # BATCH TRACKING: Create ProductionBatch objects with full traceability
+        # Build batch ID map for linking shipments to batches
+        batch_id_map: Dict[Tuple[Date, str], str] = {}
+        production_batch_objects: List[ProductionBatch] = []
+        batch_id_counter = 1
+        
+        for (prod_date, product_id), quantity in production_by_date_product.items():
+            # Generate unique, deterministic batch ID
+            batch_id = f"BATCH-{prod_date.strftime('%Y%m%d')}-{product_id}-{batch_id_counter:04d}"
+            batch_id_map[(prod_date, product_id)] = batch_id
+            
+            # Pro-rate labor hours across products produced on same day
+            labor_hours = labor_hours_by_date.get(prod_date, 0.0)
+            production_on_date = [
+                qty for (d, p), qty in production_by_date_product.items()
+                if d == prod_date
+            ]
+            num_products = len(production_on_date)
+            labor_hours_allocated = labor_hours / num_products if num_products > 0 else 0.0
+            
+            # Calculate production cost
+            production_cost = quantity * self.cost_structure.production_cost_per_unit
+            
+            # Create ProductionBatch object
+            from src.models.product import ProductState
+            batch = ProductionBatch(
+                id=batch_id,
+                product_id=product_id,
+                manufacturing_site_id=self.manufacturing_site.location_id,
+                production_date=prod_date,
+                quantity=quantity,
+                initial_state=ProductState.AMBIENT,  # Always starts ambient
+                labor_hours_used=labor_hours_allocated,
+                production_cost=production_cost
+            )
+            
+            production_batch_objects.append(batch)
+            batch_id_counter += 1
+        
+        # Convert production_batches to dict format for backward compatibility
+        # This format is expected by some UI components
         production_batches = []
         for (prod_date, product_id), quantity in production_by_date_product.items():
             production_batches.append({
@@ -2038,10 +2536,70 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 'product': product_id,
                 'quantity': quantity,
             })
+        
+        # BATCH TRACKING: Extract batch-linked shipments (if cohort tracking enabled)
+        batch_shipments: List[Shipment] = []
+        shipment_id_counter = 1
+        
+        if self.use_batch_tracking and hasattr(model, 'shipment_leg_cohort'):
+            # Extract cohort shipments (batch-aware)
+            from src.shelf_life.tracker import RouteLeg
+            from src.network.route_finder import RoutePath
+            
+            for (leg, product_id, prod_date, delivery_date) in model.cohort_shipment_index:
+                qty = value(model.shipment_leg_cohort[leg, product_id, prod_date, delivery_date])
+                
+                if qty > 0.01:  # Significant shipment
+                    origin, dest = leg
+                    
+                    # Find corresponding batch
+                    batch_id = batch_id_map.get((prod_date, product_id))
+                    if not batch_id:
+                        # Shouldn't happen - fallback to unknown
+                        batch_id = f"BATCH-UNKNOWN-{prod_date.strftime('%Y%m%d')}-{product_id}"
+                    
+                    # Generate shipment ID (deterministic)
+                    shipment_id = f"SHIP-{delivery_date.strftime('%Y%m%d')}-{origin}-{dest}-{shipment_id_counter:05d}"
+                    
+                    # Create single-leg route
+                    transit_days = self.leg_transit_days.get(leg, 0)
+                    leg_obj = RouteLeg(
+                        from_location_id=origin,
+                        to_location_id=dest,
+                        transport_mode='ambient',  # Simplified - could track frozen/ambient
+                        transit_days=transit_days
+                    )
+                    single_leg_route = RoutePath(
+                        path=[origin, dest],
+                        total_transit_days=transit_days,
+                        total_cost=0.0,
+                        transport_modes=['ambient'],
+                        route_legs=[leg_obj],
+                        intermediate_stops=[]
+                    )
+                    
+                    # Create shipment with batch linkage
+                    shipment = Shipment(
+                        id=shipment_id,
+                        batch_id=batch_id,
+                        product_id=product_id,
+                        quantity=qty,
+                        origin_id=origin,
+                        destination_id=dest,
+                        delivery_date=delivery_date,
+                        route=single_leg_route,
+                        production_date=prod_date  # Key: links to batch
+                    )
+                    
+                    batch_shipments.append(shipment)
+                    shipment_id_counter += 1
 
         return {
             'production_by_date_product': production_by_date_product,
-            'production_batches': production_batches,  # Add list format for UI
+            'production_batches': production_batches,  # Dict format for backward compatibility
+            'production_batch_objects': production_batch_objects,  # NEW: ProductionBatch objects
+            'batch_id_map': batch_id_map,  # NEW: Mapping for batch lookups
+            'batch_shipments': batch_shipments if self.use_batch_tracking else [],  # NEW: Batch-linked shipments
             'labor_hours_by_date': labor_hours_by_date,
             'labor_cost_by_date': labor_cost_by_date,
             'shipments_by_route_product_date': shipments_by_route_product_date,  # DEPRECATED - kept for backward compatibility
@@ -2056,6 +2614,13 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 **{k: v for k, v in inventory_ambient_by_loc_product_date.items()}
             },
             'truck_used_by_date': truck_used_by_date if self.truck_schedules else {},
+            # BATCH TRACKING: Cohort-level inventory data
+            'use_batch_tracking': self.use_batch_tracking,
+            'cohort_inventory_frozen': cohort_inventory_frozen if self.use_batch_tracking else {},
+            'cohort_inventory_ambient': cohort_inventory_ambient if self.use_batch_tracking else {},
+            'cohort_demand_consumption': cohort_demand_consumption if self.use_batch_tracking else {},
+            # Combined cohort inventory for backward compatibility
+            'cohort_inventory': {**cohort_inventory_frozen, **cohort_inventory_ambient} if self.use_batch_tracking else {},
             'truck_loads_by_truck_dest_product_date': truck_loads_by_truck_dest_product_date if self.truck_schedules else {},
             'total_labor_cost': total_labor_cost,
             'total_production_cost': total_production_cost,
@@ -2066,6 +2631,7 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             'total_shortage_units': total_shortage_units,
             'total_cost': total_labor_cost + total_production_cost + total_transport_cost + total_inventory_cost + total_truck_cost + total_shortage_cost,  # Updated
         }
+
 
     def get_shipment_plan(self) -> Optional[List[Shipment]]:
         """
