@@ -325,13 +325,15 @@ def render_daily_snapshot(
                                     else:
                                         return ['background-color: #dc3545; color: white'] * len(row)  # Dark red - expired
 
-                                # Drop hidden column before display
-                                display_df = df_batches.drop(columns=['_remaining'])
-
+                                # Apply styling to dataframe (needs _remaining column)
+                                # Then hide the _remaining column from display using column_config
                                 st.dataframe(
-                                    display_df.style.apply(highlight_shelf_life, axis=1),
+                                    df_batches.style.apply(highlight_shelf_life, axis=1),
                                     use_container_width=True,
-                                    hide_index=True
+                                    hide_index=True,
+                                    column_config={
+                                        '_remaining': None  # Hide this column from display
+                                    }
                                 )
 
                                 # Show enhanced legend
