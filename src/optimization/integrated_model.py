@@ -1922,9 +1922,12 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         for (origin, dest) in model.legs:
             for p in model.products:
                 for d in model.dates:
-                    qty = value(model.shipment_leg[(origin, dest), p, d])
-                    if qty > 1e-6:  # Only include non-zero shipments
-                        shipments_by_leg_product_date[((origin, dest), p, d)] = qty
+                    var = model.shipment_leg[(origin, dest), p, d]
+                    # Only extract if variable has a value (is initialized)
+                    if var.value is not None:
+                        qty = value(var)
+                        if qty > 1e-6:  # Only include non-zero shipments
+                            shipments_by_leg_product_date[((origin, dest), p, d)] = qty
 
         # LEGACY: Keep route-based shipments for backward compatibility (DEPRECATED)
         shipments_by_route_product_date: Dict[Tuple[int, str, Date], float] = {}
@@ -2069,7 +2072,7 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         Convert optimization solution to list of Shipment objects.
 
         Returns:
-            List of Shipment objects, or None if not solved
+            List of Shipment objects (one per leg), or None if not solved
 
         Example:
             model = IntegratedProductionDistributionModel(...)
@@ -2081,7 +2084,8 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         if not self.solution:
             return None
 
-        shipments_by_route_product_date = self.solution['shipments_by_route_product_date']
+        # LEG-BASED ROUTING: Use leg shipments instead of deprecated route shipments
+        shipments_by_leg_product_date = self.solution['shipments_by_leg_product_date']
 
         # Create production batches first (needed for shipment.batch_id)
         production_by_date_product = self.solution['production_by_date_product']
@@ -2093,26 +2097,37 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             batch_id_map[(prod_date, product_id)] = batch_id
             batch_id_counter += 1
 
-        # Create shipments
+        # Create shipments from legs
+        # Each leg represents a shipment segment (e.g., 6122→6125, then 6125→6123)
         shipments: List[Shipment] = []
         shipment_id_counter = 1
 
-        for (route_idx, product_id, delivery_date), quantity in shipments_by_route_product_date.items():
-            # Get route information
-            enumerated_route = self.route_enumerator.get_route(route_idx)
-            if not enumerated_route:
-                continue
+        for ((origin_id, dest_id), product_id, arrival_date), quantity in shipments_by_leg_product_date.items():
+            # Calculate departure date for this leg
+            transit_days = self.leg_transit_days.get((origin_id, dest_id), 0)
+            departure_date = arrival_date - timedelta(days=transit_days)
 
-            # Calculate departure date
-            transit_days = enumerated_route.total_transit_days
-            departure_date = delivery_date - timedelta(days=transit_days)
-
-            # Find matching production batch
-            # Shipment departs on departure_date, so look for batch on that date
+            # Find matching production batch (for shipments from manufacturing)
             batch_id = batch_id_map.get((departure_date, product_id))
             if not batch_id:
-                # No exact match - use closest earlier batch (simplified)
+                # Not from manufacturing or no exact match - use generic batch ID
                 batch_id = f"BATCH-UNKNOWN"
+
+            # Create single-leg route for this shipment
+            # The Route object needs route_legs list - create a simple one-leg route
+            from src.models.route import Route, RouteLeg
+            leg = RouteLeg(
+                from_location_id=origin_id,
+                to_location_id=dest_id,
+                transport_mode='ambient',  # Simplified - actual mode tracking could be added
+                transit_days=transit_days
+            )
+            single_leg_route = Route(
+                route_id=f"LEG-{origin_id}-{dest_id}",
+                origin_id=origin_id,
+                destination_id=dest_id,
+                route_legs=[leg]
+            )
 
             # Create shipment
             shipment = Shipment(
@@ -2120,28 +2135,26 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 batch_id=batch_id,
                 product_id=product_id,
                 quantity=quantity,
-                origin_id=enumerated_route.origin_id,
-                destination_id=enumerated_route.destination_id,
-                delivery_date=delivery_date,
-                route=enumerated_route.route_path,
-                production_date=departure_date,  # Simplified: assume production on departure date
+                origin_id=origin_id,
+                destination_id=dest_id,
+                delivery_date=arrival_date,
+                route=single_leg_route,
+                production_date=departure_date,  # Track when goods departed this leg
             )
             shipments.append(shipment)
             shipment_id_counter += 1
 
         # Map truck assignments to shipments
+        # Only shipments from manufacturing can be assigned to trucks
         truck_loads = self.solution.get('truck_loads_by_truck_dest_product_date', {})
         if truck_loads and self.truck_schedules:
             for shipment in shipments:
                 # Only assign trucks for shipments originating from manufacturing
                 if shipment.origin_id == self.manufacturing_site.location_id:
-                    # Get immediate next hop from route (first leg destination)
-                    immediate_destination = shipment.first_leg_destination
+                    # The immediate destination is the shipment's destination
+                    immediate_destination = shipment.destination_id
 
-                    # CRITICAL FIX: truck_loads are indexed by DELIVERY date, not departure date!
-                    # The model variables truck_load[truck, dest, prod, d] and shipment[route, prod, d]
-                    # both use the same date index 'd', which is the delivery date (from demand_satisfaction_con).
-                    # So we must match on delivery_date, not production_date/departure_date.
+                    # Match on leg arrival date (which is shipment.delivery_date)
                     matching_date = shipment.delivery_date
 
                     for (truck_idx, dest, prod, date), quantity in truck_loads.items():
