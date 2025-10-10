@@ -141,7 +141,8 @@ def render_daily_snapshot(
         selected_date=selected_date,
         production_schedule=production_schedule,
         shipments=shipments,
-        locations=locations
+        locations=locations,
+        results=results
     )
 
     # ====================
@@ -807,7 +808,8 @@ def _generate_snapshot(
     selected_date: Date,
     production_schedule: ProductionSchedule,
     shipments: List[Shipment],
-    locations: Dict[str, Location]
+    locations: Dict[str, Location],
+    results: Dict[str, Any]
 ) -> Dict[str, Any]:
     """Generate snapshot data for a specific date using the backend generator.
 
