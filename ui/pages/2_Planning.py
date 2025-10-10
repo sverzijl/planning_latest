@@ -415,6 +415,13 @@ with tab_optimization:
             key="opt_show_output"
         )
 
+        use_batch_tracking = st.checkbox(
+            "Enable Batch Tracking (BETA)",
+            value=False,
+            help="Track inventory by production batch with age-cohort variables. Enables FIFO enforcement and shelf life optimization during solving. May increase solve time by 2-3×.",
+            key="opt_batch_tracking"
+        )
+
     st.divider()
 
     # Planning Horizon Control
@@ -505,14 +512,20 @@ with tab_optimization:
                     initial_inventory=initial_inventory,
                     start_date=planning_start_date,  # Use override if specified, else None (auto-calculate)
                     end_date=custom_end_date,  # Use custom horizon if specified, else None (auto-calculate)
+                    use_batch_tracking=use_batch_tracking,  # Enable age-cohort batch tracking
                 )
 
                 # Calculate planning horizon info
                 horizon_days = len(model.production_dates)
                 horizon_weeks = horizon_days / 7.0
 
-                st.info(f"📊 Model built: {len(model.enumerated_routes)} routes, {horizon_days} days ({horizon_weeks:.1f} weeks)")
+                # Show model info with batch tracking status
+                batch_status = " | 🔬 Age-cohort batch tracking ENABLED" if use_batch_tracking else ""
+                st.info(f"📊 Model built: {len(model.enumerated_routes)} routes, {horizon_days} days ({horizon_weeks:.1f} weeks){batch_status}")
                 st.caption(f"Planning horizon: {model.start_date} to {model.end_date}")
+
+                if use_batch_tracking:
+                    st.info("🔬 Batch tracking enabled: Inventory tracked by production date with FIFO enforcement and shelf life optimization during solving. Solve time may be 2-3× longer.")
 
             with st.spinner(f"Solving with {selected_solver.upper()}... (max {time_limit}s)"):
                 # Solve
