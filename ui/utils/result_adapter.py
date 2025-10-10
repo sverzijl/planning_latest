@@ -109,10 +109,12 @@ def _create_production_schedule(
         )
         batches.append(batch)
 
-    # Build daily totals from batches
+    # Build daily totals from batches (EXCLUDING initial inventory - not production!)
     daily_totals: Dict[Date, float] = {}
     for batch in batches:
-        daily_totals[batch.production_date] = daily_totals.get(batch.production_date, 0) + batch.quantity
+        # Only include actual production batches, not initial inventory
+        if not batch.id.startswith('INIT-'):
+            daily_totals[batch.production_date] = daily_totals.get(batch.production_date, 0) + batch.quantity
 
     # Get labor hours by date from solution
     daily_labor_hours = solution.get('labor_hours_by_date', {})
@@ -144,7 +146,7 @@ def _create_production_schedule(
         daily_totals=daily_totals,
         daily_labor_hours=daily_labor_hours,
         infeasibilities=[],  # Optimal solution is feasible
-        total_units=sum(b.quantity for b in batches),
+        total_units=sum(b.quantity for b in batches if not b.id.startswith('INIT-')),  # Exclude initial inventory from production total
         total_labor_hours=sum(daily_labor_hours.values()),
         requirements=None,  # Optimization doesn't track original requirements
     )
