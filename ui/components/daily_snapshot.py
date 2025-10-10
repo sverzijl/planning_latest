@@ -838,12 +838,19 @@ def _generate_snapshot(
         from src.models.forecast import Forecast
         forecast = Forecast(name="Empty", entries=[])
 
+    # Get model solution from results (if available)
+    # This enables MODEL MODE for accurate inventory tracking with initial inventory
+    model_solution = None
+    if 'model_solution' in results:
+        model_solution = results['model_solution']
+
     # Create backend snapshot generator
     generator = DailySnapshotGenerator(
         production_schedule=production_schedule,
         shipments=shipments,
         locations_dict=locations,
-        forecast=forecast
+        forecast=forecast,
+        model_solution=model_solution  # Pass model solution to enable MODEL MODE
     )
 
     # Generate backend snapshot

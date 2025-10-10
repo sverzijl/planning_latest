@@ -67,6 +67,7 @@ def adapt_optimization_results(
         'shipments': shipments,
         'truck_plan': truck_plan,
         'cost_breakdown': cost_breakdown,
+        'model_solution': solution,  # Include solution for daily snapshot MODEL MODE
     }
 
 
