@@ -90,8 +90,9 @@ def _create_production_schedule(
                     location_id, product_id, prod_date, state = key
                 elif len(key) == 2:
                     # Backward compatibility (shouldn't happen after preprocessing)
+                    # Use inventory_snapshot_date as production date (matches model preprocessing)
                     location_id, product_id = key
-                    prod_date = inventory_snapshot_date - timedelta(days=1)
+                    prod_date = inventory_snapshot_date
                 else:
                     continue  # Skip invalid keys
 

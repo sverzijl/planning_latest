@@ -497,6 +497,9 @@ with tab_optimization:
                 # Get initial inventory from session state
                 initial_inventory = session_state.get_initial_inventory_dict()
 
+                # Get inventory snapshot date from session state (if initial inventory was loaded)
+                inventory_snapshot_date = st.session_state.get('inventory_snapshot_date')
+
                 # Create optimization model
                 model = IntegratedProductionDistributionModel(
                     forecast=data['forecast'],
@@ -510,6 +513,7 @@ with tab_optimization:
                     allow_shortages=allow_shortages,
                     enforce_shelf_life=enforce_shelf_life,
                     initial_inventory=initial_inventory,
+                    inventory_snapshot_date=inventory_snapshot_date,
                     start_date=planning_start_date,  # Use override if specified, else None (auto-calculate)
                     end_date=custom_end_date,  # Use custom horizon if specified, else None (auto-calculate)
                     use_batch_tracking=use_batch_tracking,  # Enable age-cohort batch tracking

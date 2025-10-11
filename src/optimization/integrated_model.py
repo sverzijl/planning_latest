@@ -120,6 +120,7 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         validate_feasibility: bool = True,
         truck_schedules: Optional[TruckScheduleCollection] = None,
         initial_inventory: Optional[Dict[Tuple[str, str], float]] = None,
+        inventory_snapshot_date: Optional[Date] = None,
         use_batch_tracking: bool = False,
         enable_production_smoothing: Optional[bool] = None,
     ):
@@ -143,6 +144,7 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             validate_feasibility: If True, validate feasibility before building model (default: True)
             truck_schedules: Optional collection of truck schedules (if None, no truck constraints)
             initial_inventory: Optional dict mapping (dest_id, product_id) to initial inventory quantity
+            inventory_snapshot_date: Optional date when initial inventory was measured (for production date assignment)
             use_batch_tracking: If True, use age-cohort batch tracking model for shelf life and FIFO.
                                 If False, use legacy aggregated inventory model (default: False)
             enable_production_smoothing: If True, add production smoothing constraint to limit day-to-day variation.
@@ -163,6 +165,7 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         self.max_product_age_days = max_product_age_days
         self._validate_feasibility_flag = validate_feasibility
         self.initial_inventory = initial_inventory or {}
+        self.inventory_snapshot_date = inventory_snapshot_date
         self.use_batch_tracking = use_batch_tracking
 
         # Production smoothing: Disabled by default - natural constraints should handle spreading
@@ -331,8 +334,11 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
 
         # Convert from 2-tuple to 4-tuple format
         if len(first_key) == 2:
-            # Initial inventory production date: one day before planning horizon
-            init_prod_date = self.start_date - timedelta(days=1)
+            # Initial inventory production date: use snapshot date if provided, else one day before planning horizon
+            if self.inventory_snapshot_date:
+                init_prod_date = self.inventory_snapshot_date
+            else:
+                init_prod_date = self.start_date - timedelta(days=1)
 
             converted_inventory = {}
             for (loc, prod), qty in self.initial_inventory.items():
@@ -366,7 +372,10 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
 
         elif len(first_key) == 3:
             # 3-tuple format: (loc, prod, state) -> needs prod_date
-            init_prod_date = self.start_date - timedelta(days=1)
+            if self.inventory_snapshot_date:
+                init_prod_date = self.inventory_snapshot_date
+            else:
+                init_prod_date = self.start_date - timedelta(days=1)
 
             converted_inventory = {}
             for (loc, prod, state), qty in self.initial_inventory.items():
