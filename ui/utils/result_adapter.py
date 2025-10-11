@@ -81,16 +81,26 @@ def _create_production_schedule(
     batches = []
 
     # CREATE BATCHES FROM INITIAL INVENTORY
+    # Note: After preprocessing, initial_inventory has 4-tuple keys: (loc, prod, prod_date, state)
     if hasattr(model, 'initial_inventory') and model.initial_inventory and inventory_snapshot_date:
-        for (location_id, product_id), quantity in model.initial_inventory.items():
+        for key, quantity in model.initial_inventory.items():
             if quantity > 0:
+                # Parse key format (after preprocessing it's always 4-tuple)
+                if len(key) == 4:
+                    location_id, product_id, prod_date, state = key
+                elif len(key) == 2:
+                    # Backward compatibility (shouldn't happen after preprocessing)
+                    location_id, product_id = key
+                    prod_date = inventory_snapshot_date - timedelta(days=1)
+                else:
+                    continue  # Skip invalid keys
+
                 # Create virtual batch for initial inventory
-                # Use snapshot_date - 1 so inventory exists on snapshot_date
                 batch = ProductionBatch(
                     id=f"INIT-{location_id}-{product_id}",
                     product_id=product_id,
                     manufacturing_site_id=location_id,  # CRITICAL: Use actual location, not just 6122!
-                    production_date=inventory_snapshot_date - timedelta(days=1),
+                    production_date=prod_date,
                     quantity=quantity,
                     labor_hours_used=0,  # Initial inventory has no labor cost
                     production_cost=0,  # Initial inventory is sunk cost
