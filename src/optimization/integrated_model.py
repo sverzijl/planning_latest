@@ -760,8 +760,17 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         # Calculate required horizon
         required_start, required_end = self._calculate_required_planning_horizon()
 
-        # Use user-provided dates if given, otherwise use calculated dates
-        final_start = self._user_start_date or required_start
+        # Determine final start date with priority:
+        # 1. User explicit override (highest priority)
+        # 2. Inventory snapshot date (if initial inventory provided)
+        # 3. Auto-calculated required_start (fallback)
+        if self._user_start_date:
+            final_start = self._user_start_date
+        elif self.inventory_snapshot_date:
+            final_start = self.inventory_snapshot_date
+        else:
+            final_start = required_start
+
         final_end = self._user_end_date or required_end
 
         # Check if user-provided start date is too late
