@@ -192,8 +192,8 @@ def render_daily_snapshot(
     if not location_inventory:
         st.info("ℹ️ No locations found in network")
     else:
-        # Calculate summary metrics
-        locations_with_inventory = sum(1 for inv in location_inventory.values() if inv['total'] > 0)
+        # Calculate summary metrics (use epsilon tolerance for zero check)
+        locations_with_inventory = sum(1 for inv in location_inventory.values() if inv['total'] > 0.01)
         locations_empty = len(location_inventory) - locations_with_inventory
 
         # Display summary metrics in compact format
@@ -225,12 +225,12 @@ def render_daily_snapshot(
                 key=f"{key_prefix}_filter_option"
             )
 
-        # Apply filtering
+        # Apply filtering (use epsilon tolerance to handle rounding errors)
         filtered_locations = location_inventory.items()
         if filter_option == "Only With Inventory":
-            filtered_locations = [(loc_id, inv) for loc_id, inv in filtered_locations if inv['total'] > 0]
+            filtered_locations = [(loc_id, inv) for loc_id, inv in filtered_locations if inv['total'] > 0.01]
         elif filter_option == "Only Empty":
-            filtered_locations = [(loc_id, inv) for loc_id, inv in filtered_locations if inv['total'] == 0]
+            filtered_locations = [(loc_id, inv) for loc_id, inv in filtered_locations if inv['total'] <= 0.01]
 
         # Apply sorting
         if sort_option == "Inventory Level (High to Low)":
@@ -254,8 +254,8 @@ def render_daily_snapshot(
                 location_name = location.name if location else location_id
                 total_units = inv_data['total']
 
-                # Visual indicator based on inventory level
-                if total_units == 0:
+                # Visual indicator based on inventory level (use epsilon tolerance for zero check)
+                if total_units <= 0.01:
                     icon = "📭"
                     status_text = "Empty"
                     status_color = "secondary"
@@ -275,8 +275,8 @@ def render_daily_snapshot(
                     f"{icon} **{location_id} - {location_name}** ({status_text})",
                     expanded=is_manufacturing
                 ):
-                    # Show zero inventory message
-                    if total_units == 0:
+                    # Show zero inventory message (use epsilon tolerance)
+                    if total_units <= 0.01:
                         st.caption("📭 No inventory at this location on this date")
                     else:
                         # Show batches by product
@@ -545,10 +545,14 @@ def render_daily_snapshot(
             supplied_qty = item.get('supplied', 0)
             shortage = max(0, demand_qty - supplied_qty)
 
+            # Round shortage to exactly 0.0 if within epsilon tolerance
+            if shortage < 0.01:
+                shortage = 0.0
+
             total_demand += demand_qty
             total_shortage += shortage
 
-            status = "✅ Met" if shortage == 0 else f"⚠️ Short {shortage:.0f}"
+            status = "✅ Met" if shortage < 0.01 else f"⚠️ Short {shortage:.0f}"
 
             demand_data.append({
                 'Destination': item['destination'],
@@ -573,8 +577,8 @@ def render_daily_snapshot(
             hide_index=True
         )
 
-        # Show summary badge
-        if total_shortage == 0:
+        # Show summary badge (use epsilon tolerance)
+        if total_shortage < 0.01:
             st.markdown(success_badge("All Demand Met"), unsafe_allow_html=True)
         else:
             st.markdown(

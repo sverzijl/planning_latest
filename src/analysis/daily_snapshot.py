@@ -1006,6 +1006,10 @@ class DailySnapshotGenerator:
                     # No explicit shortage variable - calculate from supplied
                     shortage = max(0.0, demand - supplied)
 
+            # Round shortage to exactly 0.0 if within epsilon tolerance to prevent false shortage display
+            if shortage < 0.01:
+                shortage = 0.0
+
             record = DemandRecord(
                 destination_id=loc,
                 product_id=prod,
@@ -1082,6 +1086,10 @@ class DailySnapshotGenerator:
 
                 supplied_qty = min(demand_qty, available_before)
                 shortage_qty = max(0.0, demand_qty - supplied_qty)
+
+                # Round shortage to exactly 0.0 if within epsilon tolerance
+                if shortage_qty < 0.01:
+                    shortage_qty = 0.0
 
                 record = DemandRecord(
                     destination_id=location_id,
