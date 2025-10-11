@@ -290,15 +290,28 @@ def render_daily_snapshot(
                             for product_id, batch_list in batches_by_product.items():
                                 for batch_info in batch_list:
                                     age_days = batch_info.get('age_days', 0)
+                                    state = batch_info.get('state', 'ambient')
 
-                                    # Calculate shelf life remaining
-                                    # Ambient shelf life: 17 days
-                                    # TODO: Get actual shelf life from product model
-                                    shelf_life_days = 17
+                                    # Calculate shelf life remaining based on storage state
+                                    if state == 'frozen':
+                                        shelf_life_days = 120  # Frozen shelf life
+                                    elif state == 'thawed':
+                                        shelf_life_days = 14   # Thawed shelf life
+                                    else:  # ambient
+                                        shelf_life_days = 17   # Ambient shelf life
                                     remaining_days = shelf_life_days - age_days
 
                                     # Determine freshness status
                                     emoji, status = _get_freshness_status(remaining_days)
+
+                                    # State emoji
+                                    state_display = batch_info.get('state', 'ambient')
+                                    if state_display == 'frozen':
+                                        state_icon = '❄️ Frozen'
+                                    elif state_display == 'thawed':
+                                        state_icon = '🌡️ Thawed'
+                                    else:
+                                        state_icon = '🌤️ Ambient'
 
                                     batch_data.append({
                                         'Batch ID': batch_info.get('id', 'N/A'),
@@ -306,6 +319,7 @@ def render_daily_snapshot(
                                         'Quantity': f"{batch_info.get('quantity', 0):,.0f}",
                                         'Production Date': batch_info.get('production_date', 'N/A'),
                                         'Age (days)': age_days,
+                                        'State': state_icon,
                                         'Shelf Life Left': f"{remaining_days}d",
                                         'Status': f"{emoji} {status}",
                                         '_remaining': remaining_days,  # Hidden column for styling

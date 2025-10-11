@@ -58,16 +58,19 @@ class BatchInventory:
         quantity: Quantity in units
         production_date: Date when batch was produced
         age_days: Age of batch in days (calculated from snapshot date)
+        state: Storage state ('frozen', 'ambient', or 'thawed')
     """
     batch_id: str
     product_id: str
     quantity: float
     production_date: Date
     age_days: int
+    state: str = 'ambient'  # Default to ambient for backward compatibility
 
     def __str__(self) -> str:
         """String representation."""
-        return f"Batch {self.batch_id}: {self.quantity:.0f} units ({self.age_days}d old)"
+        state_emoji = '❄️' if self.state == 'frozen' else '🌡️' if self.state == 'thawed' else '🌤️'
+        return f"Batch {self.batch_id}: {self.quantity:.0f} units ({self.age_days}d old, {state_emoji} {self.state})"
 
 
 @dataclass
@@ -479,28 +482,32 @@ class DailySnapshotGenerator:
             if loc == location_id and curr_date == snapshot_date and qty > 0.01
         ]
         
-        # Group by batch (production_date + product = unique batch)
+        # Group by batch (production_date + product + state = unique cohort)
         batches_at_location = {}
         for (loc, product_id, prod_date, curr_date, state, qty) in location_cohorts:
-            batch_key = (prod_date, product_id)
+            batch_key = (prod_date, product_id, state)
             if batch_key not in batches_at_location:
                 batches_at_location[batch_key] = 0.0
             batches_at_location[batch_key] += qty
-        
+
         # Create BatchInventory objects
-        for (prod_date, product_id), total_qty in batches_at_location.items():
+        for (prod_date, product_id, state), total_qty in batches_at_location.items():
             age_days = (snapshot_date - prod_date).days
             batch_info = batch_lookup.get((prod_date, product_id))
             batch_id = batch_info['id'] if batch_info else f"BATCH-{prod_date}-{product_id}"
-            
+
+            # Append state indicator to batch_id for clarity
+            batch_id_with_state = f"{batch_id}-{state}"
+
             batch_inv = BatchInventory(
-                batch_id=batch_id,
+                batch_id=batch_id_with_state,
                 product_id=product_id,
                 quantity=total_qty,
                 production_date=prod_date,
-                age_days=age_days
+                age_days=age_days,
+                state=state
             )
-            
+
             loc_inv.add_batch(batch_inv)
         
         return loc_inv
