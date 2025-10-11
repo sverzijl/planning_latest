@@ -897,6 +897,7 @@ def _generate_snapshot(
                 'quantity': batch.quantity,
                 'production_date': batch.production_date,
                 'age_days': batch.age_days,
+                'state': batch.state,  # Include storage state (frozen/thawed/ambient)
             })
 
         snapshot['location_inventory'][location_id] = {
