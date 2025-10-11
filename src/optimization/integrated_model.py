@@ -39,6 +39,7 @@ from pyomo.environ import (
     Constraint,
     Objective,
     NonNegativeReals,
+    NonNegativeIntegers,
     Binary,
     minimize,
     value,
@@ -1277,6 +1278,26 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             doc="Production quantity by date and product"
         )
 
+        # Packaging constraint: production in whole cases (10 units per case)
+        model.production_cases = Var(
+            model.dates,
+            model.products,
+            within=NonNegativeIntegers,
+            doc="Number of cases produced (10 units per case)"
+        )
+
+        # Constraint: Link production to cases (production must be in whole cases)
+        def production_case_link_rule(model, d, p):
+            """Production quantity must equal number of cases times 10 units per case."""
+            return model.production[d, p] == model.production_cases[d, p] * 10
+
+        model.production_case_link_con = Constraint(
+            model.dates,
+            model.products,
+            rule=production_case_link_rule,
+            doc="Production must be in whole cases (10 units per case)"
+        )
+
         # LEG-BASED ROUTING: Decision variables shipment[origin, dest, product, delivery_date]
         # Each network leg is an independent shipping decision
         # This enables strategic buffering at intermediate hubs (Lineage, 6104, 6125)
@@ -1353,6 +1374,19 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 model.dates,
                 within=NonNegativeReals,
                 doc="Quantity loaded on truck to destination by product and DELIVERY DATE"
+            )
+
+            # Integer variable: pallets_loaded[truck_index, destination, product, delivery_date]
+            # Number of pallets loaded on truck (accounts for partial pallets taking full pallet space)
+            # A pallet holds 320 units (32 cases * 10 units/case)
+            # Partial pallets consume full pallet space (e.g., 1 case = 1 pallet space)
+            model.pallets_loaded = Var(
+                model.trucks,
+                model.truck_destinations,
+                model.products,
+                model.dates,
+                within=NonNegativeIntegers,
+                doc="Number of pallets loaded on truck (320 units per full pallet)"
             )
 
         # Decision variables: shortage[dest, product, delivery_date] (if allowed)
@@ -2117,6 +2151,58 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 model.dates,
                 rule=truck_capacity_rule,
                 doc="Truck capacity constraint (sum across all destinations)"
+            )
+
+            # Constraint: Pallet lower bound (pallets must be enough to hold truck_load)
+            # pallets_loaded * 320 >= truck_load
+            # This ensures we have at least ceil(truck_load / 320) pallets
+            def pallet_lower_bound_rule(model, truck_idx, dest, prod, d):
+                """Pallets loaded must be sufficient to hold all units (accounts for partial pallets)."""
+                return model.pallets_loaded[truck_idx, dest, prod, d] * 320 >= model.truck_load[truck_idx, dest, prod, d]
+
+            model.pallet_lower_bound_con = Constraint(
+                model.trucks,
+                model.truck_destinations,
+                model.products,
+                model.dates,
+                rule=pallet_lower_bound_rule,
+                doc="Pallets must be sufficient to hold truck load (lower bound)"
+            )
+
+            # Constraint: Pallet upper bound (pallets cannot exceed ceiling of truck_load / 320)
+            # pallets_loaded * 320 <= truck_load + 319
+            # This ensures we don't allocate more pallets than needed: pallets = ceil(truck_load / 320)
+            def pallet_upper_bound_rule(model, truck_idx, dest, prod, d):
+                """Pallets loaded cannot exceed ceiling of units divided by 320."""
+                return model.pallets_loaded[truck_idx, dest, prod, d] * 320 <= model.truck_load[truck_idx, dest, prod, d] + 319
+
+            model.pallet_upper_bound_con = Constraint(
+                model.trucks,
+                model.truck_destinations,
+                model.products,
+                model.dates,
+                rule=pallet_upper_bound_rule,
+                doc="Pallets cannot exceed ceiling of truck load divided by 320 (upper bound)"
+            )
+
+            # Constraint: Pallet capacity (total pallets on truck cannot exceed pallet capacity)
+            # sum(pallets_loaded) <= pallet_capacity * truck_used
+            # Typically pallet_capacity = 44 pallets per truck
+            def pallet_capacity_rule(model, truck_idx, d):
+                """Total pallets on truck (across all destinations and products) cannot exceed pallet capacity."""
+                total_pallets = sum(
+                    model.pallets_loaded[truck_idx, dest, p, d]
+                    for dest in model.truck_destinations
+                    for p in model.products
+                )
+                pallet_capacity = self.truck_pallet_capacity[truck_idx]
+                return total_pallets <= pallet_capacity * model.truck_used[truck_idx, d]
+
+            model.pallet_capacity_con = Constraint(
+                model.trucks,
+                model.dates,
+                rule=pallet_capacity_rule,
+                doc="Pallet capacity constraint (sum across all destinations and products)"
             )
 
             # Constraint: Truck availability (day-specific scheduling)
