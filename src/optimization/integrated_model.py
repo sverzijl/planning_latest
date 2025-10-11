@@ -305,6 +305,80 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         if self.truck_schedules:
             self._extract_truck_data()
 
+        # Preprocess initial inventory to consistent format
+        self._preprocess_initial_inventory()
+
+    def _preprocess_initial_inventory(self) -> None:
+        """
+        Preprocess initial_inventory to consistent 4-tuple format.
+
+        UI passes: {(loc, prod): qty}
+        Model needs: {(loc, prod, prod_date, state): qty}
+
+        This method converts 2-tuple format to 4-tuple format by:
+        1. Setting prod_date to one day before planning horizon starts
+        2. Determining state based on location storage_mode
+        """
+        if not self.initial_inventory:
+            return
+
+        # Check format by inspecting first key
+        first_key = next(iter(self.initial_inventory.keys()))
+
+        # If already in 4-tuple format, no preprocessing needed
+        if len(first_key) == 4:
+            return
+
+        # Convert from 2-tuple to 4-tuple format
+        if len(first_key) == 2:
+            # Initial inventory production date: one day before planning horizon
+            init_prod_date = self.start_date - timedelta(days=1)
+
+            converted_inventory = {}
+            for (loc, prod), qty in self.initial_inventory.items():
+                if qty <= 0:
+                    continue
+
+                # Determine state based on location storage mode
+                location = self.location_by_id.get(loc)
+                if not location:
+                    warnings.warn(f"Initial inventory location {loc} not found in locations list. Skipping.")
+                    continue
+
+                # Default state based on storage mode
+                if location.storage_mode == StorageMode.FROZEN:
+                    state = 'frozen'
+                elif location.storage_mode == StorageMode.AMBIENT:
+                    state = 'ambient'
+                elif location.storage_mode == StorageMode.BOTH:
+                    # For locations with both modes, assume frozen (longer shelf life)
+                    # User can override by passing 4-tuple format if needed
+                    state = 'frozen'
+                else:
+                    warnings.warn(f"Unknown storage mode for location {loc}. Defaulting to ambient.")
+                    state = 'ambient'
+
+                # Store in 4-tuple format
+                converted_inventory[(loc, prod, init_prod_date, state)] = qty
+
+            self.initial_inventory = converted_inventory
+            print(f"\n📦 Preprocessed initial inventory: {len(converted_inventory)} items, prod_date={init_prod_date}")
+
+        elif len(first_key) == 3:
+            # 3-tuple format: (loc, prod, state) -> needs prod_date
+            init_prod_date = self.start_date - timedelta(days=1)
+
+            converted_inventory = {}
+            for (loc, prod, state), qty in self.initial_inventory.items():
+                if qty > 0:
+                    converted_inventory[(loc, prod, init_prod_date, state)] = qty
+
+            self.initial_inventory = converted_inventory
+            print(f"\n📦 Preprocessed initial inventory: {len(converted_inventory)} items, prod_date={init_prod_date}")
+
+        else:
+            warnings.warn(f"Unknown initial_inventory format with key length {len(first_key)}. Expected 2, 3, or 4.")
+
     def _extract_truck_data(self) -> None:
         """
         Extract truck schedule data for optimization.
@@ -1000,8 +1074,24 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
 
         print("\nBuilding sparse cohort indices...")
 
+        # Collect all production dates: planning horizon + initial inventory
+        all_prod_dates = set(sorted_dates)
+
+        # Add initial inventory production dates (before planning horizon)
+        if self.use_batch_tracking and self.initial_inventory:
+            for key in self.initial_inventory.keys():
+                if len(key) == 4:  # (loc, prod, prod_date, state)
+                    prod_date = key[2]
+                    all_prod_dates.add(prod_date)
+
+        all_prod_dates_sorted = sorted(all_prod_dates)
+        print(f"  Production dates: {len(sorted_dates)} in horizon + {len(all_prod_dates) - len(sorted_dates)} from initial inventory")
+
+        # Store for use in constraint rules (includes initial inventory production dates)
+        self.all_production_dates_with_initial_inventory = all_prod_dates_sorted
+
         # For each production date
-        for prod_date in sorted_dates:
+        for prod_date in all_prod_dates_sorted:
             # For each current date >= production date
             for curr_date in [d for d in sorted_dates if d >= prod_date]:
                 age_days = (curr_date - prod_date).days
@@ -1029,7 +1119,7 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 for delivery_date in sorted_dates:
                     # Departure date must be >= production date
                     departure_date = delivery_date - timedelta(days=transit_days)
-                    for prod_date in sorted_dates:
+                    for prod_date in all_prod_dates_sorted:
                         if prod_date <= departure_date and prod_date <= delivery_date:
                             # Check if this shipment makes sense (don't create too many indices)
                             # Only create if the cohort could exist at origin location
@@ -1040,7 +1130,7 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         # Demand cohorts: for each demand point, which cohorts could satisfy it?
         for (loc, prod, demand_date) in self.demand.keys():
             # Any cohort produced before demand date and still fresh
-            for prod_date in [d for d in sorted_dates if d <= demand_date]:
+            for prod_date in [d for d in all_prod_dates_sorted if d <= demand_date]:
                 age_days = (demand_date - prod_date).days
                 # Check shelf life
                 shelf_life = self.THAWED_SHELF_LIFE if loc == '6130' else self.AMBIENT_SHELF_LIFE
@@ -1054,7 +1144,7 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         freeze_thaw_cohorts = set()
         for loc in self.locations_with_freezing:
             for prod in self.products:
-                for prod_date in sorted_dates:
+                for prod_date in all_prod_dates_sorted:
                     for curr_date in [d for d in sorted_dates if d >= prod_date]:
                         # Check if cohort could exist at this location on this date
                         # Apply same age constraints as regular cohorts
@@ -1970,9 +2060,11 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             def shipment_cohort_aggregation_rule(model, origin, dest, prod, delivery_date):
                 """Sum of cohort shipments = total leg shipment."""
                 leg = (origin, dest)
+                # Use all_production_dates_with_initial_inventory to include initial inventory production dates
+                prod_dates_to_sum = self.all_production_dates_with_initial_inventory if hasattr(self, 'all_production_dates_with_initial_inventory') else sorted_dates
                 total_cohorts = sum(
                     model.shipment_leg_cohort[leg, prod, prod_date, delivery_date]
-                    for prod_date in sorted_dates
+                    for prod_date in prod_dates_to_sum
                     if (leg, prod, prod_date, delivery_date) in self.cohort_shipment_index_set
                 )
                 return total_cohorts == model.shipment_leg[leg, prod, delivery_date]
