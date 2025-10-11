@@ -416,9 +416,9 @@ with tab_optimization:
         )
 
         use_batch_tracking = st.checkbox(
-            "Enable Batch Tracking (BETA)",
-            value=False,
-            help="Track inventory by production batch with age-cohort variables. Enables FIFO enforcement and shelf life optimization during solving. May increase solve time by 2-3×.",
+            "Enable Batch Tracking",
+            value=True,
+            help="Track inventory by production batch with age-cohort variables. Enables FIFO enforcement and shelf life optimization during solving. REQUIRED for Daily Inventory Snapshot to extract exact inventory from model solution. May increase solve time by 2-3×.",
             key="opt_batch_tracking"
         )
 
@@ -529,7 +529,9 @@ with tab_optimization:
                 st.caption(f"Planning horizon: {model.start_date} to {model.end_date}")
 
                 if use_batch_tracking:
-                    st.info("🔬 Batch tracking enabled: Inventory tracked by production date with FIFO enforcement and shelf life optimization during solving. Solve time may be 2-3× longer.")
+                    st.info("🔬 Batch tracking enabled: Inventory tracked by production date with FIFO enforcement and shelf life optimization during solving. Daily Inventory Snapshot will extract exact inventory from model solution. Solve time may be 2-3× longer.")
+                else:
+                    st.warning("⚠️ Batch tracking disabled: Daily Inventory Snapshot will reconstruct inventory from shipments (less accurate for initial inventory scenarios). Enable batch tracking for exact model results.")
 
             with st.spinner(f"Solving with {selected_solver.upper()}... (max {time_limit}s)"):
                 # Solve
