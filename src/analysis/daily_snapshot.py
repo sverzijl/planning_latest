@@ -932,6 +932,99 @@ class DailySnapshotGenerator:
         """
         Get demand satisfaction records for the snapshot date.
 
+        MODEL MODE (preferred): Extract directly from model's cohort_demand_consumption
+        and shortages_by_dest_product_date dictionaries.
+
+        LEGACY MODE (fallback): Recalculate by tracking inventory before demand consumption.
+
+        Args:
+            snapshot_date: Date to check demand satisfaction
+            location_inventory: Inventory at each location on this date (after demand consumption)
+
+        Returns:
+            List of DemandRecord objects
+        """
+        # Use MODEL MODE if available (batch tracking enabled)
+        if self.use_model_inventory and self.model_solution:
+            return self._get_demand_satisfied_from_model(snapshot_date)
+        else:
+            # Fallback to LEGACY MODE
+            return self._get_demand_satisfied_legacy(snapshot_date, location_inventory)
+
+    def _get_demand_satisfied_from_model(
+        self,
+        snapshot_date: Date
+    ) -> List[DemandRecord]:
+        """
+        Extract demand satisfaction directly from model solution (MODEL MODE).
+
+        This extracts the exact demand satisfaction tracked by the optimization model,
+        including which batches satisfied demand and any shortages.
+
+        Args:
+            snapshot_date: Date to check demand satisfaction
+
+        Returns:
+            List of DemandRecord objects
+        """
+        demand_records = []
+
+        # Get demand from forecast for this date
+        forecast_demand: Dict[Tuple[str, str], float] = {}  # (loc, prod) → qty
+        for entry in self.forecast.entries:
+            if entry.forecast_date == snapshot_date:
+                key = (entry.location_id, entry.product_id)
+                forecast_demand[key] = entry.quantity
+
+        # Get cohort demand consumption from model
+        # Format: {(loc, prod, prod_date, demand_date): qty}
+        cohort_consumption = self.model_solution.get('cohort_demand_consumption', {})
+
+        # Aggregate consumption by location and product for this date
+        supplied_qty: Dict[Tuple[str, str], float] = {}  # (loc, prod) → total supplied
+        for (loc, prod, prod_date, demand_date), qty in cohort_consumption.items():
+            if demand_date == snapshot_date:
+                key = (loc, prod)
+                supplied_qty[key] = supplied_qty.get(key, 0.0) + qty
+
+        # Get shortages from model
+        # Format: {(dest, prod, date): qty}
+        shortages_dict = self.model_solution.get('shortages_by_dest_product_date', {})
+
+        # Create demand records for all locations with demand
+        for (loc, prod), demand in forecast_demand.items():
+            supplied = supplied_qty.get((loc, prod), 0.0)
+            shortage = shortages_dict.get((loc, prod, snapshot_date), 0.0)
+
+            # Validation: supplied + shortage should approximately equal demand
+            # Allow small tolerance for numerical precision
+            total_accounted = supplied + shortage
+            if abs(total_accounted - demand) > 0.01:
+                # If there's a mismatch, use supplied + shortage as ground truth
+                # This could happen if there's rounding or if shortage variable wasn't needed
+                if shortage == 0.0:
+                    # No explicit shortage variable - calculate from supplied
+                    shortage = max(0.0, demand - supplied)
+
+            record = DemandRecord(
+                destination_id=loc,
+                product_id=prod,
+                demand_quantity=demand,
+                supplied_quantity=supplied,
+                shortage_quantity=shortage
+            )
+            demand_records.append(record)
+
+        return demand_records
+
+    def _get_demand_satisfied_legacy(
+        self,
+        snapshot_date: Date,
+        location_inventory: Dict[str, LocationInventory]
+    ) -> List[DemandRecord]:
+        """
+        Calculate demand satisfaction by reconstructing inventory (LEGACY MODE).
+
         This method calculates how much demand was satisfied from available inventory.
         Since inventory is calculated AFTER demand consumption, the supplied_quantity
         represents what was actually consumed (limited by available inventory).
