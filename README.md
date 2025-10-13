@@ -161,6 +161,29 @@ pytest --cov=src --cov-report=html --cov-report=term
 
 **Test Coverage:** 266+ tests covering all core models, parsers, multi-file workflow, SAP IBP conversion, labor validation, and integrated optimization
 
+#### ⚠️ CRITICAL: Integration Test (Required for Model Changes)
+
+**Before committing ANY changes to optimization model or solver code, you MUST run the integration test:**
+
+```bash
+# Required validation gate for optimization changes
+venv/bin/python -m pytest tests/test_integration_ui_workflow.py -v
+```
+
+This test validates the complete UI workflow with real production data and ensures:
+- ✓ Solve time < 30 seconds (4-week horizon with 17,760 forecast entries)
+- ✓ Solution quality: 95%+ demand satisfaction, optimal status
+- ✓ UI compatibility: Matches Planning Tab settings exactly
+- ✓ No performance regressions or infeasibilities
+
+**The test MUST pass before committing changes to:**
+- `src/optimization/` (model formulation, constraints, objective)
+- Solver parameters or performance optimizations
+- Constraint logic or decision variables
+- Route enumeration or batch tracking code
+
+See `tests/test_integration_ui_workflow.py` for detailed documentation and `CLAUDE.md` for complete testing requirements.
+
 ### Continuous Integration
 
 This project uses GitHub Actions for continuous integration:
@@ -501,16 +524,24 @@ See [CLAUDE.md](CLAUDE.md) for detailed development guidelines, architecture dec
 3. Follow PEP 8 style guidelines (enforced by black/flake8)
 4. Keep UI and business logic separate
 5. Document complex algorithms
-6. Ensure all tests pass before submitting PR
+6. **Run integration test for optimization changes** (see below)
+7. Ensure all tests pass before submitting PR
 
 ### Pull Request Process
 
 1. Fork the repository and create a feature branch
 2. Write tests for new functionality
 3. Ensure all tests pass: `pytest tests/ -v`
-4. Run code quality checks: `black src/ tests/ ui/` and `flake8 src/ tests/ ui/`
-5. Update documentation as needed
-6. Submit pull request with clear description
+4. **REQUIRED: If changing optimization code, run integration test:**
+   ```bash
+   venv/bin/python -m pytest tests/test_integration_ui_workflow.py -v
+   ```
+   This test MUST pass for any changes to `src/optimization/` before PR submission.
+5. Run code quality checks: `black src/ tests/ ui/` and `flake8 src/ tests/ ui/`
+6. Update documentation as needed
+7. Submit pull request with clear description
+
+**Note:** PRs that modify optimization code without passing the integration test will not be merged.
 
 ## License
 

@@ -305,6 +305,58 @@ pytest --cov=src tests/
 3. Keep UI and business logic separate
 4. Document complex algorithms and business rules
 5. Version control Excel file format specifications
+6. **Run integration tests before committing changes to model or optimization code**
+
+### Testing Requirements
+
+#### Integration Test Validation (REQUIRED)
+
+**All changes to the optimization model or solver code MUST pass the UI workflow integration test before being committed.**
+
+Run the integration test:
+```bash
+venv/bin/python -m pytest tests/test_integration_ui_workflow.py -v
+```
+
+This test validates:
+- **UI workflow compatibility**: Matches exact UI settings (4-week horizon, 1% MIP gap, batch tracking enabled)
+- **Real data files**: Uses actual forecast (GFree Forecast.xlsm) and network configuration (Network_Config.xlsx)
+- **Performance requirements**: Solve time < 30 seconds for 4-week horizon
+- **Solution quality**: Fill rate ≥ 95%, optimal solution with < 1% gap
+- **Feature correctness**: Batch tracking, shelf life enforcement, demand satisfaction
+
+**When to run this test:**
+- Before committing any changes to `src/optimization/`
+- After modifying constraint formulations or objective functions
+- When updating solver parameters or performance optimizations
+- After adding new decision variables or constraints
+- Before merging feature branches affecting the optimization model
+
+**Test Configuration:**
+The integration test mirrors the UI Planning Tab settings:
+- Allow Demand Shortages: True
+- Enforce Shelf Life Constraints: True
+- Enable Batch Tracking: True (age-cohort tracking)
+- MIP Gap Tolerance: 1%
+- Planning Horizon: 4 weeks from start date
+- Solver: CBC (or any available solver)
+- Time Limit: 120 seconds (expected solve time: <30s)
+
+**Expected Results:**
+- Status: OPTIMAL or FEASIBLE
+- Solve time: < 30 seconds
+- Fill rate: ≥ 95%
+- MIP Gap: < 1%
+- No infeasibilities
+
+**If the test fails:**
+1. Check solve time - if >30s, investigate performance regression
+2. Check fill rate - if <95%, investigate constraint conflicts or infeasibility
+3. Check solution status - if infeasible, review constraint modifications
+4. Review test output for specific error messages and assertions
+5. Compare with previous successful runs to identify regression
+
+This test serves as a **regression gate** to ensure optimization changes don't break existing functionality or degrade performance.
 
 ## Cost Components
 
