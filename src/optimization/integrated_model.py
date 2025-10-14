@@ -2085,6 +2085,125 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 doc="Ambient inventory balance by age cohort (shelf life enforced via sparse indexing)"
             )
 
+            # AUTOMATIC FREEZE/THAW CONSTRAINTS
+            # Freeze/thaw operations are AUTOMATIC (not optional) based on storage mode mismatches
+            # - Ambient arriving at frozen-only storage → must freeze
+            # - Frozen arriving at ambient-only storage → must thaw
+
+            def automatic_freeze_rule(model, loc, prod, prod_date, curr_date):
+                """Force freeze operation when ambient shipments arrive at frozen storage facility.
+
+                Business rule: If a location is a FROZEN STORAGE FACILITY (type=STORAGE with frozen capability),
+                any ambient arrivals must be automatically frozen. This is not optional.
+
+                Example: Lineage (frozen storage) receives ambient from 6122 → must freeze upon arrival.
+
+                Note: storage_mode can be FROZEN or BOTH, but type must be STORAGE.
+                """
+                # Only apply to storage-type locations with frozen capability
+                loc_obj = self.location_by_id.get(loc)
+                if not loc_obj:
+                    return Constraint.Skip
+
+                # Check if this is a frozen storage facility (Lineage)
+                is_frozen_storage = (
+                    loc_obj.type == LocationType.STORAGE and
+                    loc in self.locations_frozen_storage
+                )
+
+                if not is_frozen_storage:
+                    return Constraint.Skip
+
+                # Build list of ambient shipment variables that could arrive
+                ambient_shipment_vars = []
+                for (origin, dest) in self.legs_to_location.get(loc, []):
+                    if self.leg_arrival_state.get((origin, dest)) == 'ambient':
+                        leg = (origin, dest)
+                        if (leg, prod, prod_date, curr_date) in self.cohort_shipment_index_set:
+                            ambient_shipment_vars.append(model.shipment_leg_cohort[leg, prod, prod_date, curr_date])
+
+                # Skip if no ambient shipment variables exist
+                if not ambient_shipment_vars:
+                    return Constraint.Skip
+
+                # Sum ambient arrivals (Pyomo expression)
+                ambient_arrivals_expr = sum(ambient_shipment_vars)
+
+                # Check if freeze variable exists
+                if (loc, prod, prod_date, curr_date) not in self.cohort_freeze_thaw_index_set:
+                    return Constraint.Skip
+
+                # Constraint: freeze must equal ambient arrivals (automatic freezing!)
+                freeze_op = model.freeze[loc, prod, prod_date, curr_date]
+                return freeze_op == ambient_arrivals_expr
+
+            model.automatic_freeze_con = Constraint(
+                model.cohort_frozen_index,
+                rule=automatic_freeze_rule,
+                doc="Automatic freeze when ambient arrives at frozen-only storage"
+            )
+
+            def automatic_thaw_rule(model, loc, prod, prod_date, curr_date):
+                """Force thaw operation when frozen shipments arrive at ambient storage.
+
+                Business rule: If frozen product arrives at a location that stores ambient/thawed,
+                it must be automatically thawed upon arrival. This is not optional.
+
+                Example: 6130 (WA) receives frozen from Lineage → must thaw upon arrival.
+
+                Note: This applies to BREADROOM locations (final destinations), not storage facilities.
+                """
+                # Only apply to destination locations (breadrooms)
+                loc_obj = self.location_by_id.get(loc)
+                if not loc_obj or loc_obj.type != LocationType.BREADROOM:
+                    return Constraint.Skip
+
+                # Check if location can only store ambient (not frozen)
+                if loc not in self.locations_ambient_storage:
+                    return Constraint.Skip
+
+                # Only apply to cohorts that receive thawed inventory (prod_date == curr_date)
+                if prod_date != curr_date:
+                    return Constraint.Skip
+
+                # Build list of frozen shipment cohorts that could arrive at this location
+                frozen_shipment_vars = []
+                for (origin, dest) in self.legs_to_location.get(loc, []):
+                    if self.leg_arrival_state.get((origin, dest)) == 'frozen':
+                        leg = (origin, dest)
+                        if (leg, prod, prod_date, curr_date) in self.cohort_shipment_index_set:
+                            frozen_shipment_vars.append(model.shipment_leg_cohort[leg, prod, prod_date, curr_date])
+
+                # Skip if no frozen shipment variables exist (nothing to thaw)
+                if not frozen_shipment_vars:
+                    return Constraint.Skip
+
+                # Sum frozen arrivals (this is a Pyomo expression)
+                frozen_arrivals_expr = sum(frozen_shipment_vars)
+
+                # Build list of thaw operation variables
+                thaw_vars = []
+                for original_prod_date in sorted_dates:
+                    if original_prod_date <= curr_date:
+                        if (loc, prod, original_prod_date, curr_date) in self.cohort_freeze_thaw_index_set:
+                            thaw_vars.append(model.thaw[loc, prod, original_prod_date, curr_date])
+
+                # If no thaw variables exist, can't create constraint
+                if not thaw_vars:
+                    return Constraint.Skip
+
+                # Sum all thaw operations creating this cohort (Pyomo expression)
+                total_thaw_expr = sum(thaw_vars)
+
+                # Constraint: thaw operations must equal frozen arrivals (automatic thawing)
+                return total_thaw_expr == frozen_arrivals_expr
+
+            model.automatic_thaw_con = Constraint(
+                model.cohort_ambient_index,
+                rule=automatic_thaw_rule,
+                doc="Automatic thaw when frozen arrives at ambient-only storage"
+            )
+
             # Demand allocation constraint: sum of cohorts = demand - shortage
             def demand_cohort_allocation_rule(model, loc, prod, curr_date):
                 """Total demand from all cohorts = actual demand - shortage."""
