@@ -268,12 +268,14 @@ def render_daily_snapshot(
                     status_text = f"{total_units:,.0f} units"
                     status_color = "primary"
 
-                # Determine if expanded (manufacturing site defaults to expanded)
+                # Determine if expanded (manufacturing site and virtual storage default to expanded)
                 is_manufacturing = location and hasattr(location, 'is_manufacturing') and location.is_manufacturing
+                is_virtual_storage = location_id == "6122_Storage"  # Virtual manufacturing storage location
+                should_expand = is_manufacturing or is_virtual_storage
 
                 with st.expander(
                     f"{icon} **{location_id} - {location_name}** ({status_text})",
-                    expanded=is_manufacturing
+                    expanded=should_expand
                 ):
                     # Show zero inventory message (use epsilon tolerance)
                     if total_units <= 0.01:

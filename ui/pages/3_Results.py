@@ -972,6 +972,28 @@ with tab_snapshot:
     locations_list = st.session_state.get('locations', [])
     locations_dict = {loc.location_id: loc for loc in locations_list} if locations_list else {}
 
+    # Add virtual 6122_Storage location if using optimization results
+    # The optimization model uses 6122_Storage as a virtual inventory location
+    # that receives production and supplies trucks
+    if st.session_state.result_source == 'optimization' and locations_dict:
+        from src.models.location import Location, LocationType, StorageMode
+
+        # Find the manufacturing site (6122)
+        manufacturing_site = st.session_state.get('manufacturing_site')
+        if manufacturing_site:
+            # Create virtual 6122_Storage location that mirrors manufacturing site
+            virtual_storage = Location(
+                id="6122_Storage",
+                name="Manufacturing Storage (Virtual)",
+                type=LocationType.STORAGE,
+                storage_mode=StorageMode.BOTH,  # Supports both frozen and ambient
+                capacity=None,  # No capacity limit for virtual location
+                latitude=manufacturing_site.latitude if hasattr(manufacturing_site, 'latitude') else None,
+                longitude=manufacturing_site.longitude if hasattr(manufacturing_site, 'longitude') else None,
+            )
+            # Add to locations_dict
+            locations_dict["6122_Storage"] = virtual_storage
+
     # Render the daily snapshot component
     if results and locations_dict:
         render_daily_snapshot(results, locations_dict, key_prefix="results_snapshot")
