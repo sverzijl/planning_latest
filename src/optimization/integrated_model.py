@@ -721,6 +721,13 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 # Everything else arrives as ambient
                 self.leg_arrival_state[leg_key] = 'ambient'
 
+        # Pre-compute locations with outbound ambient legs (for performance in cohort constraints)
+        # These locations need departure calculations in inventory balance
+        self.locations_with_outbound_ambient_legs: Set[str] = {
+            origin for (origin, dest), state in self.leg_arrival_state.items()
+            if state == 'ambient'
+        }
+
     def _calculate_required_planning_horizon(self) -> Tuple[Date, Date]:
         """
         Calculate required planning horizon accounting for transit times AND truck loading timing.
@@ -2039,14 +2046,20 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                         if (leg, prod, prod_date, curr_date) in self.cohort_shipment_index_set:
                             ambient_arrivals += model.shipment_leg_cohort[leg, prod, prod_date, curr_date]
 
-                # Ambient departures (for hubs and 6122_Storage)
+                # Ambient departures (for locations with outbound ambient legs: intermediate storage, 6122_Storage, and destination hubs)
+                # BUG FIX: Previously only calculated for intermediate_storage and 6122_Storage,
+                # missing hub locations (6104, 6125) which also have outbound legs to spokes.
+                # This caused inventory accumulation at hubs as spoke shipments weren't deducted.
                 ambient_departures = 0
-                if loc in self.intermediate_storage or loc == '6122_Storage':
-                    for (origin, dest) in self.legs_from_location.get(loc, []):
+                # Check if this location has outbound ambient legs (using pre-computed set for performance)
+                if loc in self.locations_with_outbound_ambient_legs:
+                    legs_from_loc = self.legs_from_location[loc]
+                    for (origin, dest) in legs_from_loc:
                         if self.leg_arrival_state.get((origin, dest)) == 'ambient':
                             transit_days = self.leg_transit_days[(origin, dest)]
                             delivery_date = curr_date + timedelta(days=transit_days)
                             leg = (origin, dest)
+                            # Only add if this cohort shipment exists in sparse index (performance)
                             if (leg, prod, prod_date, delivery_date) in self.cohort_shipment_index_set:
                                 ambient_departures += model.shipment_leg_cohort[leg, prod, prod_date, delivery_date]
 
