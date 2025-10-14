@@ -237,7 +237,7 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         self.locations_frozen_storage: Set[str] = {
             loc.id for loc in self.locations
             if loc.storage_mode in [StorageMode.FROZEN, StorageMode.BOTH]
-        }
+        } | {'6122_Storage'}  # Virtual storage also supports frozen inventory
         self.locations_ambient_storage: Set[str] = {
             loc.id for loc in self.locations
             if loc.storage_mode in [StorageMode.AMBIENT, StorageMode.BOTH]
@@ -247,7 +247,7 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         self.locations_with_freezing: Set[str] = {
             loc.id for loc in self.locations
             if loc.storage_mode == StorageMode.BOTH
-        }
+        }  # NOTE: 6122_Storage should NOT freeze/thaw - only Lineage and 6130 perform state transitions
 
         # Identify intermediate storage locations (storage type, no demand)
         self.intermediate_storage: Set[str] = {
@@ -1230,10 +1230,11 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         for loc in self.inventory_locations:
             # Special handling for virtual location 6122_Storage
             if loc == '6122_Storage':
-                # 6122_Storage only supports ambient storage (virtual manufacturing storage)
+                # 6122_Storage supports BOTH frozen and ambient (via freeze operations)
                 for prod in self.products:
                     for date in sorted_dates:
                         self.inventory_ambient_index_set.add((loc, prod, date))
+                        self.inventory_frozen_index_set.add((loc, prod, date))  # Add frozen too!
                 continue  # Skip to next location
 
             # Regular locations: look up in location_by_id
@@ -1759,14 +1760,16 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             )
 
             # LEG-BASED ROUTING: Frozen outflows (shipments departing from this location)
-            # Only relevant for intermediate storage like Lineage
+            # CRITICAL FIX: Include ANY location with frozen outbound legs (not just intermediate_storage)
             frozen_outflows = 0
-            if loc in self.intermediate_storage:
-                # Find legs originating from this location
-                legs_from_loc = self.legs_from_location.get(loc, [])
-
-                # Sum outbound shipments departing on this date
+            legs_from_loc = self.legs_from_location.get(loc, [])
+            if legs_from_loc:
+                # Sum outbound frozen shipments departing on this date
                 for (origin, dest) in legs_from_loc:
+                    # Only count frozen legs (check leg_arrival_state)
+                    if self.leg_arrival_state.get((origin, dest)) != 'frozen':
+                        continue
+
                     # Shipment variable is indexed by delivery_date
                     # To find shipments departing on 'date', we need delivery_date where:
                     # departure_date = delivery_date - transit_days = date
@@ -1962,10 +1965,12 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                         if (leg, prod, prod_date, curr_date) in self.cohort_shipment_index_set:
                             frozen_arrivals += model.shipment_leg_cohort[leg, prod, prod_date, curr_date]
 
-                # Frozen departures (for intermediate storage like Lineage)
+                # Frozen departures (for ANY location with outbound frozen legs)
+                # CRITICAL FIX: Include 6122_Storage, not just intermediate_storage
                 frozen_departures = 0
-                if loc in self.intermediate_storage:
-                    for (origin, dest) in self.legs_from_location.get(loc, []):
+                legs_from_loc = self.legs_from_location.get(loc, [])
+                if legs_from_loc:
+                    for (origin, dest) in legs_from_loc:
                         if self.leg_arrival_state.get((origin, dest)) == 'frozen':
                             transit_days = self.leg_transit_days[(origin, dest)]
                             delivery_date = curr_date + timedelta(days=transit_days)

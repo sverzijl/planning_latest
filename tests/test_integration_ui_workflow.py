@@ -299,13 +299,9 @@ def test_ui_workflow_4_weeks_with_initial_inventory(parsed_data):
 
     print(f"✓ Solved in {solve_time:.2f}s")
 
-    # ASSERT: Fast solve time (<30 seconds as expected)
-    assert solve_time < 30, \
-        f"Solve time {solve_time:.2f}s exceeds expected <30s threshold"
-
-    # ASSERT: Solution is optimal or feasible
-    assert result.is_optimal() or result.is_feasible(), \
-        f"Solution not optimal/feasible: {result.termination_condition}"
+    # Check solution status (but continue to show diagnostics even if slow)
+    if not (result.is_optimal() or result.is_feasible()):
+        pytest.fail(f"Solution not optimal/feasible: {result.termination_condition}")
 
     # Print solution summary
     print("\n" + "="*80)
@@ -333,8 +329,9 @@ def test_ui_workflow_4_weeks_with_initial_inventory(parsed_data):
     print(f"{'-'*40}")
     print(f"TOTAL:          ${solution.get('total_labor_cost', 0) + solution.get('total_production_cost', 0) + solution.get('total_transport_cost', 0) + solution.get('total_inventory_cost', 0) + solution.get('total_shortage_cost', 0):>12,.2f}")
 
-    # Production summary
-    total_production = solution.get('total_production_quantity', 0)
+    # Production summary - calculate from production_by_date_product
+    production_by_date_product = solution.get('production_by_date_product', {})
+    total_production = sum(production_by_date_product.values())
     num_batches = len(solution.get('production_batches', []))
     total_labor_hours = sum(solution.get('labor_hours_by_date', {}).values())
 
@@ -344,7 +341,7 @@ def test_ui_workflow_4_weeks_with_initial_inventory(parsed_data):
     print(f"Total production: {total_production:,.0f} units")
     print(f"Production batches: {num_batches}")
     print(f"Total labor hours: {total_labor_hours:.1f}h")
-    if num_batches > 0:
+    if num_batches > 0 and total_production > 0:
         print(f"Average batch size: {total_production / num_batches:,.0f} units")
 
     # Shipment summary
@@ -423,24 +420,169 @@ def test_ui_workflow_4_weeks_with_initial_inventory(parsed_data):
     print(f"Total time: {model_build_time + solve_time:.2f}s")
     print(f"Status: {'✓ PASSED' if solve_time < 30 else '✗ SLOW'}")
 
-    # Final assertions
-    assert result.is_optimal() or result.is_feasible(), \
-        f"Solution not optimal/feasible: {result.termination_condition}"
-    assert solve_time < 30, \
-        f"Solve time {solve_time:.2f}s exceeds 30s threshold"
-    assert fill_rate >= 95.0, \
-        f"Fill rate {fill_rate:.1f}% is below 95% threshold"
-   # Check either total_production or production_by_date_product has values
-    production_by_date_product = solution.get('production_by_date_product', {})
-    has_production = total_production > 0 or len(production_by_date_product) > 0
-    assert has_production, \
-        f"No production found: total_production={total_production}, batches={num_batches}, production_by_date_product entries={len(production_by_date_product)}"
-    assert num_batches > 0, \
-        f"Expected production batches but got {num_batches}"
+    # Deferred assertions (run after all diagnostics)
+    deferred_assertions = []
+
+    if not (result.is_optimal() or result.is_feasible()):
+        deferred_assertions.append(f"Solution not optimal/feasible: {result.termination_condition}")
+
+    if solve_time >= 30:
+        deferred_assertions.append(f"⚠ Solve time {solve_time:.2f}s exceeds 30s threshold (performance regression)")
+
+    if fill_rate < 95.0:
+        deferred_assertions.append(f"Fill rate {fill_rate:.1f}% is below 95% threshold")
+
+    if total_production <= 0:
+        deferred_assertions.append(f"No production found: total_production={total_production}, batches={num_batches}")
+
+    if num_batches <= 0:
+        deferred_assertions.append(f"Expected production batches but got {num_batches}")
+
+    # Check inventory on FIRST and FINAL day of planning horizon
+    print("\n" + "="*80)
+    print("FIRST & FINAL DAY INVENTORY CHECK")
+    print("="*80)
+
+    # Get cohort inventory for final date
+    if 'cohort_inventory' in solution:
+        cohort_inv = solution['cohort_inventory']
+
+        # Calculate total inventory on FIRST day (model.start_date)
+        first_day_inventory = 0.0
+        first_day_by_location = {}
+
+        for (loc, prod, prod_date, curr_date, state), qty in cohort_inv.items():
+            if curr_date == model.start_date and qty > 0.01:
+                first_day_inventory += qty
+                if loc not in first_day_by_location:
+                    first_day_by_location[loc] = 0.0
+                first_day_by_location[loc] += qty
+
+        print(f"FIRST day ({model.start_date}) inventory: {first_day_inventory:,.0f} units")
+        if first_day_by_location:
+            print("  By location:")
+            for loc, qty in sorted(first_day_by_location.items(), key=lambda x: x[1], reverse=True)[:5]:
+                if qty > 0.01:
+                    print(f"    {loc}: {qty:,.0f} units")
+
+        # Calculate total inventory on final day (model.end_date)
+        final_day_inventory = 0.0
+        final_day_by_location = {}
+
+        for (loc, prod, prod_date, curr_date, state), qty in cohort_inv.items():
+            if curr_date == model.end_date and qty > 0.01:
+                final_day_inventory += qty
+                if loc not in final_day_by_location:
+                    final_day_by_location[loc] = 0.0
+                final_day_by_location[loc] += qty
+
+        print(f"Final planning date: {model.end_date}")
+        print(f"Total inventory on final day: {final_day_inventory:,.0f} units")
+
+        if final_day_by_location:
+            print("\nInventory by location on final day:")
+            for loc, qty in sorted(final_day_by_location.items(), key=lambda x: x[1], reverse=True):
+                if qty > 0.01:
+                    print(f"  {loc}: {qty:,.0f} units")
+
+        # Check shipments that deliver AFTER the planning horizon
+        shipments = model.get_shipment_plan() or []
+        shipments_after_horizon = [s for s in shipments if s.delivery_date > model.end_date]
+        total_in_transit_beyond = sum(s.quantity for s in shipments_after_horizon)
+
+        if shipments_after_horizon:
+            print(f"\n⚠ CRITICAL: Shipments delivering AFTER planning horizon:")
+            print(f"  Count: {len(shipments_after_horizon)}")
+            print(f"  Total quantity: {total_in_transit_beyond:,.0f} units")
+            print(f"  Delivery dates: {min(s.delivery_date for s in shipments_after_horizon)} to {max(s.delivery_date for s in shipments_after_horizon)}")
+
+            # These shipments are in-transit on the final day
+            print(f"\n  This explains why inventory appears on final day - it's in-transit!")
+
+        # Check if there's demand after the planning horizon
+        demand_after_horizon = sum(
+            e.quantity for e in forecast.entries
+            if e.forecast_date > model.end_date
+        )
+
+        print(f"\nDemand after planning horizon ({model.end_date}): {demand_after_horizon:,.0f} units")
+        print(f"Model's knowledge of future demand: NONE (only sees {len(model.demand)} demand entries within horizon)")
+
+        # Calculate actual material balance
+        demand_in_horizon = sum(
+            e.quantity for e in forecast.entries
+            if model.start_date <= e.forecast_date <= model.end_date
+        )
+
+        print(f"\nMaterial Balance Check:")
+        print(f"  Production: {total_production:,.0f} units")
+        print(f"  Demand in horizon: {demand_in_horizon:,.0f} units")
+        print(f"  Shortage (unmet): {total_shortage_units:,.0f} units")
+        print(f"  Satisfied demand: {demand_in_horizon - total_shortage_units:,.0f} units")
+        print(f"  Final day inventory: {final_day_inventory:,.0f} units")
+        print(f"  Shipments after horizon: {total_in_transit_beyond:,.0f} units")
+        print(f"  Total outflow (satisfied + final inv): {(demand_in_horizon - total_shortage_units) + final_day_inventory:,.0f} units")
+
+        # Check actual demand consumption from cohort tracking
+        cohort_demand_consumption = solution.get('cohort_demand_consumption', {})
+        actual_consumption_from_cohorts = sum(cohort_demand_consumption.values())
+
+        print(f"\n  Demand satisfaction validation:")
+        print(f"    Method 1 (Forecast - Shortage): {demand_in_horizon - total_shortage_units:,.0f} units")
+        print(f"    Method 2 (Cohort Consumption): {actual_consumption_from_cohorts:,.0f} units")
+
+        # Recalculate material balance with actual cohort consumption
+        total_outflow_cohort = actual_consumption_from_cohorts + final_day_inventory + total_in_transit_beyond
+        balance_diff_cohort = total_production - total_outflow_cohort
+
+        print(f"\n  Material balance (using cohort consumption):")
+        print(f"    Production: {total_production:,.0f}")
+        print(f"    Consumption + Final Inv: {total_outflow_cohort:,.0f}")
+        print(f"    Balance: {balance_diff_cohort:+,.0f} units")
+
+        # Check if production equals outflow
+        total_outflow = (demand_in_horizon - total_shortage_units) + final_day_inventory + total_in_transit_beyond
+        balance_diff = total_production - total_outflow
+
+        if abs(balance_diff) > 100:  # Threshold for reporting imbalance
+            print(f"\n⚠ MATERIAL BALANCE ISSUE (Method 1 - Forecast-based):")
+            print(f"  Production: {total_production:,.0f}")
+            print(f"  Total outflow: {total_outflow:,.0f}")
+            print(f"  Difference: {balance_diff:,.0f} units")
+
+            if abs(balance_diff_cohort) < 100:
+                print(f"\n✓ BUT Material balance OK when using cohort consumption!")
+                print(f"  Issue is in how 'satisfied demand' is calculated from forecast-shortage")
+                print(f"  Actual consumption (from cohorts): {actual_consumption_from_cohorts:,.0f}")
+                print(f"  Calculated (forecast - shortage): {demand_in_horizon - total_shortage_units:,.0f}")
+                print(f"  Difference: {(demand_in_horizon - total_shortage_units) - actual_consumption_from_cohorts:,.0f} units (accounting error)")
+            else:
+                print(f"\n❌ Material balance ALSO wrong with cohort method!")
+                print(f"  This indicates a real flow conservation bug in the model")
+
+        if final_day_inventory > 0.01:
+            if total_in_transit_beyond > 0:
+                print(f"\n✓ End inventory is likely in-transit shipments beyond horizon")
+            elif demand_after_horizon > 0:
+                print(f"\n⚠ Model doesn't see future demand, yet holds {final_day_inventory:,.0f} units")
+                print(f"  Reason: No end-of-horizon inventory penalty in objective function")
+            else:
+                print(f"\n⚠ Final day inventory ({final_day_inventory:,.0f} units) appears to be excess")
+    else:
+        print("⚠ Cohort inventory not available - cannot check final day inventory")
 
     print("\n" + "="*80)
     print("TEST PASSED ✓")
     print("="*80)
+
+    # Run deferred assertions at the end (after all diagnostics printed)
+    if deferred_assertions:
+        print("\n" + "="*80)
+        print("⚠ ASSERTION FAILURES")
+        print("="*80)
+        for assertion in deferred_assertions:
+            print(f"  • {assertion}")
+        pytest.fail("\n".join(deferred_assertions))
 
 
 def test_ui_workflow_without_initial_inventory(parsed_data):
