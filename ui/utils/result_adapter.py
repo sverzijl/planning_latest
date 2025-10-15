@@ -51,8 +51,16 @@ def adapt_optimization_results(
         inventory_snapshot_date
     )
 
-    # Get shipments (model already has this method)
-    shipments = model.get_shipment_plan() or []
+    # Get shipments - handle both model types
+    if hasattr(model, 'get_shipment_plan'):
+        # Legacy IntegratedProductionDistributionModel
+        shipments = model.get_shipment_plan() or []
+    elif hasattr(model, 'extract_shipments'):
+        # UnifiedNodeModel
+        shipments = model.extract_shipments() or []
+    else:
+        shipments = []
+
     logger.info(f"Retrieved {len(shipments)} shipments from optimization model")
 
     # Create truck plan from optimization results
@@ -77,6 +85,16 @@ def _create_production_schedule(
     inventory_snapshot_date: Optional[Date] = None
 ) -> ProductionSchedule:
     """Convert optimization solution to ProductionSchedule object."""
+
+    # Get manufacturing site ID - handle both model types
+    if hasattr(model, 'manufacturing_site'):
+        # Legacy IntegratedProductionDistributionModel
+        manufacturing_site_id = model.manufacturing_site.location_id
+    elif hasattr(model, 'manufacturing_nodes'):
+        # UnifiedNodeModel
+        manufacturing_site_id = list(model.manufacturing_nodes)[0]
+    else:
+        manufacturing_site_id = "6122"  # Fallback
 
     batches = []
 
@@ -113,7 +131,7 @@ def _create_production_schedule(
         batch = ProductionBatch(
             id=f"OPT-BATCH-{idx+1:04d}",
             product_id=batch_dict['product'],
-            manufacturing_site_id=model.manufacturing_site.location_id,
+            manufacturing_site_id=manufacturing_site_id,  # Use variable determined above
             production_date=batch_dict['date'],
             quantity=batch_dict['quantity'],
             labor_hours_used=0,  # Will aggregate from daily totals
@@ -151,7 +169,7 @@ def _create_production_schedule(
 
     # Build ProductionSchedule
     return ProductionSchedule(
-        manufacturing_site_id=model.manufacturing_site.location_id,
+        manufacturing_site_id=manufacturing_site_id,  # Use variable determined above
         schedule_start_date=actual_start_date,
         schedule_end_date=model.end_date,
         production_batches=batches,
@@ -203,9 +221,23 @@ def _create_truck_plan_from_optimization(model: Any, shipments: List[Shipment]) 
     loads: List[TruckLoad] = []
 
     for (truck_id, departure_date), shipment_list in truck_shipments.items():
-        # Find the truck schedule
+        # Find the truck schedule - handle both model types
         truck_schedule = None
-        for truck in model.truck_schedules.schedules if model.truck_schedules else []:
+
+        # Get truck schedules list
+        if hasattr(model, 'truck_schedules'):
+            if hasattr(model.truck_schedules, 'schedules'):
+                # Legacy: TruckScheduleCollection
+                truck_list = model.truck_schedules.schedules
+            elif isinstance(model.truck_schedules, list):
+                # Unified: List[UnifiedTruckSchedule]
+                truck_list = model.truck_schedules
+            else:
+                truck_list = []
+        else:
+            truck_list = []
+
+        for truck in truck_list:
             if truck.id == truck_id:
                 truck_schedule = truck
                 break
