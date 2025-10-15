@@ -541,6 +541,7 @@ class UnifiedNodeModel(BaseOptimizationModel):
         time_limit_seconds: Optional[float] = None,
         mip_gap: Optional[float] = None,
         tee: bool = False,
+        use_aggressive_heuristics: bool = False,
     ) -> OptimizationResult:
         """Build and solve the unified node model.
 
@@ -549,6 +550,7 @@ class UnifiedNodeModel(BaseOptimizationModel):
             time_limit_seconds: Time limit in seconds
             mip_gap: MIP gap tolerance
             tee: Show solver output
+            use_aggressive_heuristics: Enable aggressive CBC heuristics (for large problems)
 
         Returns:
             OptimizationResult with solve status and metrics
@@ -559,6 +561,7 @@ class UnifiedNodeModel(BaseOptimizationModel):
             time_limit_seconds=time_limit_seconds,
             mip_gap=mip_gap,
             tee=tee,
+            use_aggressive_heuristics=use_aggressive_heuristics,
         )
 
     def extract_solution(self, model: ConcreteModel) -> Dict[str, Any]:
