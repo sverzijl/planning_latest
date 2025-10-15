@@ -66,6 +66,10 @@ class LegacyToUnifiedConverter:
 
         # Convert other locations to nodes
         for loc in locations:
+            # Skip manufacturing site - already converted above to avoid duplicates
+            if loc.id == manufacturing_site.id:
+                continue
+
             # Determine if this location has demand
             has_demand = loc.id in demand_locations
 
