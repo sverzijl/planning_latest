@@ -1,0 +1,90 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.2, pytest-8.4.2, pluggy-1.6.0 -- /home/sverzijl/planning_latest/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/sverzijl/planning_latest
+plugins: cov-7.0.0, mock-3.15.1
+collecting ... collected 31 items
+
+tests/test_packaging_constraints.py::TestCaseConstraints::test_exact_case_multiple PASSED [  3%]
+tests/test_packaging_constraints.py::TestCaseConstraints::test_non_case_multiple_detection PASSED [  6%]
+tests/test_packaging_constraints.py::TestCaseConstraints::test_zero_production_allowed PASSED [  9%]
+tests/test_packaging_constraints.py::TestCaseConstraints::test_edge_case_exactly_one_case PASSED [ 12%]
+tests/test_packaging_constraints.py::TestCaseConstraints::test_edge_case_exactly_one_pallet PASSED [ 16%]
+tests/test_packaging_constraints.py::TestCaseConstraints::test_edge_case_exactly_one_truck PASSED [ 19%]
+tests/test_packaging_constraints.py::TestCaseConstraints::test_validate_case_constraints_function PASSED [ 22%]
+tests/test_packaging_constraints.py::TestPalletConstraints::test_one_pallet_exactly PASSED [ 25%]
+tests/test_packaging_constraints.py::TestPalletConstraints::test_partial_pallet_one_case PASSED [ 29%]
+tests/test_packaging_constraints.py::TestPalletConstraints::test_partial_pallet_321_units PASSED [ 32%]
+tests/test_packaging_constraints.py::TestPalletConstraints::test_two_full_pallets PASSED [ 35%]
+tests/test_packaging_constraints.py::TestPalletConstraints::test_partial_pallet_641_units PASSED [ 38%]
+tests/test_packaging_constraints.py::TestPalletConstraints::test_truck_max_44_pallets PASSED [ 41%]
+tests/test_packaging_constraints.py::TestPalletConstraints::test_truck_max_with_inefficiency PASSED [ 45%]
+tests/test_packaging_constraints.py::TestPalletConstraints::test_truck_capacity_exceeded PASSED [ 48%]
+tests/test_packaging_constraints.py::TestSmallInstance::test_small_instance_production_feasibility ERROR [ 51%]
+tests/test_packaging_constraints.py::TestSmallInstance::test_small_instance_case_multiples ERROR [ 54%]
+tests/test_packaging_constraints.py::TestMediumInstance::test_medium_instance_feasibility ERROR [ 58%]
+tests/test_packaging_constraints.py::TestMediumInstance::test_medium_instance_demand_satisfaction ERROR [ 61%]
+tests/test_packaging_constraints.py::TestEdgeCases::test_exact_truck_capacity_demand ERROR [ 64%]
+tests/test_packaging_constraints.py::TestEdgeCases::test_partial_pallet_demand ERROR [ 67%]
+tests/test_packaging_constraints.py::TestValidationFunctions::test_validate_case_constraints_empty PASSED [ 70%]
+tests/test_packaging_constraints.py::TestValidationFunctions::test_validate_case_constraints_valid PASSED [ 74%]
+tests/test_packaging_constraints.py::TestValidationFunctions::test_validate_case_constraints_invalid PASSED [ 77%]
+tests/test_packaging_constraints.py::TestValidationFunctions::test_validate_pallet_constraints_valid PASSED [ 80%]
+tests/test_packaging_constraints.py::TestValidationFunctions::test_validate_pallet_constraints_exceeds_capacity PASSED [ 83%]
+tests/test_packaging_constraints.py::TestValidationFunctions::test_calculate_pallet_efficiency_perfect PASSED [ 87%]
+tests/test_packaging_constraints.py::TestValidationFunctions::test_calculate_pallet_efficiency_wasteful PASSED [ 90%]
+tests/test_packaging_constraints.py::TestPerformance::test_large_instance_solve_time ERROR [ 93%]
+tests/test_packaging_constraints.py::TestPackagingDocumentation::test_packaging_constants PASSED [ 96%]
+tests/test_packaging_constraints.py::TestPackagingDocumentation::test_packaging_examples_from_docs PASSED [100%]
+
+==================================== ERRORS ====================================
+_ ERROR at setup of TestSmallInstance.test_small_instance_production_feasibility _
+tests/test_packaging_constraints.py:162: in solver_config
+    return SolverConfig(
+E   TypeError: SolverConfig.__init__() got an unexpected keyword argument 'solver_name'
+____ ERROR at setup of TestSmallInstance.test_small_instance_case_multiples ____
+tests/test_packaging_constraints.py:162: in solver_config
+    return SolverConfig(
+E   TypeError: SolverConfig.__init__() got an unexpected keyword argument 'solver_name'
+____ ERROR at setup of TestMediumInstance.test_medium_instance_feasibility _____
+tests/test_packaging_constraints.py:162: in solver_config
+    return SolverConfig(
+E   TypeError: SolverConfig.__init__() got an unexpected keyword argument 'solver_name'
+_ ERROR at setup of TestMediumInstance.test_medium_instance_demand_satisfaction _
+tests/test_packaging_constraints.py:162: in solver_config
+    return SolverConfig(
+E   TypeError: SolverConfig.__init__() got an unexpected keyword argument 'solver_name'
+_______ ERROR at setup of TestEdgeCases.test_exact_truck_capacity_demand _______
+tests/test_packaging_constraints.py:162: in solver_config
+    return SolverConfig(
+E   TypeError: SolverConfig.__init__() got an unexpected keyword argument 'solver_name'
+__________ ERROR at setup of TestEdgeCases.test_partial_pallet_demand __________
+tests/test_packaging_constraints.py:162: in solver_config
+    return SolverConfig(
+E   TypeError: SolverConfig.__init__() got an unexpected keyword argument 'solver_name'
+_______ ERROR at setup of TestPerformance.test_large_instance_solve_time _______
+tests/test_packaging_constraints.py:162: in solver_config
+    return SolverConfig(
+E   TypeError: SolverConfig.__init__() got an unexpected keyword argument 'solver_name'
+=============================== warnings summary ===============================
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+  /home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+tests/test_packaging_constraints.py:826
+  /home/sverzijl/planning_latest/tests/test_packaging_constraints.py:826: PytestUnknownMarkWarning: Unknown pytest.mark.slow - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.slow
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+ERROR tests/test_packaging_constraints.py::TestSmallInstance::test_small_instance_production_feasibility
+ERROR tests/test_packaging_constraints.py::TestSmallInstance::test_small_instance_case_multiples
+ERROR tests/test_packaging_constraints.py::TestMediumInstance::test_medium_instance_feasibility
+ERROR tests/test_packaging_constraints.py::TestMediumInstance::test_medium_instance_demand_satisfaction
+ERROR tests/test_packaging_constraints.py::TestEdgeCases::test_exact_truck_capacity_demand
+ERROR tests/test_packaging_constraints.py::TestEdgeCases::test_partial_pallet_demand
+ERROR tests/test_packaging_constraints.py::TestPerformance::test_large_instance_solve_time
+=================== 24 passed, 5 warnings, 7 errors in 1.55s ===================

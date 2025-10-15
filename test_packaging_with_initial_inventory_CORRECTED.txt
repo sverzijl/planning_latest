@@ -1,0 +1,78 @@
+/home/sverzijl/planning_latest/src/parsers/inventory_parser.py:150: UserWarning: Found 5 negative quantity values. These were set to 0.
+  warnings.warn(
+/home/sverzijl/planning_latest/src/optimization/integrated_model.py:781: UserWarning: 
+Planning horizon may be insufficient:
+  Current start: 2025-10-07
+  Required start: 2025-10-03 (4 days earlier)
+  Max transit time: 3.5 days
+  Early demand (on 2025-10-07) cannot be satisfied.
+  Solution: Extend planning horizon or accept reduced demand satisfaction.
+  warnings.warn(
+================================================================================
+PACKAGING CONSTRAINTS TEST - 4 WEEKS WITH TIME LIMIT
+================================================================================
+
+Loading data...
+Loading initial inventory for 2025-10-07...
+✓ Loaded inventory snapshot with 23 entries
+✓ Loaded 9180 forecast entries
+
+Filtering to 4 weeks from 2025-10-07...
+✓ Using 1260 entries from 2025-10-07 to 2025-11-03
+
+Building model...
+
+📦 Preprocessed initial inventory: 23 items, prod_date=2025-10-07
+✓ Model built
+
+Solving with CBC (10 min time limit, 1% MIP gap)...
+
+Building sparse cohort indices...
+  Production dates: 28 in horizon + 0 from initial inventory
+  Frozen cohorts: 5,410
+  Ambient cohorts: 15,990
+  Shipment cohorts: 18,240
+  Demand cohorts: 14,235
+  Freeze/thaw cohorts: 3,380
+  Total: 57,255
+ERROR: Rule failed when generating expression for Constraint
+demand_cohort_allocation_con with index ('6103', 'HELGAS GFREE TRAD WHITE
+470G', datetime.date(2025, 10, 7)): ValueError: Invalid constraint expression.
+The constraint expression resolved to a trivial Boolean (False) instead of a
+Pyomo object. Please modify your rule to return Constraint.Infeasible instead
+of False.
+
+    Error thrown for Constraint 'demand_cohort_allocation_con['6103',HELGAS
+    GFREE TRAD WHITE 470G,2025-10-07]'
+ERROR: Constructing component 'demand_cohort_allocation_con' from data=None
+failed:
+        ValueError: Invalid constraint expression. The constraint expression
+        resolved to a trivial Boolean (False) instead of a Pyomo object.
+        Please modify your rule to return Constraint.Infeasible instead of
+        False.
+
+    Error thrown for Constraint 'demand_cohort_allocation_con['6103',HELGAS
+    GFREE TRAD WHITE 470G,2025-10-07]'
+Traceback (most recent call last):
+  File "/home/sverzijl/planning_latest/test_packaging_with_timelimit.py", line 132, in <module>
+    solution = model.solve(solver_name='cbc', time_limit_seconds=600, mip_gap=0.01, tee=False)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/sverzijl/planning_latest/src/optimization/base_model.py", line 223, in solve
+    self.model = self.build_model()
+                 ^^^^^^^^^^^^^^^^^^
+  File "/home/sverzijl/planning_latest/src/optimization/integrated_model.py", line 2105, in build_model
+    model.demand_cohort_allocation_con = Constraint(
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pyomo/core/base/block.py", line 573, in __setattr__
+    self.add_component(name, val)
+  File "/home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pyomo/core/base/block.py", line 1103, in add_component
+    val.construct(data)
+  File "/home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pyomo/core/base/constraint.py", line 739, in construct
+    self._setitem_when_not_present(index, rule(block, index))
+  File "/home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pyomo/core/base/indexed_component.py", line 1111, in _setitem_when_not_present
+    obj.set_value(value)
+  File "/home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pyomo/core/base/constraint.py", line 467, in set_value
+    raise ValueError(
+ValueError: Invalid constraint expression. The constraint expression resolved to a trivial Boolean (False) instead of a Pyomo object. Please modify your rule to return Constraint.Infeasible instead of False.
+
+Error thrown for Constraint 'demand_cohort_allocation_con['6103',HELGAS GFREE TRAD WHITE 470G,2025-10-07]'

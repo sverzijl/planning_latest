@@ -1,0 +1,15 @@
+Traceback (most recent call last):
+  File "/home/sverzijl/planning_latest/test_packaging_real_data.py", line 102, in test_real_data
+    manufacturing_sites = network_parser.parse_manufacturing_sites()
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'ExcelParser' object has no attribute 'parse_manufacturing_sites'
+================================================================================
+PACKAGING CONSTRAINTS TEST - REAL DATA
+================================================================================
+
+Loading real data...
+  Network config: /home/sverzijl/planning_latest/data/examples/Network_Config.xlsx
+  Forecast: /home/sverzijl/planning_latest/data/examples/Gfree Forecast_Converted.xlsx
+
+Loading network configuration...
+ERROR loading data: 'ExcelParser' object has no attribute 'parse_manufacturing_sites'

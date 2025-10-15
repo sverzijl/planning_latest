@@ -12,6 +12,7 @@ streamlit>=1.28.0
 # Visualization
 plotly>=5.17.0
 matplotlib>=3.7.0
+pyxel>=2.0.0  # For 8-bit retro visualization
 
 # Optimization (Phase 3+)
 pyomo>=6.6.0

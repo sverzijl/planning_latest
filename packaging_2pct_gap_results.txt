@@ -1,0 +1,27 @@
+================================================================================
+PACKAGING CONSTRAINTS TEST - 4 WEEKS WITH TIME LIMIT
+================================================================================
+
+Loading data...
+✓ Loaded 9180 forecast entries
+
+Filtering to 4 weeks...
+✓ Using 1260 entries from 2025-06-02 to 2025-06-29
+
+Building model...
+✓ Model built
+
+Solving with CBC (10 min time limit, 2% MIP gap)...
+
+Building sparse cohort indices...
+  Production dates: 32 in horizon + 0 from initial inventory
+  Frozen cohorts: 7,140
+  Ambient cohorts: 19,330
+  Shipment cohorts: 24,040
+  Demand cohorts: 16,945
+  Freeze/thaw cohorts: 4,500
+  Total: 71,955
+
+Validating cohort model structure...
+  Cohort variables: 67,455 / 21 total (321214.3%)
+  ✓ Cohort model validation passed
