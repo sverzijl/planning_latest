@@ -2416,9 +2416,10 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 Without the product dimension, products can be mixed (e.g., shipments of
                 product A "satisfied" by truck loads of product B).
                 """
-                # LEG-BASED ROUTING: Check if leg exists from manufacturing to this destination
-                manufacturing_id = self.manufacturing_site.id
-                leg_key = (manufacturing_id, dest_id)
+                # LEG-BASED ROUTING: Check if leg exists from manufacturing storage to this destination
+                # CRITICAL: Use 6122_Storage (not 6122) because inventory flows through virtual storage
+                manufacturing_storage_id = '6122_Storage'
+                leg_key = (manufacturing_storage_id, dest_id)
 
                 if leg_key not in self.leg_keys:
                     return Constraint.Skip
@@ -2440,11 +2441,11 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
 
                 return leg_shipment == total_truck_loads
 
-            # LEG-BASED ROUTING: Get all destinations that have legs from manufacturing
-            # Create constraints for ALL leg destinations from manufacturing
+            # LEG-BASED ROUTING: Get all destinations that have legs from manufacturing storage
+            # Create constraints for ALL leg destinations from 6122_Storage (virtual storage)
             leg_destinations = set()
             for (origin, dest) in self.leg_keys:
-                if origin == self.manufacturing_site.id:
+                if origin == '6122_Storage':
                     leg_destinations.add(dest)
 
             model.truck_leg_linking_con = Constraint(
@@ -2453,6 +2454,27 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 model.dates,
                 rule=truck_route_linking_rule,
                 doc="Link truck loads to leg shipments from manufacturing (by destination, product, and date)"
+            )
+
+            # CRITICAL CONSTRAINT: Force real manufacturing (6122) legs to zero
+            # All flow must go through 6122_Storage virtual location for proper truck tracking
+            def no_direct_manufacturing_shipments_rule(model, dest_id, product_id, d):
+                """Prevent direct shipments from 6122 (all must go via 6122_Storage)."""
+                real_manufacturing_id = self.manufacturing_site.id  # "6122"
+                leg_key = (real_manufacturing_id, dest_id)
+
+                if leg_key in self.leg_keys:
+                    # This real leg exists - force it to zero (use virtual leg instead)
+                    return model.shipment_leg[leg_key, product_id, d] == 0
+                else:
+                    return Constraint.Skip
+
+            model.no_direct_mfg_shipments_con = Constraint(
+                list(leg_destinations),
+                model.products,
+                model.dates,
+                rule=no_direct_manufacturing_shipments_rule,
+                doc="Force all manufacturing outbound flow through 6122_Storage (prevents bypass of truck constraints)"
             )
 
             # NEW CONSTRAINT: Truck loading timing (D-1 vs D0)
