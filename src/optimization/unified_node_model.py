@@ -1085,6 +1085,17 @@ class UnifiedNodeModel(BaseOptimizationModel):
 
             # Calculate capacity: production_rate * labor_hours
             production_rate = node.capabilities.production_rate_per_hour
+
+            # Handle missing production rate
+            if not production_rate or production_rate <= 0:
+                # No production rate defined - force production to zero
+                total_prod = sum(
+                    model.production[node_id, prod, date]
+                    for prod in model.products
+                    if (node_id, prod, date) in model.production
+                )
+                return total_prod == 0
+
             labor_hours = labor_day.fixed_hours + (labor_day.overtime_hours if hasattr(labor_day, 'overtime_hours') else 0)
 
             # If this is a non-fixed day, use minimum hours
@@ -1154,14 +1165,45 @@ class UnifiedNodeModel(BaseOptimizationModel):
                                 prod, prod_date, delivery_date, 'thawed'
                             ]
 
-        # Labor cost (simplified - will refine in later phase)
-        # For now, assume fixed cost per day based on labor calendar
+        # Labor cost (based on actual production hours)
+        # Only charge labor when production occurs
         labor_cost = 0
-        for date in model.dates:
-            labor_day = self.labor_calendar.get_labor_day(date)
-            if labor_day:
-                # Simplified: assume using all available hours
-                labor_cost += labor_day.fixed_hours * labor_day.regular_rate
+        for node_id in self.manufacturing_nodes:
+            node = self.nodes[node_id]
+            production_rate = node.capabilities.production_rate_per_hour
+
+            # Skip if no production rate defined
+            if not production_rate or production_rate <= 0:
+                continue
+
+            for date in model.dates:
+                # Calculate total production on this date
+                total_production = sum(
+                    model.production[node_id, prod, date]
+                    for prod in model.products
+                    if (node_id, prod, date) in model.production
+                )
+
+                # Calculate labor hours needed (production / rate)
+                labor_hours_needed = total_production / production_rate
+
+                # Get labor day to determine rate
+                labor_day = self.labor_calendar.get_labor_day(date)
+
+                if labor_day and labor_day.is_fixed_day:
+                    # Fixed day: regular rate for fixed hours, overtime for excess
+                    # Simplified: use average blended rate
+                    # This is approximate - actual cost varies by fixed vs OT hours
+                    blended_rate = (labor_day.regular_rate + labor_day.overtime_rate) / 2
+                    labor_cost += labor_hours_needed * blended_rate
+                elif labor_day and not labor_day.is_fixed_day:
+                    # Non-fixed day: premium rate with minimum hours
+                    non_fixed_rate = labor_day.non_fixed_rate if labor_day.non_fixed_rate else labor_day.overtime_rate
+                    billable_hours = labor_hours_needed  # Simplified - would need max with minimum_hours
+                    labor_cost += billable_hours * non_fixed_rate
+                else:
+                    # No labor day in calendar - use default rate
+                    labor_cost += labor_hours_needed * 25.0  # Default regular rate
 
         # Shortage penalty (if shortages allowed)
         shortage_cost = 0
