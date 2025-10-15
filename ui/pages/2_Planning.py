@@ -333,6 +333,20 @@ with tab_optimization:
     # Optimization Settings
     st.markdown(section_header("Optimization Settings", level=3, icon="⚙️"), unsafe_allow_html=True)
 
+    # Model Selection
+    model_type = st.selectbox(
+        "Optimization Model",
+        options=["Legacy Model (Current)", "Unified Node Model (New - Recommended)"],
+        index=1,  # Default to unified model
+        help="Legacy: Current model with known bugs. Unified: New architecture fixing all bugs (no 6122/6122_Storage, proper weekend enforcement, hub truck support)",
+        key="opt_model_type"
+    )
+
+    if model_type == "Unified Node Model (New - Recommended)":
+        st.info("🆕 **Unified Node Model**: Clean architecture with no virtual locations, generalized truck constraints, and proper weekend enforcement. Fixes all reported bugs!")
+    else:
+        st.warning("⚠️ **Legacy Model**: Has known 6122/6122_Storage bypass bug. Consider using Unified Node Model.")
+
     col1, col2, col3 = st.columns(3)
 
     with col1:
@@ -489,8 +503,6 @@ with tab_optimization:
     if st.button("⚡ Solve Optimization Model", type="primary", use_container_width=True, key="run_optimization"):
         try:
             with st.spinner("Building optimization model..."):
-                from src.optimization import IntegratedProductionDistributionModel
-
                 # Get parsed data
                 data = session_state.get_parsed_data()
 
@@ -500,24 +512,75 @@ with tab_optimization:
                 # Get inventory snapshot date from session state (if initial inventory was loaded)
                 inventory_snapshot_date = st.session_state.get('inventory_snapshot_date')
 
-                # Create optimization model
-                model = IntegratedProductionDistributionModel(
-                    forecast=data['forecast'],
-                    labor_calendar=data['labor_calendar'],
-                    manufacturing_site=data['manufacturing_site'],
-                    cost_structure=data['cost_structure'],
-                    locations=data['locations'],
-                    routes=data['routes'],
-                    truck_schedules=data['truck_schedules'],
-                    max_routes_per_destination=max_routes,
-                    allow_shortages=allow_shortages,
-                    enforce_shelf_life=enforce_shelf_life,
-                    initial_inventory=initial_inventory,
-                    inventory_snapshot_date=inventory_snapshot_date,
-                    start_date=planning_start_date,  # Use override if specified, else None (auto-calculate)
-                    end_date=custom_end_date,  # Use custom horizon if specified, else None (auto-calculate)
-                    use_batch_tracking=use_batch_tracking,  # Enable age-cohort batch tracking
-                )
+                # Create model based on selection
+                if model_type == "Unified Node Model (New - Recommended)":
+                    # Use new unified model
+                    from src.optimization.unified_node_model import UnifiedNodeModel
+                    from src.optimization.legacy_to_unified_converter import LegacyToUnifiedConverter
+
+                    st.info("Using Unified Node Model (new architecture)")
+
+                    # Convert data to unified format
+                    converter = LegacyToUnifiedConverter()
+                    nodes, unified_routes, unified_trucks = converter.convert_all(
+                        manufacturing_site=data['manufacturing_site'],
+                        locations=data['locations'],
+                        routes=data['routes'],
+                        truck_schedules=data['truck_schedules'].schedules if hasattr(data['truck_schedules'], 'schedules') else data['truck_schedules'],
+                        forecast=data['forecast']
+                    )
+
+                    # Calculate planning dates
+                    if planning_start_date:
+                        start_date = planning_start_date
+                    else:
+                        # Auto: use earliest forecast date
+                        start_date = min(e.forecast_date for e in data['forecast'].entries)
+
+                    if custom_end_date:
+                        end_date = custom_end_date
+                    else:
+                        # Auto: use latest forecast date
+                        end_date = max(e.forecast_date for e in data['forecast'].entries)
+
+                    model = UnifiedNodeModel(
+                        nodes=nodes,
+                        routes=unified_routes,
+                        forecast=data['forecast'],
+                        labor_calendar=data['labor_calendar'],
+                        cost_structure=data['cost_structure'],
+                        start_date=start_date,
+                        end_date=end_date,
+                        truck_schedules=unified_trucks,
+                        initial_inventory=initial_inventory,
+                        inventory_snapshot_date=inventory_snapshot_date,
+                        use_batch_tracking=use_batch_tracking,
+                        allow_shortages=allow_shortages,
+                        enforce_shelf_life=enforce_shelf_life,
+                    )
+                else:
+                    # Use legacy model
+                    from src.optimization import IntegratedProductionDistributionModel
+
+                    st.info("Using Legacy Model (current)")
+
+                    model = IntegratedProductionDistributionModel(
+                        forecast=data['forecast'],
+                        labor_calendar=data['labor_calendar'],
+                        manufacturing_site=data['manufacturing_site'],
+                        cost_structure=data['cost_structure'],
+                        locations=data['locations'],
+                        routes=data['routes'],
+                        truck_schedules=data['truck_schedules'],
+                        max_routes_per_destination=max_routes,
+                        allow_shortages=allow_shortages,
+                        enforce_shelf_life=enforce_shelf_life,
+                        initial_inventory=initial_inventory,
+                        inventory_snapshot_date=inventory_snapshot_date,
+                        start_date=planning_start_date,  # Use override if specified, else None (auto-calculate)
+                        end_date=custom_end_date,  # Use custom horizon if specified, else None (auto-calculate)
+                        use_batch_tracking=use_batch_tracking,  # Enable age-cohort batch tracking
+                    )
 
                 # Calculate planning horizon info
                 horizon_days = len(model.production_dates)
@@ -525,7 +588,16 @@ with tab_optimization:
 
                 # Show model info with batch tracking status
                 batch_status = " | 🔬 Age-cohort batch tracking ENABLED" if use_batch_tracking else ""
-                st.info(f"📊 Model built: {len(model.enumerated_routes)} routes, {horizon_days} days ({horizon_weeks:.1f} weeks){batch_status}")
+
+                # Get route count (legacy has enumerated_routes, unified has routes)
+                if hasattr(model, 'enumerated_routes'):
+                    route_count = len(model.enumerated_routes)
+                elif hasattr(model, 'routes'):
+                    route_count = len(model.routes)
+                else:
+                    route_count = 0
+
+                st.info(f"📊 Model built: {route_count} routes, {horizon_days} days ({horizon_weeks:.1f} weeks){batch_status}")
                 st.caption(f"Planning horizon: {model.start_date} to {model.end_date}")
 
                 if use_batch_tracking:

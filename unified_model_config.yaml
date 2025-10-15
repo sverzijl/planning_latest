@@ -1,0 +1,62 @@
+# Unified Node Model Configuration
+# Configuration parameters specific to the UnifiedNodeModel
+
+model:
+  name: "Unified Node Model"
+  version: "1.0.0"
+  description: "Simplified node-based architecture with no virtual locations"
+
+# Shelf life constants (days)
+shelf_life:
+  frozen: 120  # Frozen product shelf life
+  ambient: 17  # Fresh/ambient product shelf life
+  thawed: 14   # Shelf life after thawing frozen product
+
+# Default solver settings
+solver:
+  default_solver: "cbc"  # cbc, glpk, gurobi, cplex
+  time_limit_seconds: 120
+  mip_gap: 0.01  # 1% optimality gap
+  use_batch_tracking: true  # Enable age-cohort tracking
+
+# Optimization behavior
+optimization:
+  allow_shortages: true  # Allow demand shortages with penalty
+  enforce_shelf_life: true  # Enforce shelf life constraints
+
+# Cost behavior
+costs:
+  # Labor cost calculation
+  labor_cost_method: "actual_hours"  # "actual_hours" or "fixed_daily"
+
+  # Blended rate for labor (when using actual_hours method)
+  use_blended_labor_rate: true  # Average of regular + overtime rates
+
+# Features
+features:
+  generalized_truck_constraints: true  # Trucks can constrain any route
+  hub_truck_scheduling: true  # Support truck schedules from hubs
+  automatic_state_transitions: true  # Freeze/thaw based on storage modes
+  unified_inventory_balance: true  # Single equation for all nodes
+
+# Performance tuning
+performance:
+  sparse_cohort_indexing: true  # Only create valid cohort indices
+  max_cohort_age_days: 17  # Maximum age for ambient cohorts (shelf life)
+
+# Validation
+validation:
+  check_node_duplicates: true  # Ensure no duplicate node IDs
+  validate_routes: true  # Ensure routes connect valid nodes
+  check_truck_route_match: true  # Ensure trucks have matching routes
+
+# Logging
+logging:
+  show_index_counts: true  # Print cohort index counts during build
+  show_shipment_origins: true  # Print shipment cohorts by origin
+  show_constraint_summary: true  # Print constraint counts
+
+# Comparison with legacy model
+legacy_compatibility:
+  convert_automatically: true  # Auto-convert legacy data structures
+  preserve_solution_format: true  # Solution dict compatible with legacy UI
