@@ -906,11 +906,27 @@ class UnifiedNodeModel(BaseOptimizationModel):
                             ]
 
             # Demand consumption (only if node has demand capability)
+            # CRITICAL: Demand is allocated from cohort, but must deduct from SPECIFIC state
+            # Priority: ambient first, then thawed, then frozen
             demand_consumption = 0
             if node.has_demand_capability():
                 if (node_id, prod, curr_date) in self.demand:
                     if (node_id, prod, prod_date, curr_date) in self.demand_cohort_index_set:
-                        demand_consumption = model.demand_from_cohort[node_id, prod, prod_date, curr_date]
+                        # Only deduct from the PRIMARY state for this node type
+                        # Ambient nodes: deduct from 'ambient' first, 'thawed' second
+                        # Frozen nodes: deduct from 'frozen'
+                        if state == 'ambient' and node.supports_ambient_storage():
+                            # Deduct from ambient inventory
+                            demand_consumption = model.demand_from_cohort[node_id, prod, prod_date, curr_date]
+                        elif state == 'thawed' and node.supports_ambient_storage():
+                            # Only deduct from thawed if no ambient exists
+                            # For now, don't deduct from thawed (simplification)
+                            demand_consumption = 0
+                        elif state == 'frozen' and node.supports_frozen_storage():
+                            # Frozen nodes deduct from frozen
+                            demand_consumption = model.demand_from_cohort[node_id, prod, prod_date, curr_date]
+                        else:
+                            demand_consumption = 0
 
             # State transitions (Phase 6 - for now, simplified)
             # TODO Phase 6: Add explicit freeze/thaw operations for BOTH nodes
