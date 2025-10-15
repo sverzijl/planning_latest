@@ -104,12 +104,11 @@ class UnifiedNodeModel(BaseOptimizationModel):
         self.allow_shortages = allow_shortages
         self.enforce_shelf_life = enforce_shelf_life
 
+        # Initialize parent class (sets up solver_config)
+        super().__init__()
+
         # Extract and organize data
         self._extract_data()
-
-        # Will be set after model is built
-        self.model: Optional[ConcreteModel] = None
-        self.solution: Optional[Dict[str, Any]] = None
 
     def _extract_data(self) -> None:
         """Extract sets and build indices from input data."""
