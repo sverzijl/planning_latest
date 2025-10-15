@@ -304,17 +304,26 @@ class UnifiedNodeModel(BaseOptimizationModel):
                 doc="Binary: truck used on date"
             )
 
-            # truck_load[truck_idx, product, delivery_date]
-            truck_load_index = [
-                (truck_idx, prod, date)
-                for truck_idx in model.trucks
-                for prod in model.products
-                for date in model.dates
-            ]
+            # truck_load[truck_idx, destination, product, delivery_date]
+            # Destination needed for trucks with intermediate stops (can deliver to multiple destinations)
+            truck_load_index = []
+            for truck_idx in model.trucks:
+                truck = self.truck_schedules[truck_idx]
+                destinations = [truck.destination_node_id]
+
+                # Add intermediate stops as possible destinations
+                if truck.has_intermediate_stops():
+                    destinations.extend(truck.intermediate_stops)
+
+                for dest in destinations:
+                    for prod in model.products:
+                        for date in model.dates:
+                            truck_load_index.append((truck_idx, dest, prod, date))
+
             model.truck_load = Var(
                 truck_load_index,
                 within=NonNegativeReals,
-                doc="Quantity loaded on truck by product and delivery date"
+                doc="Quantity loaded on truck to specific destination by product and delivery date"
             )
 
         print(f"  Variables created successfully")
@@ -1007,11 +1016,20 @@ class UnifiedNodeModel(BaseOptimizationModel):
         self.truck_by_index = {i: truck for i, truck in enumerate(self.truck_schedules)}
 
         # For each route, determine if it has truck constraints
+        # A truck can serve multiple routes if it has intermediate stops
         routes_with_trucks: Dict[Tuple[str, str], List[int]] = defaultdict(list)
 
         for truck_idx, truck in self.truck_by_index.items():
+            # Primary route: origin → final destination
             route_key = (truck.origin_node_id, truck.destination_node_id)
             routes_with_trucks[route_key].append(truck_idx)
+
+            # Intermediate stop routes: origin → intermediate stop
+            if truck.has_intermediate_stops():
+                for stop_id in truck.intermediate_stops:
+                    intermediate_route_key = (truck.origin_node_id, stop_id)
+                    routes_with_trucks[intermediate_route_key].append(truck_idx)
+                    # Note: Same truck can deliver to BOTH intermediate stop AND final destination
 
         # Constraint: Shipments on routes with trucks must equal truck loads
         def truck_route_linking_rule(model, origin, dest, prod, delivery_date):
@@ -1034,11 +1052,11 @@ class UnifiedNodeModel(BaseOptimizationModel):
                 if (origin, dest, prod, prod_date, delivery_date, state) in self.shipment_cohort_index_set
             )
 
-            # Sum truck loads for this product on this delivery date
+            # Sum truck loads for this product on this delivery date to this specific destination
             total_truck_load = sum(
-                model.truck_load[truck_idx, prod, delivery_date]
+                model.truck_load[truck_idx, dest, prod, delivery_date]
                 for truck_idx in trucks_for_route
-                if (truck_idx, prod, delivery_date) in model.truck_load
+                if (truck_idx, dest, prod, delivery_date) in model.truck_load
             )
 
             # Shipment = truck loads (forces use of scheduled trucks)
@@ -1093,14 +1111,21 @@ class UnifiedNodeModel(BaseOptimizationModel):
 
         # Constraint: Truck capacity
         def truck_capacity_rule(model, truck_idx, date):
-            """Total load cannot exceed truck capacity."""
+            """Total load cannot exceed truck capacity (sum across ALL destinations)."""
 
             truck = self.truck_by_index[truck_idx]
 
+            # Get all destinations this truck serves (final + intermediate stops)
+            truck_destinations = [truck.destination_node_id]
+            if truck.has_intermediate_stops():
+                truck_destinations.extend(truck.intermediate_stops)
+
+            # Sum load across all destinations and all products
             total_load = sum(
-                model.truck_load[truck_idx, prod, date]
+                model.truck_load[truck_idx, dest, prod, date]
+                for dest in truck_destinations
                 for prod in model.products
-                if (truck_idx, prod, date) in model.truck_load
+                if (truck_idx, dest, prod, date) in model.truck_load
             )
 
             return total_load <= truck.capacity * model.truck_used[truck_idx, date]
