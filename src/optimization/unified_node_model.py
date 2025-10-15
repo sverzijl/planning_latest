@@ -557,34 +557,227 @@ class UnifiedNodeModel(BaseOptimizationModel):
             model: Solved Pyomo model
 
         Returns:
-            Solution dictionary (empty until Phase 5+ when solving works)
+            Solution dictionary compatible with UI/daily snapshot
         """
-        # TODO Phase 5+: Extract actual solution values
-        return {}
+        solution = {}
+
+        # Extract production by date and product
+        production_by_date_product: Dict[Tuple[Date, str], float] = {}
+        for node_id in self.manufacturing_nodes:
+            for prod in model.products:
+                for date_val in model.dates:
+                    if (node_id, prod, date_val) in model.production:
+                        qty = value(model.production[node_id, prod, date_val])
+                        if qty > 0.01:
+                            production_by_date_product[(date_val, prod)] = qty
+
+        solution['production_by_date_product'] = production_by_date_product
+
+        # Extract cohort inventory for daily snapshot
+        cohort_inventory: Dict[Tuple[str, str, Date, Date, str], float] = {}
+        if self.use_batch_tracking:
+            for (node_id, prod, prod_date, curr_date, state) in model.cohort_index:
+                qty = value(model.inventory_cohort[node_id, prod, prod_date, curr_date, state])
+                if qty > 0.01:
+                    cohort_inventory[(node_id, prod, prod_date, curr_date, state)] = qty
+
+        solution['cohort_inventory'] = cohort_inventory
+        solution['use_batch_tracking'] = self.use_batch_tracking
+
+        # Extract shipments by route
+        shipments_by_route: Dict[Tuple[str, str, str, Date], float] = {}
+        if self.use_batch_tracking:
+            for (origin, dest, prod, prod_date, delivery_date, state) in self.shipment_cohort_index_set:
+                qty = value(model.shipment_cohort[origin, dest, prod, prod_date, delivery_date, state])
+                if qty > 0.01:
+                    # Aggregate by route (sum across cohorts)
+                    key = (origin, dest, prod, delivery_date)
+                    shipments_by_route[key] = shipments_by_route.get(key, 0.0) + qty
+
+        solution['shipments_by_route_product_date'] = shipments_by_route
+
+        # Extract shortages
+        shortages_by_dest_product_date: Dict[Tuple[str, str, Date], float] = {}
+        if self.allow_shortages:
+            for (node_id, prod, date_val) in self.demand.keys():
+                if (node_id, prod, date_val) in model.shortage:
+                    qty = value(model.shortage[node_id, prod, date_val])
+                    if qty > 0.01:
+                        shortages_by_dest_product_date[(node_id, prod, date_val)] = qty
+
+        solution['shortages_by_dest_product_date'] = shortages_by_dest_product_date
+
+        # Calculate costs
+        total_production_cost = sum(
+            self.cost_structure.production_cost_per_unit * qty
+            for qty in production_by_date_product.values()
+        )
+
+        total_transport_cost = sum(
+            self._get_route_cost(origin, dest) * qty
+            for (origin, dest, prod, date_val), qty in shipments_by_route.items()
+        )
+
+        total_shortage_cost = sum(
+            self.cost_structure.shortage_penalty_per_unit * qty
+            for qty in shortages_by_dest_product_date.values()
+        )
+
+        solution['total_production_cost'] = total_production_cost
+        solution['total_transport_cost'] = total_transport_cost
+        solution['total_shortage_cost'] = total_shortage_cost
+        solution['total_cost'] = value(model.obj) if hasattr(model, 'obj') else 0.0
+
+        # Production batches for UI
+        production_batches = []
+        for (date_val, prod), qty in production_by_date_product.items():
+            production_batches.append({
+                'date': date_val,
+                'product': prod,
+                'quantity': qty,
+            })
+
+        solution['production_batches'] = production_batches
+
+        return solution
+
+    def _get_route_cost(self, origin: str, dest: str) -> float:
+        """Get cost per unit for a route."""
+        route = next((r for r in self.routes
+                     if r.origin_node_id == origin and r.destination_node_id == dest), None)
+        return route.cost_per_unit if route else 0.0
 
     def get_solution(self) -> Optional[Dict[str, Any]]:
         """Extract solution from solved model.
 
         Returns:
-            Solution dictionary (None until Phase 5+ when solving works)
+            Solution dictionary or None if not solved
         """
-        return None
+        return self.solution
 
     def extract_production_schedule(self):
         """Extract production schedule from solution.
 
         Returns:
-            ProductionSchedule object (None until Phase 5+)
+            ProductionSchedule object with batches
         """
-        return None
+        if not self.solution:
+            return None
+
+        from src.production.scheduler import ProductionSchedule, ProductionBatch
+
+        # Get production data
+        production_by_date_product = self.solution.get('production_by_date_product', {})
+
+        # Create batches
+        batches = []
+        batch_counter = 1
+
+        for (date_val, prod), qty in production_by_date_product.items():
+            # Find manufacturing node (should be only one)
+            mfg_node_id = list(self.manufacturing_nodes)[0]
+
+            batch = ProductionBatch(
+                id=f"BATCH-{batch_counter:04d}",
+                product_id=prod,
+                quantity=qty,
+                production_date=date_val,
+                manufacturing_site_id=mfg_node_id,
+                initial_state='ambient',  # Simplified - nodes produce in their storage_mode
+            )
+            batches.append(batch)
+            batch_counter += 1
+
+        # Calculate daily totals and labor hours
+        daily_totals: Dict[Date, float] = {}
+        daily_labor_hours: Dict[Date, float] = {}
+
+        for batch in batches:
+            date_val = batch.production_date
+            daily_totals[date_val] = daily_totals.get(date_val, 0.0) + batch.quantity
+
+            # Calculate labor hours (quantity / production_rate)
+            mfg_node = self.nodes[list(self.manufacturing_nodes)[0]]
+            labor_hours = batch.quantity / mfg_node.capabilities.production_rate_per_hour
+            daily_labor_hours[date_val] = daily_labor_hours.get(date_val, 0.0) + labor_hours
+
+        total_units = sum(batch.quantity for batch in batches)
+        total_labor_hours = sum(daily_labor_hours.values())
+
+        # Find manufacturing node ID
+        mfg_node_id = list(self.manufacturing_nodes)[0]
+
+        return ProductionSchedule(
+            manufacturing_site_id=mfg_node_id,
+            production_batches=batches,
+            schedule_start_date=self.start_date,
+            schedule_end_date=self.end_date,
+            daily_totals=daily_totals,
+            daily_labor_hours=daily_labor_hours,
+            infeasibilities=[],  # Optimization ensures feasibility
+            total_units=total_units,
+            total_labor_hours=total_labor_hours,
+        )
 
     def extract_shipments(self):
         """Extract shipments from solution.
 
         Returns:
-            List of Shipment objects (None until Phase 5+)
+            List of Shipment objects
         """
-        return None
+        if not self.solution:
+            return []
+
+        from src.models.shipment import Shipment
+        from src.shelf_life.tracker import RouteLeg
+        from src.network.route_finder import RoutePath
+
+        shipments_by_route = self.solution.get('shipments_by_route_product_date', {})
+
+        shipments = []
+        shipment_counter = 1
+
+        for (origin, dest, prod, delivery_date), qty in shipments_by_route.items():
+            # Find route
+            route = next((r for r in self.routes
+                         if r.origin_node_id == origin and r.destination_node_id == dest), None)
+
+            if not route:
+                continue
+
+            # Create simple single-leg route
+            leg = RouteLeg(
+                from_location_id=origin,
+                to_location_id=dest,
+                transport_mode='ambient',  # Simplified
+                transit_days=route.transit_days
+            )
+
+            route_path = RoutePath(
+                path=[origin, dest],
+                total_transit_days=route.transit_days,
+                total_cost=route.cost_per_unit * qty,
+                transport_modes=['ambient'],
+                route_legs=[leg],
+                intermediate_stops=[]
+            )
+
+            shipment = Shipment(
+                id=f"SHIP-{shipment_counter:04d}",
+                batch_id=f"BATCH-UNKNOWN",  # Simplified - would need cohort tracking
+                product_id=prod,
+                quantity=qty,
+                origin_id=origin,
+                destination_id=dest,
+                delivery_date=delivery_date,
+                route=route_path,
+                production_date=delivery_date - timedelta(days=route.transit_days),
+            )
+
+            shipments.append(shipment)
+            shipment_counter += 1
+
+        return shipments
 
     # ==================
     # PHASE 5: CONSTRAINT IMPLEMENTATION
