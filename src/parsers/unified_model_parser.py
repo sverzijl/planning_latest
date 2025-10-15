@@ -226,7 +226,8 @@ class UnifiedModelParser:
         elif mode_lower == 'ambient':
             return StorageMode.AMBIENT
         elif mode_lower == 'both':
-            return StorageMode.BOTH
+            # 'both' no longer supported - default to ambient
+            return StorageMode.AMBIENT
         else:
             return StorageMode.AMBIENT  # Default
 

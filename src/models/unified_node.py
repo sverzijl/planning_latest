@@ -11,10 +11,13 @@ from pydantic import BaseModel, Field
 
 
 class StorageMode(str, Enum):
-    """Storage temperature mode for a node."""
+    """Storage temperature mode for a node.
+
+    Simplified: Only frozen OR ambient (not both).
+    If you need both capabilities, create separate nodes.
+    """
     FROZEN = "frozen"
     AMBIENT = "ambient"
-    BOTH = "both"  # Supports both frozen and ambient (can freeze/thaw)
 
 
 class NodeCapabilities(BaseModel):
@@ -110,15 +113,19 @@ class UnifiedNode(BaseModel):
 
     def supports_frozen_storage(self) -> bool:
         """Check if node can store frozen product."""
-        return self.capabilities.storage_mode in [StorageMode.FROZEN, StorageMode.BOTH]
+        return self.capabilities.storage_mode == StorageMode.FROZEN
 
     def supports_ambient_storage(self) -> bool:
         """Check if node can store ambient product."""
-        return self.capabilities.storage_mode in [StorageMode.AMBIENT, StorageMode.BOTH]
+        return self.capabilities.storage_mode == StorageMode.AMBIENT
 
     def can_freeze_thaw(self) -> bool:
-        """Check if node supports both frozen and ambient (can perform state transitions)."""
-        return self.capabilities.storage_mode == StorageMode.BOTH
+        """Check if node supports both frozen and ambient.
+
+        DEPRECATED: Always returns False now that 'both' is removed.
+        Create separate frozen/ambient nodes instead.
+        """
+        return False
 
     def requires_trucks(self) -> bool:
         """Check if outbound shipments from this node require truck schedules."""

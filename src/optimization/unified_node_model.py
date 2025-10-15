@@ -389,15 +389,15 @@ class UnifiedNodeModel(BaseOptimizationModel):
                             if age_days <= self.FROZEN_SHELF_LIFE:
                                 cohorts.add((node.id, prod, prod_date, curr_date, 'frozen'))
 
-                        # Ambient cohorts
+                        # Ambient cohorts (at AMBIENT nodes)
                         if node.supports_ambient_storage():
                             shelf_life = self.AMBIENT_SHELF_LIFE
                             if age_days <= shelf_life:
                                 cohorts.add((node.id, prod, prod_date, curr_date, 'ambient'))
 
-                        # Thawed cohorts (for nodes that can thaw frozen product)
-                        # Thawed state resets shelf life to 14 days
-                        if node.can_freeze_thaw():
+                            # Thawed cohorts also exist at AMBIENT nodes
+                            # (result of frozen product arriving and thawing)
+                            # Thawed state has 14-day shelf life from thaw date
                             if age_days <= self.THAWED_SHELF_LIFE:
                                 cohorts.add((node.id, prod, prod_date, curr_date, 'thawed'))
 

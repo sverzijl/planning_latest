@@ -180,7 +180,9 @@ class LegacyToUnifiedConverter:
         elif mode_str == 'ambient':
             return StorageMode.AMBIENT
         elif mode_str == 'both':
-            return StorageMode.BOTH
+            # 'both' no longer supported - default to ambient
+            # User should create separate nodes for frozen/ambient capabilities
+            return StorageMode.AMBIENT
         else:
             return StorageMode.AMBIENT  # Default
 
