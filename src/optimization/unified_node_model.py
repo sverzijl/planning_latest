@@ -948,19 +948,22 @@ class UnifiedNodeModel(BaseOptimizationModel):
         # CRITICAL: Link demand_from_cohort to actual inventory
         # Without this, demand can be "satisfied" from non-existent inventory!
         def demand_inventory_linking_rule(model, node_id, prod, prod_date, demand_date):
-            """Demand from cohort cannot exceed inventory in that cohort."""
+            """Demand from cohort cannot exceed total inventory across ALL states."""
 
             if (node_id, prod, prod_date, demand_date) not in self.demand_cohort_index_set:
                 return Constraint.Skip
 
-            # Demand from this cohort must not exceed inventory in this cohort
-            # Inventory is in 'ambient' state at demand nodes (they're all ambient storage)
-            if (node_id, prod, prod_date, demand_date, 'ambient') in self.cohort_index_set:
-                return model.demand_from_cohort[node_id, prod, prod_date, demand_date] <= \
-                       model.inventory_cohort[node_id, prod, prod_date, demand_date, 'ambient']
-            else:
-                # No inventory cohort exists - demand from this cohort must be zero
-                return model.demand_from_cohort[node_id, prod, prod_date, demand_date] == 0
+            # Sum inventory across ALL states at this demand node
+            # (ambient nodes have 'ambient', BOTH nodes might have 'ambient' + 'thawed' + 'frozen')
+            total_inventory = 0
+
+            # Check all possible states
+            for state in ['ambient', 'frozen', 'thawed']:
+                if (node_id, prod, prod_date, demand_date, state) in self.cohort_index_set:
+                    total_inventory += model.inventory_cohort[node_id, prod, prod_date, demand_date, state]
+
+            # Demand from this cohort must not exceed total available inventory
+            return model.demand_from_cohort[node_id, prod, prod_date, demand_date] <= total_inventory
 
         model.demand_inventory_linking_con = Constraint(
             model.demand_cohort_index,
