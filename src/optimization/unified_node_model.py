@@ -598,6 +598,16 @@ class UnifiedNodeModel(BaseOptimizationModel):
         solution['cohort_inventory'] = cohort_inventory
         solution['use_batch_tracking'] = self.use_batch_tracking
 
+        # Extract demand consumption by cohort (for daily snapshot)
+        cohort_demand_consumption: Dict[Tuple[str, str, Date, Date], float] = {}
+        if self.use_batch_tracking and hasattr(model, 'demand_from_cohort'):
+            for (node_id, prod, prod_date, demand_date) in self.demand_cohort_index_set:
+                qty = value(model.demand_from_cohort[node_id, prod, prod_date, demand_date])
+                if qty > 0.01:
+                    cohort_demand_consumption[(node_id, prod, prod_date, demand_date)] = qty
+
+        solution['cohort_demand_consumption'] = cohort_demand_consumption
+
         # Extract shipments by route
         shipments_by_route: Dict[Tuple[str, str, str, Date], float] = {}
         if self.use_batch_tracking:
