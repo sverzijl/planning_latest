@@ -419,9 +419,10 @@ class UnifiedNodeModel(BaseOptimizationModel):
                     # Calculate departure date
                     departure_date = delivery_date - timedelta(days=route.transit_days)
 
-                    # Only create if departure is within or before planning horizon
-                    if departure_date > self.end_date:
-                        continue
+                    # Only create shipments that can actually depart within planning horizon
+                    # Can't depart before planning starts or after it ends
+                    if departure_date < self.start_date or departure_date > self.end_date:
+                        continue  # Shipment requires departure outside planning horizon
 
                     # For each production date that could supply this shipment
                     for prod_date in dates:
@@ -437,6 +438,16 @@ class UnifiedNodeModel(BaseOptimizationModel):
                                 delivery_date,
                                 arrival_state
                             ))
+
+        # DEBUG: Report shipment cohort counts by origin
+        shipments_by_origin = defaultdict(int)
+        for (origin, dest, prod, prod_date, delivery_date, state) in shipments:
+            shipments_by_origin[origin] += 1
+
+        if len(shipments_by_origin) > 0:
+            print(f"  Shipment cohorts by origin node:")
+            for origin in sorted(shipments_by_origin.keys()):
+                print(f"    {origin}: {shipments_by_origin[origin]}")
 
         return shipments
 
