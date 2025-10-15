@@ -319,7 +319,26 @@ class UnifiedNodeModel(BaseOptimizationModel):
             )
 
         print(f"  Variables created successfully")
-        print(f"  Model skeleton ready for constraints (Phase 5)")
+
+        # ==================
+        # PHASE 5: CORE CONSTRAINTS
+        # ==================
+
+        print(f"  Adding core constraints...")
+
+        # Add constraints
+        if self.use_batch_tracking:
+            self._add_cohort_inventory_balance(model)
+            self._add_cohort_demand_satisfaction(model)
+        else:
+            self._add_aggregated_inventory_balance(model)
+            self._add_aggregated_demand_satisfaction(model)
+
+        self._add_production_capacity_constraints(model)
+        self._add_objective(model)
+
+        print(f"  Core constraints added")
+        print(f"  Model complete and ready to solve")
 
         return model
 
@@ -517,19 +536,12 @@ class UnifiedNodeModel(BaseOptimizationModel):
         Returns:
             OptimizationResult with solve status and metrics
         """
-        # Build model (Phase 4 - structure only)
-        self.model = self.build_model()
-
-        # TODO Phase 5: Add constraints here
-        print("\n⚠️  Model has no constraints yet (Phase 5)")
-        print("   Cannot solve until constraints are implemented")
-
-        # For now, return a mock result
-        return OptimizationResult(
-            termination_condition="skeleton_only",
-            solve_time_seconds=0.0,
-            objective_value=None,
-            solver_name="none",
+        # Call base class solve (builds model + solves)
+        return super().solve(
+            solver_name=solver_name,
+            time_limit_seconds=time_limit_seconds,
+            mip_gap=mip_gap,
+            tee=tee,
         )
 
     def extract_solution(self, model: ConcreteModel) -> Dict[str, Any]:
@@ -567,3 +579,282 @@ class UnifiedNodeModel(BaseOptimizationModel):
             List of Shipment objects (None until Phase 5+)
         """
         return None
+
+    # ==================
+    # PHASE 5: CONSTRAINT IMPLEMENTATION
+    # ==================
+
+    def _add_cohort_inventory_balance(self, model: ConcreteModel) -> None:
+        """Add UNIFIED inventory balance constraint for all nodes.
+
+        This is the key simplification - one equation works for ALL node types:
+        - Manufacturing nodes: get production inflows
+        - Demand nodes: have demand outflows
+        - Storage nodes: just arrivals and departures
+        - Hubs: can have both demand and transit flows
+
+        No special cases needed!
+        """
+
+        def inventory_balance_rule(model, node_id, prod, prod_date, curr_date, state):
+            """Unified inventory balance for ALL nodes.
+
+            inventory[t] = inventory[t-1] +
+                          production (if can_manufacture and prod_date==curr_date) +
+                          arrivals_in_state +
+                          state_transitions_in -
+                          demand (if has_demand) -
+                          departures_in_state -
+                          state_transitions_out
+            """
+            node = self.nodes[node_id]
+
+            # Previous inventory
+            prev_date = self.date_previous.get(curr_date)
+            if prev_date is None:
+                # First date: use initial inventory
+                prev_inv = self.initial_inventory.get((node_id, prod, prod_date, state), 0)
+            else:
+                # Previous day's inventory for this cohort
+                if (node_id, prod, prod_date, prev_date, state) in self.cohort_index_set:
+                    prev_inv = model.inventory_cohort[node_id, prod, prod_date, prev_date, state]
+                else:
+                    prev_inv = 0
+
+            # Production inflow (only if node can manufacture AND prod_date == curr_date)
+            production_inflow = 0
+            if node.can_produce() and prod_date == curr_date:
+                # Production creates cohort with prod_date = curr_date
+                # State of produced product matches node's production state
+                production_state = node.get_production_state()
+                if state == production_state:
+                    production_inflow = model.production[node_id, prod, curr_date]
+
+            # Arrivals: shipments arriving in this state
+            arrivals = 0
+            for route in self.routes_to_node[node_id]:
+                arrival_state = self._determine_arrival_state(route, node)
+
+                if arrival_state == state:
+                    # This shipment arrives in the current state
+                    if (route.origin_node_id, route.destination_node_id, prod, prod_date, curr_date, arrival_state) in self.shipment_cohort_index_set:
+                        arrivals += model.shipment_cohort[
+                            route.origin_node_id, route.destination_node_id,
+                            prod, prod_date, curr_date, arrival_state
+                        ]
+
+            # Departures: shipments leaving from this state
+            # Key insight: We ship in the state matching route transport_mode
+            #  - Frozen route → ships from frozen inventory
+            #  - Ambient route → ships from ambient inventory
+            departures = 0
+            for route in self.routes_from_node[node_id]:
+                # Determine what state we ship from (based on route transport mode)
+                if route.transport_mode == TransportMode.FROZEN:
+                    departure_state = 'frozen'
+                else:
+                    departure_state = 'ambient'
+
+                # Only deduct if we're tracking the right state
+                if state != departure_state:
+                    continue  # This inventory state not used by this route
+
+                # Calculate when shipment would depart to arrive on various delivery dates
+                for delivery_date in model.dates:
+                    departure_date = delivery_date - timedelta(days=route.transit_days)
+
+                    if departure_date == curr_date:
+                        # Shipment departs today from this state
+                        arrival_state = self._determine_arrival_state(route, self.nodes[route.destination_node_id])
+
+                        if (route.origin_node_id, route.destination_node_id, prod, prod_date, delivery_date, arrival_state) in self.shipment_cohort_index_set:
+                            departures += model.shipment_cohort[
+                                route.origin_node_id, route.destination_node_id,
+                                prod, prod_date, delivery_date, arrival_state
+                            ]
+
+            # Demand consumption (only if node has demand capability)
+            demand_consumption = 0
+            if node.has_demand_capability():
+                if (node_id, prod, curr_date) in self.demand:
+                    if (node_id, prod, prod_date, curr_date) in self.demand_cohort_index_set:
+                        demand_consumption = model.demand_from_cohort[node_id, prod, prod_date, curr_date]
+
+            # State transitions (Phase 6 - for now, simplified)
+            # TODO Phase 6: Add explicit freeze/thaw operations for BOTH nodes
+            state_transitions_in = 0
+            state_transitions_out = 0
+
+            # Balance equation
+            return model.inventory_cohort[node_id, prod, prod_date, curr_date, state] == (
+                prev_inv + production_inflow + arrivals + state_transitions_in -
+                demand_consumption - departures - state_transitions_out
+            )
+
+        model.inventory_balance_con = Constraint(
+            model.cohort_index,
+            rule=inventory_balance_rule,
+            doc="Unified inventory balance for all nodes (manufacturing, hubs, storage, demand)"
+        )
+
+    def _add_cohort_demand_satisfaction(self, model: ConcreteModel) -> None:
+        """Add demand satisfaction constraints."""
+
+        def demand_satisfaction_rule(model, node_id, prod, demand_date):
+            """Demand from all cohorts + shortage = total demand."""
+
+            if (node_id, prod, demand_date) not in self.demand:
+                return Constraint.Skip
+
+            demand_qty = self.demand[(node_id, prod, demand_date)]
+
+            # Sum demand satisfied from all cohorts
+            cohort_supply = sum(
+                model.demand_from_cohort[node_id, prod, prod_date, demand_date]
+                for prod_date in model.dates
+                if (node_id, prod, prod_date, demand_date) in self.demand_cohort_index_set
+            )
+
+            if self.allow_shortages:
+                # Cohort supply + shortage = demand
+                return cohort_supply + model.shortage[node_id, prod, demand_date] == demand_qty
+            else:
+                # Cohort supply = demand (must satisfy exactly)
+                return cohort_supply == demand_qty
+
+        demand_index = set()
+        for (node_id, prod, demand_date) in self.demand.keys():
+            demand_index.add((node_id, prod, demand_date))
+
+        model.demand_satisfaction_con = Constraint(
+            list(demand_index),
+            rule=demand_satisfaction_rule,
+            doc="Demand satisfaction from cohorts"
+        )
+
+    def _add_aggregated_inventory_balance(self, model: ConcreteModel) -> None:
+        """Add aggregated inventory balance (no batch tracking - simplified)."""
+        # TODO: Implement for non-batch-tracking mode if needed
+        pass
+
+    def _add_aggregated_demand_satisfaction(self, model: ConcreteModel) -> None:
+        """Add aggregated demand satisfaction (no batch tracking)."""
+        # TODO: Implement for non-batch-tracking mode if needed
+        pass
+
+    def _add_production_capacity_constraints(self, model: ConcreteModel) -> None:
+        """Add production capacity constraints for manufacturing nodes."""
+
+        def production_capacity_rule(model, node_id, date):
+            """Total production cannot exceed capacity at manufacturing nodes."""
+
+            node = self.nodes[node_id]
+            if not node.can_produce():
+                return Constraint.Skip
+
+            # Get labor hours for this date
+            labor_day = self.labor_calendar.get_labor_day(date)
+            if not labor_day:
+                # No labor on this date - no production
+                total_prod = sum(
+                    model.production[node_id, prod, date]
+                    for prod in model.products
+                    if (node_id, prod, date) in model.production
+                )
+                return total_prod == 0
+
+            # Calculate capacity: production_rate * labor_hours
+            production_rate = node.capabilities.production_rate_per_hour
+            labor_hours = labor_day.fixed_hours + (labor_day.overtime_hours if hasattr(labor_day, 'overtime_hours') else 0)
+
+            # If this is a non-fixed day, use minimum hours
+            if not labor_day.is_fixed_day and hasattr(labor_day, 'minimum_hours'):
+                labor_hours = max(labor_hours, labor_day.minimum_hours)
+
+            capacity = production_rate * labor_hours
+
+            # Total production across all products cannot exceed capacity
+            total_prod = sum(
+                model.production[node_id, prod, date]
+                for prod in model.products
+                if (node_id, prod, date) in model.production
+            )
+
+            return total_prod <= capacity
+
+        manufacturing_date_pairs = [
+            (node_id, date)
+            for node_id in self.manufacturing_nodes
+            for date in model.dates
+        ]
+
+        model.production_capacity_con = Constraint(
+            manufacturing_date_pairs,
+            rule=production_capacity_rule,
+            doc="Production capacity limits at manufacturing nodes"
+        )
+
+    def _add_objective(self, model: ConcreteModel) -> None:
+        """Add objective function: minimize total cost.
+
+        Total cost = production cost + labor cost + transport cost + shortage penalty
+        """
+
+        # Production cost (units produced * cost per unit)
+        production_cost = 0
+        for node_id in self.manufacturing_nodes:
+            for prod in model.products:
+                for date in model.dates:
+                    if (node_id, prod, date) in model.production:
+                        production_cost += self.cost_structure.production_cost_per_unit * model.production[node_id, prod, date]
+
+        # Transport cost (shipments * route cost)
+        transport_cost = 0
+        for route in self.routes:
+            cost_per_unit = route.cost_per_unit
+
+            for prod in model.products:
+                for prod_date in model.dates:
+                    for delivery_date in model.dates:
+                        if (route.origin_node_id, route.destination_node_id, prod, prod_date, delivery_date, 'ambient') in self.shipment_cohort_index_set:
+                            transport_cost += cost_per_unit * model.shipment_cohort[
+                                route.origin_node_id, route.destination_node_id,
+                                prod, prod_date, delivery_date, 'ambient'
+                            ]
+
+                        if (route.origin_node_id, route.destination_node_id, prod, prod_date, delivery_date, 'frozen') in self.shipment_cohort_index_set:
+                            transport_cost += cost_per_unit * model.shipment_cohort[
+                                route.origin_node_id, route.destination_node_id,
+                                prod, prod_date, delivery_date, 'frozen'
+                            ]
+
+                        if (route.origin_node_id, route.destination_node_id, prod, prod_date, delivery_date, 'thawed') in self.shipment_cohort_index_set:
+                            transport_cost += cost_per_unit * model.shipment_cohort[
+                                route.origin_node_id, route.destination_node_id,
+                                prod, prod_date, delivery_date, 'thawed'
+                            ]
+
+        # Labor cost (simplified - will refine in later phase)
+        # For now, assume fixed cost per day based on labor calendar
+        labor_cost = 0
+        for date in model.dates:
+            labor_day = self.labor_calendar.get_labor_day(date)
+            if labor_day:
+                # Simplified: assume using all available hours
+                labor_cost += labor_day.fixed_hours * labor_day.regular_rate
+
+        # Shortage penalty (if shortages allowed)
+        shortage_cost = 0
+        if self.allow_shortages:
+            penalty = self.cost_structure.shortage_penalty_per_unit
+            for (node_id, prod, date) in self.demand.keys():
+                shortage_cost += penalty * model.shortage[node_id, prod, date]
+
+        # Total cost
+        total_cost = production_cost + transport_cost + labor_cost + shortage_cost
+
+        model.obj = Objective(
+            expr=total_cost,
+            sense=minimize,
+            doc="Minimize total cost (production + transport + labor + shortage penalty)"
+        )

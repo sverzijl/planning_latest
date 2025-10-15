@@ -1,0 +1,41 @@
+/home/sverzijl/planning_latest/src/parsers/inventory_parser.py:150: UserWarning: Found 5 negative quantity values. These were set to 0.
+  warnings.warn(
+/home/sverzijl/planning_latest/src/optimization/integrated_model.py:790: UserWarning: 
+Planning horizon may be insufficient:
+  Current start: 2025-10-07
+  Required start: 2025-10-03 (4 days earlier)
+  Max transit time: 3.5 days
+  Early demand (on 2025-10-07) cannot be satisfied.
+  Solution: Extend planning horizon or accept reduced demand satisfaction.
+  warnings.warn(
+================================================================================
+PACKAGING CONSTRAINTS TEST - 4 WEEKS WITH TIME LIMIT
+================================================================================
+
+Loading data...
+Loading initial inventory for 2025-10-07...
+✓ Loaded inventory snapshot with 23 entries
+✓ Loaded 9180 forecast entries
+
+Filtering to 4 weeks from 2025-10-07...
+✓ Using 1260 entries from 2025-10-07 to 2025-11-03
+
+Building model...
+
+📦 Preprocessed initial inventory: 23 items, prod_date=2025-10-07
+✓ Model built
+
+Solving with CBC (10 min time limit, 1% MIP gap)...
+
+Building sparse cohort indices...
+  Production dates: 28 in horizon + 0 from initial inventory
+  Frozen cohorts: 5,410
+  Ambient cohorts: 15,990
+  Shipment cohorts: 18,240
+  Demand cohorts: 14,235
+  Freeze/thaw cohorts: 3,380
+  Total: 57,255
+
+Validating cohort model structure...
+  Cohort variables: 53,875 / 21 total (256547.6%)
+  ✓ Cohort model validation passed

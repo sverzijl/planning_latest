@@ -1,0 +1,89 @@
+================================================================================
+PACKAGING CONSTRAINTS TEST - REAL DATA
+================================================================================
+
+Loading real data...
+  Network config: /home/sverzijl/planning_latest/data/examples/Network_Config.xlsx
+  Forecast: /home/sverzijl/planning_latest/data/examples/Gfree Forecast_Converted.xlsx
+
+Loading data...
+✓ Loaded 9180 forecast entries
+✓ Loaded 11 locations
+✓ Loaded 10 routes
+✓ Loaded 11 truck schedules
+✓ Found manufacturing site: Manufacturing Site
+
+Configuring solver...
+✓ Using solver: highs
+
+Filtering data to first 14 days for testing...
+✓ Using 630 forecast entries from 2025-06-02 to 2025-06-15
+
+Building optimization model with packaging constraints...
+  - Production must be in case multiples (10 units)
+  - Partial pallets consume full pallet space
+  - Trucks limited to 44 pallets
+
+✓ Model built successfully
+
+Solving optimization model...
+(This may take 2-10 minutes with integer constraints)
+
+Running HiGHS 1.11.0 (git hash: 364c83a): Copyright (c) 2025 HiGHS under MIT licence terms
+MIP  has 11268 rows; 11448 cols; 36753 nonzeros; 4266 integer variables (216 binary)
+Coefficient ranges:
+  Matrix [7e-04, 2e+04]
+  Cost   [2e-03, 1e+02]
+  Bound  [1e+00, 1e+00]
+  RHS    [6e-03, 2e+04]
+Presolving model
+9011 rows, 10105 cols, 32339 nonzeros  0s
+4462 rows, 5529 cols, 16806 nonzeros  0s
+2730 rows, 5319 cols, 13167 nonzeros  0s
+2726 rows, 5316 cols, 13159 nonzeros  0s
+
+Solving MIP model with:
+   2726 rows
+   5316 cols (102 binary, 1745 integer, 17 implied int., 3452 continuous, 0 domain fixed)
+   13159 nonzeros
+
+Src: B => Branching; C => Central rounding; F => Feasibility pump; J => Feasibility jump;
+     H => Heuristic; L => Sub-MIP; P => Empty MIP; R => Randomized rounding; Z => ZI Round;
+     I => Shifting; S => Solve LP; T => Evaluate node; U => Unbounded; X => User solution;
+     z => Trivial zero; l => Trivial lower; u => Trivial upper; p => Trivial point
+
+        Nodes      |    B&B Tree     |            Objective Bounds              |  Dynamic Constraints |       Work      
+Src  Proc. InQueue |  Leaves   Expl. | BestBound       BestSol              Gap |   Cuts   InLp Confl. | LpIters     Time
+
+         0       0         0   0.00%   -inf            inf                  inf        0      0      0         0     0.2s
+ T       0       0         0   0.00%   -inf            3300               Large        0      0      0       637     0.3s
+         1       0         1 100.00%   3300            3300               0.00%        0      0      0       637     0.3s
+
+Solving report
+  Status            Optimal
+  Primal bound      3300
+  Dual bound        3300
+  Gap               0% (tolerance: 0.01%)
+  P-D integral      0
+  Solution status   feasible
+                    3300 (objective)
+                    0 (bound viol.)
+                    0 (int. viol.)
+                    0 (row viol.)
+  Timing            0.25 (total)
+                    0.00 (presolve)
+                    0.00 (solve)
+                    0.00 (postsolve)
+  Max sub-MIP depth 0
+  Nodes             1
+  Repair LPs        0 (0 feasible; 0 iterations)
+  LP iterations     637 (total)
+                    0 (strong br.)
+                    0 (separation)
+                    0 (heuristics)
+Traceback (most recent call last):
+  File "/home/sverzijl/planning_latest/test_packaging_real_data.py", line 203, in test_real_data
+    if solution['status'] != 'optimal' and solution['status'] != 'feasible':
+       ~~~~~~~~^^^^^^^^^^
+TypeError: 'OptimizationResult' object is not subscriptable
+ERROR solving model: 'OptimizationResult' object is not subscriptable

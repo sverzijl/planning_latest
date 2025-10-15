@@ -1,0 +1,35 @@
+Traceback (most recent call last):
+  File "/home/sverzijl/planning_latest/test_packaging_real_data.py", line 76, in test_real_data
+    data = parser.parse_all()
+           ^^^^^^^^^^^^^^^^^^
+  File "/home/sverzijl/planning_latest/src/parsers/excel_parser.py", line 462, in parse_all
+    locations = self.parse_locations(locations_sheet)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/sverzijl/planning_latest/src/parsers/excel_parser.py", line 161, in parse_locations
+    df = pd.read_excel(
+         ^^^^^^^^^^^^^^
+  File "/home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pandas/io/excel/_base.py", line 508, in read_excel
+    data = io.parse(
+           ^^^^^^^^^
+  File "/home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pandas/io/excel/_base.py", line 1616, in parse
+    return self._reader.parse(
+           ^^^^^^^^^^^^^^^^^^^
+  File "/home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pandas/io/excel/_base.py", line 773, in parse
+    sheet = self.get_sheet_by_name(asheetname)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pandas/io/excel/_openpyxl.py", line 582, in get_sheet_by_name
+    self.raise_if_bad_sheet_by_name(name)
+  File "/home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pandas/io/excel/_base.py", line 624, in raise_if_bad_sheet_by_name
+    raise ValueError(f"Worksheet named '{name}' not found")
+ValueError: Worksheet named 'Locations' not found
+================================================================================
+PACKAGING CONSTRAINTS TEST - REAL DATA
+================================================================================
+
+Loading real data from Gfree Forecast.xlsm...
+ERROR loading data: Worksheet named 'Locations' not found
+Traceback (most recent call last):
+  File "/home/sverzijl/planning_latest/test_packaging_real_data.py", line 287, in <module>
+    sys.exit(0 if success else 1)
+    ^^^
+NameError: name 'sys' is not defined

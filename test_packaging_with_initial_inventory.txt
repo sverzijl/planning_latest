@@ -1,0 +1,27 @@
+/home/sverzijl/planning_latest/src/parsers/inventory_parser.py:150: UserWarning: Found 5 negative quantity values. These were set to 0.
+  warnings.warn(
+================================================================================
+PACKAGING CONSTRAINTS TEST - 4 WEEKS WITH TIME LIMIT
+================================================================================
+
+Loading data...
+Loading initial inventory for 2025-10-07...
+✓ Loaded inventory snapshot with 23 entries
+✓ Loaded 9180 forecast entries
+
+Filtering to 4 weeks from 2025-10-07...
+✓ Using 1260 entries from 2025-10-07 to 2025-11-03
+
+Building model...
+Traceback (most recent call last):
+  File "/home/sverzijl/planning_latest/test_packaging_with_timelimit.py", line 111, in <module>
+    model = IntegratedProductionDistributionModel(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/sverzijl/planning_latest/src/optimization/integrated_model.py", line 208, in __init__
+    self._extract_data()
+  File "/home/sverzijl/planning_latest/src/optimization/integrated_model.py", line 313, in _extract_data
+    self._preprocess_initial_inventory()
+  File "/home/sverzijl/planning_latest/src/optimization/integrated_model.py", line 330, in _preprocess_initial_inventory
+    first_key = next(iter(self.initial_inventory.keys()))
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'InventorySnapshot' object has no attribute 'keys'

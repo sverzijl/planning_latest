@@ -1,0 +1,41 @@
+================================================================================
+PACKAGING CONSTRAINTS TEST - REAL DATA
+================================================================================
+
+Loading real data...
+  Network config: /home/sverzijl/planning_latest/data/examples/Network_Config.xlsx
+  Forecast: /home/sverzijl/planning_latest/data/examples/Gfree Forecast_Converted.xlsx
+
+Loading data...
+✓ Loaded 9180 forecast entries
+✓ Loaded 11 locations
+✓ Loaded 10 routes
+✓ Loaded 11 truck schedules
+✓ Found manufacturing site: Manufacturing Site
+
+Configuring solver...
+Traceback (most recent call last):
+  File "/home/sverzijl/planning_latest/test_packaging_real_data.py", line 169, in test_real_data
+    filtered_forecast = Forecast(entries=filtered_forecast_entries)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pydantic/main.py", line 253, in __init__
+    validated_self = self.__pydantic_validator__.validate_python(data, self_instance=self)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pydantic_core._pydantic_core.ValidationError: 1 validation error for Forecast
+name
+  Field required [type=missing, input_value={'entries': [ForecastEntr...1355, confidence=None)]}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
+✓ Using solver: highs
+
+Filtering data to first 14 days for testing...
+✓ Using 630 forecast entries from 2025-06-02 to 2025-06-15
+
+Building optimization model with packaging constraints...
+  - Production must be in case multiples (10 units)
+  - Partial pallets consume full pallet space
+  - Trucks limited to 44 pallets
+
+ERROR building model: 1 validation error for Forecast
+name
+  Field required [type=missing, input_value={'entries': [ForecastEntr...1355, confidence=None)]}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.11/v/missing
