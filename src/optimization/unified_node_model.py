@@ -334,9 +334,16 @@ class UnifiedNodeModel(BaseOptimizationModel):
             self._add_aggregated_demand_satisfaction(model)
 
         self._add_production_capacity_constraints(model)
+
+        # Add truck constraints (Phase 7)
+        if self.truck_schedules:
+            self._add_truck_constraints(model)
+
         self._add_objective(model)
 
         print(f"  Core constraints added")
+        if self.truck_schedules:
+            print(f"  Truck constraints added (generalized for any node)")
         print(f"  Model complete and ready to solve")
 
         return model
@@ -740,6 +747,127 @@ class UnifiedNodeModel(BaseOptimizationModel):
         """Add aggregated demand satisfaction (no batch tracking)."""
         # TODO: Implement for non-batch-tracking mode if needed
         pass
+
+    def _add_truck_constraints(self, model: ConcreteModel) -> None:
+        """Add generalized truck scheduling constraints.
+
+        KEY IMPROVEMENT: Works for ANY node, not just manufacturing!
+        - Links shipments to truck schedules based on origin_node_id
+        - Enforces day-of-week constraints
+        - Enforces truck capacity
+        - Prevents weekend shipments from nodes with truck requirements
+
+        This fixes the 6122/6122_Storage bypass bug!
+        """
+
+        # Build truck index
+        self.truck_by_index = {i: truck for i, truck in enumerate(self.truck_schedules)}
+
+        # For each route, determine if it has truck constraints
+        routes_with_trucks: Dict[Tuple[str, str], List[int]] = defaultdict(list)
+
+        for truck_idx, truck in self.truck_by_index.items():
+            route_key = (truck.origin_node_id, truck.destination_node_id)
+            routes_with_trucks[route_key].append(truck_idx)
+
+        # Constraint: Shipments on routes with trucks must equal truck loads
+        def truck_route_linking_rule(model, origin, dest, prod, delivery_date):
+            """Link shipments to truck loads for routes with truck schedules."""
+
+            route_key = (origin, dest)
+
+            # Check if this route has truck schedules
+            if route_key not in routes_with_trucks:
+                return Constraint.Skip  # No truck constraints for this route
+
+            # Get trucks serving this route
+            trucks_for_route = routes_with_trucks[route_key]
+
+            # Sum shipments on this route (across all cohorts and states)
+            total_shipment = sum(
+                model.shipment_cohort[origin, dest, prod, prod_date, delivery_date, state]
+                for prod_date in model.dates
+                for state in ['frozen', 'ambient', 'thawed']
+                if (origin, dest, prod, prod_date, delivery_date, state) in self.shipment_cohort_index_set
+            )
+
+            # Sum truck loads for this product on this delivery date
+            total_truck_load = sum(
+                model.truck_load[truck_idx, prod, delivery_date]
+                for truck_idx in trucks_for_route
+                if (truck_idx, prod, delivery_date) in model.truck_load
+            )
+
+            # Shipment = truck loads (forces use of scheduled trucks)
+            return total_shipment == total_truck_load
+
+        # Create constraints for all routes with trucks
+        truck_route_tuples = [
+            (origin, dest, prod, date)
+            for (origin, dest) in routes_with_trucks.keys()
+            for prod in model.products
+            for date in model.dates
+        ]
+
+        model.truck_route_linking_con = Constraint(
+            truck_route_tuples,
+            rule=truck_route_linking_rule,
+            doc="Link shipments to trucks for routes with truck schedules"
+        )
+
+        # Constraint: Truck availability (day-of-week enforcement)
+        def truck_availability_rule(model, truck_idx, delivery_date):
+            """Truck can only be used on delivery dates matching its day_of_week schedule."""
+
+            truck = self.truck_by_index[truck_idx]
+
+            # Calculate departure date
+            # Find the route this truck serves
+            route = next((r for r in self.routes
+                         if r.origin_node_id == truck.origin_node_id
+                         and r.destination_node_id == truck.destination_node_id), None)
+
+            if not route:
+                # Truck has no matching route - shouldn't happen
+                return model.truck_used[truck_idx, delivery_date] == 0
+
+            departure_date = delivery_date - timedelta(days=route.transit_days)
+
+            # Check if truck runs on this departure date
+            if not truck.applies_on_date(departure_date):
+                # Truck doesn't run on this day - force to zero
+                return model.truck_used[truck_idx, delivery_date] == 0
+            else:
+                # Truck can run - no constraint
+                return Constraint.Skip
+
+        model.truck_availability_con = Constraint(
+            model.trucks,
+            model.dates,
+            rule=truck_availability_rule,
+            doc="Truck availability by day of week"
+        )
+
+        # Constraint: Truck capacity
+        def truck_capacity_rule(model, truck_idx, date):
+            """Total load cannot exceed truck capacity."""
+
+            truck = self.truck_by_index[truck_idx]
+
+            total_load = sum(
+                model.truck_load[truck_idx, prod, date]
+                for prod in model.products
+                if (truck_idx, prod, date) in model.truck_load
+            )
+
+            return total_load <= truck.capacity * model.truck_used[truck_idx, date]
+
+        model.truck_capacity_con = Constraint(
+            model.trucks,
+            model.dates,
+            rule=truck_capacity_rule,
+            doc="Truck capacity constraint"
+        )
 
     def _add_production_capacity_constraints(self, model: ConcreteModel) -> None:
         """Add production capacity constraints for manufacturing nodes."""
