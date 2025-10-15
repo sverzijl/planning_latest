@@ -686,25 +686,49 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
             self.legs_from_location[origin].append((origin, destination))
             self.legs_to_location[destination].append((origin, destination))
 
-        # Add virtual legs from 6122_Storage (mirrors manufacturing site's outbound connections)
+        # REPLACE real manufacturing legs with virtual 6122_Storage legs
         # Production flows into 6122_Storage cohorts, which then ship via these virtual legs
+        # We must use virtual legs (not real legs) for proper truck constraint enforcement
         mfg_site_id = self.manufacturing_site.location_id
-        if mfg_site_id in self.legs_from_location:
-            for (origin, destination) in self.legs_from_location[mfg_site_id]:
-                # Create virtual leg from 6122_Storage to same destination
-                virtual_leg = ('6122_Storage', destination)
-                actual_leg = (origin, destination)
+        legs_to_replace = []
 
+        if mfg_site_id in self.legs_from_location:
+            # Collect legs to replace (can't modify dict during iteration)
+            legs_to_replace = list(self.legs_from_location[mfg_site_id])
+
+            for (origin, destination) in legs_to_replace:
+                actual_leg = (origin, destination)
+                virtual_leg = ('6122_Storage', destination)
+
+                # Remove real leg from all data structures
+                self.legs_from_location[origin].remove(actual_leg)
+                self.legs_to_location[destination].remove(actual_leg)
+                self.leg_keys.discard(actual_leg)
+
+                # Remove leg attributes
+                if actual_leg in self.leg_transit_days:
+                    transit_days = self.leg_transit_days.pop(actual_leg)
+                else:
+                    transit_days = 1  # Default
+
+                if actual_leg in self.leg_cost:
+                    cost = self.leg_cost.pop(actual_leg)
+                else:
+                    cost = 0.0
+
+                if actual_leg in self.leg_transport_mode:
+                    transport_mode = self.leg_transport_mode.pop(actual_leg)
+                else:
+                    transport_mode = 'ambient'
+
+                # Add virtual leg with same attributes
                 self.legs_from_location['6122_Storage'].append(virtual_leg)
                 self.legs_to_location[destination].append(virtual_leg)
-
-                # Copy leg attributes from actual manufacturing site leg
-                self.leg_transit_days[virtual_leg] = self.leg_transit_days[actual_leg]
-                self.leg_cost[virtual_leg] = self.leg_cost[actual_leg]
-                self.leg_transport_mode[virtual_leg] = self.leg_transport_mode[actual_leg]
-
-                # Add to leg_keys for downstream processing
                 self.leg_keys.add(virtual_leg)
+
+                self.leg_transit_days[virtual_leg] = transit_days
+                self.leg_cost[virtual_leg] = cost
+                self.leg_transport_mode[virtual_leg] = transport_mode
 
         # Determine arrival state for each leg (similar to routes)
         self.leg_arrival_state: Dict[Tuple[str, str], str] = {}
@@ -2416,9 +2440,10 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 Without the product dimension, products can be mixed (e.g., shipments of
                 product A "satisfied" by truck loads of product B).
                 """
-                # LEG-BASED ROUTING: Check if leg exists from manufacturing to this destination
-                manufacturing_id = self.manufacturing_site.id
-                leg_key = (manufacturing_id, dest_id)
+                # LEG-BASED ROUTING: Check if leg exists from manufacturing storage to this destination
+                # CRITICAL: Use 6122_Storage (not 6122) because inventory flows through virtual storage
+                manufacturing_storage_id = '6122_Storage'
+                leg_key = (manufacturing_storage_id, dest_id)
 
                 if leg_key not in self.leg_keys:
                     return Constraint.Skip
@@ -2440,19 +2465,19 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
 
                 return leg_shipment == total_truck_loads
 
-            # LEG-BASED ROUTING: Get all destinations that have legs from manufacturing
-            # Create constraints for ALL leg destinations from manufacturing
+            # LEG-BASED ROUTING: Get all destinations that have legs from manufacturing storage
+            # Create constraints for ALL leg destinations from 6122_Storage (virtual storage)
             leg_destinations = set()
             for (origin, dest) in self.leg_keys:
-                if origin == self.manufacturing_site.id:
+                if origin == '6122_Storage':
                     leg_destinations.add(dest)
 
             model.truck_leg_linking_con = Constraint(
-                list(leg_destinations),  # Destinations reachable via legs from manufacturing
+                list(leg_destinations),  # Destinations reachable via legs from manufacturing storage
                 model.products,  # CRITICAL: Include product dimension to prevent product mixing
                 model.dates,
                 rule=truck_route_linking_rule,
-                doc="Link truck loads to leg shipments from manufacturing (by destination, product, and date)"
+                doc="Link truck loads to leg shipments from 6122_Storage (by destination, product, and date)"
             )
 
             # NEW CONSTRAINT: Truck loading timing (D-1 vs D0)
