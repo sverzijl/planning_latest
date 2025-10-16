@@ -3,9 +3,9 @@
 import pytest
 from datetime import timedelta
 from src.parsers.multi_file_parser import MultiFileParser
-from src.models.truck_schedule import TruckScheduleCollection
 from src.models.manufacturing import ManufacturingSite
-from src.optimization.integrated_model import IntegratedProductionDistributionModel
+from src.optimization.unified_node_model import UnifiedNodeModel
+from src.optimization.legacy_to_unified_converter import LegacyToUnifiedConverter
 
 
 def test_baseline_4week_no_initial_inventory():
@@ -17,7 +17,6 @@ def test_baseline_4week_no_initial_inventory():
     )
 
     forecast, locations, routes, labor_calendar, truck_schedules_list, cost_structure = parser.parse_all()
-    truck_schedules = TruckScheduleCollection(schedules=truck_schedules_list)
 
     manufacturing_site = None
     for loc in locations:
@@ -34,16 +33,23 @@ def test_baseline_4week_no_initial_inventory():
     start_date = min(all_dates)
     end_date = start_date + timedelta(days=27)  # 4 weeks
 
-    model = IntegratedProductionDistributionModel(
-        manufacturing_site=manufacturing_site,
+    # Convert legacy data to unified format
+    converter = LegacyToUnifiedConverter()
+    nodes = converter.convert_nodes(manufacturing_site, locations, forecast)
+    unified_routes = converter.convert_routes(routes)
+    unified_truck_schedules = converter.convert_truck_schedules(truck_schedules_list, manufacturing_site.id)
+
+    model = UnifiedNodeModel(
+        nodes=nodes,
+        routes=unified_routes,
         forecast=forecast,
-        locations=locations,
-        routes=routes,
-        start_date=start_date,
-        end_date=end_date,
         labor_calendar=labor_calendar,
         cost_structure=cost_structure,
-        truck_schedules=truck_schedules,
+        start_date=start_date,
+        end_date=end_date,
+        truck_schedules=unified_truck_schedules,
+        initial_inventory=None,
+        inventory_snapshot_date=None,
         use_batch_tracking=True,
         allow_shortages=True,
         enforce_shelf_life=True,

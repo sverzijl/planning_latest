@@ -158,32 +158,32 @@ Start with a basic model and gradually increase complexity. Begin with a simple 
 - Validated data models with business rule enforcement
 - Comprehensive documentation for users and developers
 
-**Phase 2: Core Logic**
-- Production feasibility checking (labor hours, capacity constraints)
-- Shelf life calculation engine with state transitions
-- Truck loading logic with D-1/D0 production assignment
-- Labor cost calculations (fixed hours, overtime, non-fixed days)
-- Route enumeration and feasibility analysis
-- Rule-based production and routing recommendations
-- Interactive route and production schedule visualization
+**Phase 2: Core Logic** ✅ **DEPRECATED**
+- **Status**: Replaced by Phase 3 mathematical optimization
+- Heuristic rule-based planning approach (no longer used)
+- Code removed in unified-model-only cleanup (2025-10-16)
 
-**Phase 3: Optimization** ✅ **COMPLETE**
+**Phase 3: Optimization** ✅ **COMPLETE - PRIMARY APPROACH**
 
-*Status: Core optimization functionality implemented and tested*
+*Status: UnifiedNodeModel is the sole optimization approach*
 
 **Completed Features:**
-- ✅ Integrated production-distribution mathematical model (Pyomo)
-- ✅ Decision variables: production[date, product], shipment[route, product, date], shortage[dest, product, date]
-- ✅ Constraints: labor capacity, production capacity, demand satisfaction, flow conservation, shelf life
+- ✅ **UnifiedNodeModel** (unified_node_model.py) - Clean node-based architecture
+  - No virtual locations (eliminated 6122/6122_Storage bug)
+  - Generalized truck constraints (works for any node, not just manufacturing)
+  - Proper weekend enforcement (no weekend hub inventory bug)
+  - Unified inventory balance equation (works for all node types)
+- ✅ Decision variables: production[node, date, product], inventory_cohort[node, product, prod_date, curr_date, state], shipment_cohort[route, product, prod_date, delivery_date, state]
+- ✅ Constraints: labor capacity, production capacity, unified inventory balance, demand satisfaction, truck scheduling, shelf life
 - ✅ Objective: minimize total cost (labor + production + transport + shortage penalty)
 - ✅ Solver integration with CBC 2.10.12 compatibility (CBC, GLPK, Gurobi, CPLEX)
 - ✅ Cross-platform support (Linux, macOS, Windows)
+- ✅ Batch tracking with age-cohort inventory (use_batch_tracking parameter)
 - ✅ Soft constraints for demand shortages (allow_shortages parameter)
-- ✅ Shelf life enforcement (filters routes > 10 days transit)
-- ✅ Route enumeration with multi-echelon hub-and-spoke network
-- ✅ Planning horizon auto-extension for transit times
-- ✅ Demand satisfaction diagnostics with root cause analysis
-- ✅ Full-featured optimization UI with solver detection and configuration
+- ✅ Shelf life enforcement (enforce_shelf_life parameter)
+- ✅ Multi-echelon hub-and-spoke network with state transitions
+- ✅ Planning horizon management with transit time extension
+- ✅ Full-featured optimization UI (solver detection, configuration, results)
 - ✅ Cost breakdown visualization and solution analysis
 - ✅ Daily inventory snapshot feature - Interactive daily view of:
   - Inventory at each location with batch-level detail and age tracking
@@ -192,14 +192,14 @@ Start with a basic model and gradually increase complexity. Begin with a simple 
   - Inflows/outflows (production, arrivals, departures, demand)
   - Demand satisfaction tracking with fill rate calculation
 - ✅ Complete documentation and solver installation guide
-- ✅ 300 tests passing (34 new daily snapshot tests)
+- ✅ 7 core tests validating UnifiedNodeModel + 42 supporting tests
 
 **Phase 3 Deliverables:**
 - Proven optimal solutions minimizing total cost to serve
-- 100% demand satisfaction with proper planning horizons
+- 100% demand satisfaction with proper planning horizons (4-week in <30s)
 - Shortage penalty option for infeasible demand scenarios
+- Clean architecture eliminating legacy bugs
 - Interactive UI for optimization configuration and results
-- Comparison capability with Phase 2 heuristic solutions
 
 **Phase 4: Advanced Features**
 - Flexible truck routing (destinations optimized, not fixed)
@@ -227,26 +227,33 @@ Start with a basic model and gradually increase complexity. Begin with a simple 
 planning_latest/
 ├── src/
 │   ├── models/          # Data models (Location, Route, Product, Forecast,
-│   │                    #              ManufacturingSite, TruckSchedule, LaborCalendar,
-│   │                    #              ProductionBatch, CostStructure)
+│   │                    #              ProductionBatch, ProductionSchedule, TruckLoad,
+│   │                    #              ManufacturingSite, TruckSchedule, LaborCalendar)
 │   ├── parsers/         # Excel input parsing (forecast, locations, routes,
-│   │                    #                      labor, trucks, costs)
-│   ├── production/      # Production scheduling and labor cost logic
-│   ├── network/         # Network/graph operations and algorithms
-│   ├── optimization/    # Optimization models (Phase 3+)
-│   ├── analysis/        # Analysis tools (daily snapshots, flow analysis)
+│   │                    #                      labor, trucks, costs, inventory)
+│   ├── optimization/    # UnifiedNodeModel (primary optimization model)
+│   ├── network/         # Network/graph operations (route visualization)
+│   ├── analysis/        # Daily snapshots, flow analysis, labeling reports
+│   ├── costs/           # Cost calculation utilities
 │   ├── shelf_life/      # Shelf life calculation engine
-│   └── utils/           # Helper functions and utilities
+│   ├── validation/      # Data validation utilities
+│   ├── scenario/        # Scenario management
+│   └── exporters/       # Result export utilities
 ├── ui/
 │   ├── app.py           # Main Streamlit application
-│   └── components/      # Reusable UI components (including daily_snapshot.py)
+│   ├── pages/           # Page modules (Data, Planning, Results, Network, Settings)
+│   ├── components/      # Reusable UI components
+│   └── utils/           # UI utilities (result adapters, session state)
 ├── tests/
-│   ├── test_models.py
-│   ├── test_parsers.py
-│   ├── test_production.py
-│   ├── test_network.py
-│   ├── test_daily_snapshot.py
+│   ├── test_integration_ui_workflow.py  # CRITICAL regression gate
+│   ├── test_baseline_*.py               # Baseline validation tests
+│   ├── test_unified_*.py                # UnifiedNodeModel tests
+│   ├── test_models.py                   # Core data model tests
+│   ├── test_parsers.py                  # Excel parsing tests
+│   ├── test_daily_snapshot*.py          # Daily snapshot tests
 │   └── ...
+├── archive/
+│   └── debug_scripts/   # 235 archived troubleshooting scripts
 ├── docs/
 │   └── features/        # Feature-specific documentation
 ├── data/
@@ -288,15 +295,22 @@ pytest --cov=src tests/
 
 ## Key Design Decisions
 
-1. **Integrated production-distribution model:** Couple production scheduling with distribution to capture interdependencies and cost trade-offs
-2. **Graph-based network representation:** Use NetworkX for flexible route modeling and shortest path algorithms
-3. **State machine for shelf life:** Track product state (frozen/ambient/thawed) and transitions
-4. **Tiered labor cost model:** Explicit modeling of fixed hours, overtime, and non-fixed labor days with different cost rates
-5. **Truck scheduling as constraint:** Morning/afternoon trucks with fixed departure times; destinations initially fixed (Phase 1-2), later flexible (Phase 3-4)
-6. **Incremental complexity:** Start with feasibility checking and cost calculation before full optimization
-7. **Separation of concerns:** Clear boundaries between data models (src/models/), production logic (src/production/), network operations (src/network/), and optimization (src/optimization/)
-8. **Excel as input format:** Maintain compatibility with existing workflows; comprehensive input covering forecast, network, labor, trucks, and costs
-9. **Cost-centric objective:** Minimize total cost to serve (not just waste); enables business-driven trade-off decisions
+1. **UnifiedNodeModel architecture:** Clean node-based design with no virtual locations, generalized constraints, proper weekend enforcement
+2. **Integrated production-distribution optimization:** Couple production scheduling with distribution to capture interdependencies and cost trade-offs
+3. **Age-cohort batch tracking:** Track inventory by production date and state for accurate shelf life management
+4. **State machine for shelf life:** Track product state (frozen/ambient/thawed) and automatic transitions
+5. **Tiered labor cost model:** Explicit modeling of fixed hours, overtime, and non-fixed labor days with different cost rates
+6. **Generalized truck constraints:** Work for any node (not just manufacturing), day-of-week enforcement, intermediate stops
+7. **Mathematical optimization first:** Proven optimal solutions via Pyomo/CBC (heuristics deprecated)
+8. **Separation of concerns:** Clear boundaries between data models (src/models/), optimization (src/optimization/), UI (ui/), and analysis (src/analysis/)
+9. **Excel as input format:** Maintain compatibility with existing workflows; comprehensive input covering forecast, network, labor, trucks, costs, inventory
+10. **Cost-centric objective:** Minimize total cost to serve (not just waste); enables business-driven trade-off decisions
+
+**Recent Cleanup (2025-10-16):**
+- Removed legacy IntegratedProductionDistributionModel (replaced by UnifiedNodeModel)
+- Removed heuristic/Phase 2 code (replaced by mathematical optimization)
+- Archived 235 troubleshooting scripts to archive/debug_scripts/
+- Reduced codebase by ~28,000 lines while maintaining all functionality
 
 ## Development Workflow
 

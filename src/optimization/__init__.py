@@ -3,10 +3,10 @@
 This module provides Pyomo-based mathematical optimization models for
 integrated production scheduling and distribution planning.
 
-The primary model is IntegratedProductionDistributionModel, which solves
-the full planning horizon (e.g., 29 weeks) as a monolithic optimization problem.
-This approach has been validated to solve optimally in ~2 minutes for realistic
-problem sizes with modern MIP solvers like CBC.
+The primary model is UnifiedNodeModel, which uses a clean node-based architecture
+with no virtual locations and generalized truck constraints. It solves
+the full planning horizon with proper weekend enforcement and state transitions.
+Validated to solve 4-week horizons in < 30 seconds with modern MIP solvers like CBC.
 """
 
 from .solver_config import (
@@ -20,15 +20,11 @@ from .base_model import (
     BaseOptimizationModel,
     OptimizationResult,
 )
-from .production_model import (
-    ProductionOptimizationModel,
+from .unified_node_model import (
+    UnifiedNodeModel,
 )
-from .route_enumerator import (
-    RouteEnumerator,
-    EnumeratedRoute,
-)
-from .integrated_model import (
-    IntegratedProductionDistributionModel,
+from .legacy_to_unified_converter import (
+    LegacyToUnifiedConverter,
 )
 
 __all__ = [
@@ -41,11 +37,8 @@ __all__ = [
     # Base model
     "BaseOptimizationModel",
     "OptimizationResult",
-    # Production optimization
-    "ProductionOptimizationModel",
-    # Integrated production-distribution
-    "IntegratedProductionDistributionModel",
-    # Route enumeration
-    "RouteEnumerator",
-    "EnumeratedRoute",
+    # Unified node model (primary model)
+    "UnifiedNodeModel",
+    # Data conversion utility
+    "LegacyToUnifiedConverter",
 ]

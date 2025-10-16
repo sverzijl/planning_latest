@@ -3,9 +3,9 @@
 import streamlit as st
 import pandas as pd
 from typing import List
-from src.production.scheduler import ProductionSchedule
+from src.models.production_schedule import ProductionSchedule
 from src.models.shipment import Shipment
-from src.distribution import TruckLoadPlan
+from src.models.truck_load import TruckLoadPlan
 
 
 def render_production_batches_table(production_schedule: ProductionSchedule, max_rows: int = None):

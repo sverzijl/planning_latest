@@ -8,7 +8,8 @@ Calculates production costs from production batches, accounting for:
 from typing import List, Dict
 from datetime import date
 
-from src.production.scheduler import ProductionSchedule, ProductionBatch
+from src.models.production_schedule import ProductionSchedule
+from src.models.production_batch import ProductionBatch
 from src.models.cost_structure import CostStructure
 from .cost_breakdown import ProductionCostBreakdown
 

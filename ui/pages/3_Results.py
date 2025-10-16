@@ -515,7 +515,7 @@ with tab_production:
         }
 
         # Create filtered production schedule
-        from src.production.scheduler import ProductionSchedule
+        from src.models.production_schedule import ProductionSchedule
         filtered_schedule = ProductionSchedule(
             manufacturing_site_id=production_schedule.manufacturing_site_id,
             schedule_start_date=production_schedule.schedule_start_date,
