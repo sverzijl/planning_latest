@@ -173,7 +173,6 @@ def _create_production_schedule(
         infeasibilities=[],  # Optimal solution is feasible
         total_units=sum(b.quantity for b in batches if not b.id.startswith('INIT-')),  # Exclude initial inventory from production total
         total_labor_hours=sum(daily_labor_hours.values()),
-        requirements=None,  # Optimization doesn't track original requirements
     )
 
 
