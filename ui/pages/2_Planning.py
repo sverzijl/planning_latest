@@ -716,7 +716,33 @@ with tab_optimization:
                     st.info("💡 Try enabling 'Allow Demand Shortages' to find a feasible solution")
 
                 else:
-                    st.warning(f"⚠️ Solver returned status: {result.termination_condition}")
+                    st.warning(f"⚠️ Solver returned unexpected status")
+
+                    with st.expander("🔍 Solver Diagnostics", expanded=True):
+                        st.write("**Termination Condition:**", result.termination_condition)
+                        st.write("**Solver Status:**", result.solver_status)
+                        st.write("**Success Flag:**", result.success)
+                        st.write("**Objective Value:**", result.objective_value)
+
+                        if result.infeasibility_message:
+                            st.warning(f"**Message:** {result.infeasibility_message}")
+
+                        # Check if this is actually optimal but flagged wrong
+                        from pyomo.opt import TerminationCondition
+                        if result.termination_condition == TerminationCondition.optimal:
+                            st.info("""
+                            **Termination condition is OPTIMAL** but success flag is False.
+                            This may be due to:
+                            1. Solution load failure
+                            2. Solver status != ok
+                            3. Objective value extraction issue
+
+                            Check if results are still stored in session state despite this warning.
+                            """)
+
+                            # Try to view results anyway
+                            if st.button("🔍 Try Viewing Results Anyway", type="secondary"):
+                                st.switch_page("pages/3_Results.py")
 
         except Exception as e:
             st.error(f"❌ Error during optimization: {e}")
