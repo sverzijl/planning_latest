@@ -1058,7 +1058,8 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
 
         A cohort is reachable if:
         1. loc is manufacturing site (6122_Storage) - production flows here directly
-        2. loc can be reached from manufacturing via a multi-hop route with compatible timing
+        2. There is initial inventory at this location with this production date
+        3. loc can be reached from manufacturing via a multi-hop route with compatible timing
 
         Args:
             loc: Location ID
@@ -1072,6 +1073,14 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
         # Manufacturing storage: always reachable if production exists
         if loc == '6122_Storage':
             return True
+
+        # Check if there's initial inventory at this location for this cohort
+        # This handles inventory that's already present at locations before planning starts
+        if self.initial_inventory:
+            # Check both frozen and ambient states
+            for state in ['frozen', 'ambient']:
+                if (loc, prod, prod_date, state) in self.initial_inventory:
+                    return True
 
         # For demand locations: check if reachable via enumerated routes (includes multi-hop paths)
         # Find minimum transit time from manufacturing to this location
