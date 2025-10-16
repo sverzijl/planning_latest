@@ -32,7 +32,7 @@ def adapt_optimization_results(
     Convert optimization results to heuristic-compatible format.
 
     Args:
-        model: IntegratedProductionDistributionModel instance
+        model: UnifiedNodeModel instance
         result: Optimization result dictionary from session state
         inventory_snapshot_date: Optional date when initial inventory was loaded
 
@@ -51,15 +51,12 @@ def adapt_optimization_results(
         inventory_snapshot_date
     )
 
-    # Get shipments - handle both model types
-    if hasattr(model, 'get_shipment_plan'):
-        # Legacy IntegratedProductionDistributionModel
-        shipments = model.get_shipment_plan() or []
-    elif hasattr(model, 'extract_shipments'):
-        # UnifiedNodeModel
+    # Get shipments from unified model
+    if hasattr(model, 'extract_shipments'):
         shipments = model.extract_shipments() or []
     else:
         shipments = []
+        logger.warning("Model does not have shipment extraction method")
 
     logger.info(f"Retrieved {len(shipments)} shipments from optimization model")
 
@@ -86,11 +83,8 @@ def _create_production_schedule(
 ) -> ProductionSchedule:
     """Convert optimization solution to ProductionSchedule object."""
 
-    # Get manufacturing site ID - handle both model types
-    if hasattr(model, 'manufacturing_site'):
-        # Legacy IntegratedProductionDistributionModel
-        manufacturing_site_id = model.manufacturing_site.location_id
-    elif hasattr(model, 'manufacturing_nodes'):
+    # Get manufacturing site ID from unified model
+    if hasattr(model, 'manufacturing_nodes'):
         # UnifiedNodeModel
         manufacturing_site_id = list(model.manufacturing_nodes)[0]
     else:
@@ -186,7 +180,7 @@ def _create_truck_plan_from_optimization(model: Any, shipments: List[Shipment]) 
     """Create TruckLoadPlan from optimization results.
 
     Args:
-        model: IntegratedProductionDistributionModel instance
+        model: UnifiedNodeModel instance
         shipments: List of Shipment objects with assigned_truck_id set
 
     Returns:
