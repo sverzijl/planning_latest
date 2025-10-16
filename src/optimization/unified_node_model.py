@@ -107,8 +107,89 @@ class UnifiedNodeModel(BaseOptimizationModel):
         # Initialize parent class (sets up solver_config)
         super().__init__()
 
+        # Preprocess initial inventory to 4-tuple format
+        self._preprocess_initial_inventory()
+
         # Extract and organize data
         self._extract_data()
+
+    def _preprocess_initial_inventory(self) -> None:
+        """Preprocess initial_inventory to consistent 4-tuple format.
+
+        UI passes: {(node, prod): qty}
+        Model needs: {(node, prod, prod_date, state): qty}
+
+        Converts 2-tuple format to 4-tuple format by:
+        1. Setting prod_date to ONE DAY BEFORE inventory_snapshot_date (or planning start)
+           This ensures initial inventory is clearly marked as pre-existing, not produced on Day 1
+        2. Determining state based on node storage_mode
+        """
+        if not self.initial_inventory:
+            return
+
+        # Check format by inspecting first key
+        first_key = next(iter(self.initial_inventory.keys()))
+
+        # If already in 4-tuple format, no preprocessing needed
+        if len(first_key) == 4:
+            return
+
+        # Convert from 2-tuple to 4-tuple format
+        if len(first_key) == 2:
+            # Initial inventory production date: ONE DAY BEFORE snapshot/planning starts
+            # This marks it as pre-existing inventory, not Day 1 production
+            if self.inventory_snapshot_date:
+                init_prod_date = self.inventory_snapshot_date - timedelta(days=1)
+            else:
+                init_prod_date = self.start_date - timedelta(days=1)
+
+            converted_inventory = {}
+            for (node_id, prod), qty in self.initial_inventory.items():
+                if qty <= 0:
+                    continue
+
+                # Determine state based on node storage mode
+                node = self.nodes.get(node_id)
+                if not node:
+                    warnings.warn(f"Initial inventory node {node_id} not found. Skipping.")
+                    continue
+
+                # Default state based on storage mode
+                if node.supports_frozen_storage() and not node.supports_ambient_storage():
+                    state = 'frozen'
+                elif node.supports_ambient_storage() and not node.supports_frozen_storage():
+                    state = 'ambient'
+                elif node.supports_both_storage_modes():
+                    # For nodes with both modes, assume ambient (more common for initial stock)
+                    # User can override by passing 4-tuple format if needed
+                    state = 'ambient'
+                else:
+                    warnings.warn(f"Node {node_id} has no storage capability. Defaulting to ambient.")
+                    state = 'ambient'
+
+                # Store in 4-tuple format
+                converted_inventory[(node_id, prod, init_prod_date, state)] = qty
+
+            self.initial_inventory = converted_inventory
+            print(f"\n📦 Preprocessed initial inventory: {len(converted_inventory)} items, prod_date={init_prod_date} (one day before snapshot)")
+
+        elif len(first_key) == 3:
+            # 3-tuple format: (node, prod, state) -> needs prod_date
+            if self.inventory_snapshot_date:
+                init_prod_date = self.inventory_snapshot_date - timedelta(days=1)
+            else:
+                init_prod_date = self.start_date - timedelta(days=1)
+
+            converted_inventory = {}
+            for (node_id, prod, state), qty in self.initial_inventory.items():
+                if qty > 0:
+                    converted_inventory[(node_id, prod, init_prod_date, state)] = qty
+
+            self.initial_inventory = converted_inventory
+            print(f"\n📦 Preprocessed initial inventory: {len(converted_inventory)} items, prod_date={init_prod_date}")
+
+        else:
+            warnings.warn(f"Unknown initial_inventory format with key length {len(first_key)}. Expected 2, 3, or 4.")
 
     def _extract_data(self) -> None:
         """Extract sets and build indices from input data."""

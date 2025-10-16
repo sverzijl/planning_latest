@@ -335,9 +335,10 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
 
         # Convert from 2-tuple to 4-tuple format
         if len(first_key) == 2:
-            # Initial inventory production date: use snapshot date if provided, else one day before planning horizon
+            # Initial inventory production date: ONE DAY BEFORE snapshot date (or planning start)
+            # This marks inventory as pre-existing, not produced on the snapshot date itself
             if self.inventory_snapshot_date:
-                init_prod_date = self.inventory_snapshot_date
+                init_prod_date = self.inventory_snapshot_date - timedelta(days=1)
             else:
                 init_prod_date = self.start_date - timedelta(days=1)
 
@@ -369,12 +370,13 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                 converted_inventory[(loc, prod, init_prod_date, state)] = qty
 
             self.initial_inventory = converted_inventory
-            print(f"\n📦 Preprocessed initial inventory: {len(converted_inventory)} items, prod_date={init_prod_date}")
+            print(f"\n📦 Preprocessed initial inventory: {len(converted_inventory)} items, prod_date={init_prod_date} (one day before snapshot)")
 
         elif len(first_key) == 3:
             # 3-tuple format: (loc, prod, state) -> needs prod_date
+            # Use same logic: ONE DAY BEFORE snapshot/planning
             if self.inventory_snapshot_date:
-                init_prod_date = self.inventory_snapshot_date
+                init_prod_date = self.inventory_snapshot_date - timedelta(days=1)
             else:
                 init_prod_date = self.start_date - timedelta(days=1)
 
@@ -384,7 +386,7 @@ class IntegratedProductionDistributionModel(BaseOptimizationModel):
                     converted_inventory[(loc, prod, init_prod_date, state)] = qty
 
             self.initial_inventory = converted_inventory
-            print(f"\n📦 Preprocessed initial inventory: {len(converted_inventory)} items, prod_date={init_prod_date}")
+            print(f"\n📦 Preprocessed initial inventory: {len(converted_inventory)} items, prod_date={init_prod_date} (one day before snapshot)")
 
         else:
             warnings.warn(f"Unknown initial_inventory format with key length {len(first_key)}. Expected 2, 3, or 4.")
