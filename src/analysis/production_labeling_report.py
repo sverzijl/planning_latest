@@ -75,7 +75,8 @@ class ProductionLabelingReportGenerator:
             optimization_result: Dictionary from IntegratedProductionDistributionModel.extract_solution()
         """
         self.result = optimization_result
-        self.shipments = optimization_result.get('shipments_by_leg_product_date', {})
+        self.batch_shipments = optimization_result.get('batch_shipments', [])  # Use batch-linked shipments
+        self.production_batches = optimization_result.get('production_by_date_product', {})
         self.leg_states = {}  # Will be populated if available
 
     def set_leg_states(self, leg_arrival_state: Dict[Tuple[str, str], str]):
@@ -102,31 +103,42 @@ class ProductionLabelingReportGenerator:
             'ambient_dests': set()
         })
 
-        # Process all shipments from manufacturing (6122_Storage)
-        for (leg, product_id, delivery_date), qty in self.shipments.items():
-            if qty <= 0.01:
-                continue
+        # Use batch_shipments if available (batch tracking enabled)
+        if self.batch_shipments:
+            # Process batch-linked shipments (have production_date attribute)
+            for shipment in self.batch_shipments:
+                # Only care about shipments from manufacturing (6122 or 6122_Storage)
+                if shipment.origin_id not in ['6122', '6122_Storage']:
+                    continue
 
-            origin, dest = leg
-            if origin != '6122_Storage':
-                continue  # Only care about shipments from manufacturing
+                # Get production date from shipment
+                prod_date = shipment.production_date
+                product_id = shipment.product_id
+                qty = shipment.quantity
 
-            # Determine production date (need to look at production batches or assume delivery_date mapping)
-            # For simplicity, use delivery_date minus transit time as approximation
-            # In real implementation, should extract from cohort shipments
-            # For now, use a simplified mapping - this is a placeholder
-            prod_date = delivery_date  # FIXME: Should extract actual prod_date from cohort tracking
+                # Determine first destination (from origin)
+                # For single-leg shipments, destination_id is the dest
+                dest = shipment.destination_id
 
-            # Determine if frozen or ambient
-            is_frozen = self.leg_states.get(leg, 'ambient') == 'frozen'
+                # Determine if frozen or ambient based on leg state
+                leg = (shipment.origin_id, dest)
+                is_frozen = self.leg_states.get(leg, 'ambient') == 'frozen'
 
-            key = (prod_date, product_id)
-            if is_frozen:
-                aggregated[key]['frozen'] += qty
-                aggregated[key]['frozen_dests'].add(dest)
-            else:
-                aggregated[key]['ambient'] += qty
-                aggregated[key]['ambient_dests'].add(dest)
+                key = (prod_date, product_id)
+                if is_frozen:
+                    aggregated[key]['frozen'] += qty
+                    aggregated[key]['frozen_dests'].add(dest)
+                else:
+                    aggregated[key]['ambient'] += qty
+                    aggregated[key]['ambient_dests'].add(dest)
+        else:
+            # Fallback: Use production totals (no routing detail available)
+            # This happens when batch_tracking is disabled
+            for (prod_date, product_id), qty in self.production_batches.items():
+                # Without batch tracking, we can't determine labeling split
+                # Default to ambient for all
+                aggregated[(prod_date, product_id)]['ambient'] += qty
+                aggregated[(prod_date, product_id)]['ambient_dests'].add('Unknown')
 
         # Convert to LabelingRequirement objects
         requirements = []

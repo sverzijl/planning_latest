@@ -25,18 +25,44 @@ def render_production_labeling_view(optimization_model, optimization_result):
     </div>
     """, unsafe_allow_html=True)
 
+    # Debug info
+    with st.expander("🔍 Debug Info", expanded=False):
+        st.write("**Optimization Result Keys:**", list(optimization_result.keys()))
+        st.write("**Batch Tracking Enabled:**", optimization_result.get('use_batch_tracking', False))
+        st.write("**Batch Shipments Count:**", len(optimization_result.get('batch_shipments', [])))
+        st.write("**Production Batches Count:**", len(optimization_result.get('production_by_date_product', {})))
+        st.write("**Has leg_arrival_state:**", hasattr(optimization_model, 'leg_arrival_state'))
+        if hasattr(optimization_model, 'leg_arrival_state'):
+            frozen_legs = [(o, d) for (o, d), state in optimization_model.leg_arrival_state.items() if state == 'frozen']
+            st.write("**Frozen Legs:**", frozen_legs)
+
     # Create report generator
     generator = ProductionLabelingReportGenerator(optimization_result)
 
     # Set leg states from model if available
     if hasattr(optimization_model, 'leg_arrival_state'):
         generator.set_leg_states(optimization_model.leg_arrival_state)
+    else:
+        st.warning("⚠️ Leg state information not available from model. Cannot distinguish frozen vs ambient routes.")
 
     # Generate report
     df = generator.generate_report_dataframe()
 
     if df.empty:
         st.warning("No production labeling requirements found.")
+
+        # Diagnostic messages
+        if not optimization_result.get('use_batch_tracking', False):
+            st.info("""
+            **Batch tracking is disabled.** Production labeling requires batch tracking to be enabled.
+
+            To enable: Go to **Planning → Optimization** and check **"Enable Batch Tracking"** before solving.
+            """)
+        elif not optimization_result.get('batch_shipments'):
+            st.warning("No batch_shipments data in solution. This may indicate the model wasn't solved with batch tracking enabled.")
+        else:
+            st.info("Production data exists but no shipments from manufacturing found. Check if production occurred.")
+
         return
 
     # Summary metrics
