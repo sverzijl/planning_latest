@@ -6,6 +6,7 @@ results, including:
 - Production activity tracking
 - Demand satisfaction analysis
 - Inventory flow tracking
+- Production labeling requirements (frozen vs ambient)
 """
 
 from .daily_snapshot import (
@@ -17,6 +18,10 @@ from .daily_snapshot import (
     DailySnapshot,
     DailySnapshotGenerator,
 )
+from .production_labeling_report import (
+    LabelingRequirement,
+    ProductionLabelingReportGenerator,
+)
 
 __all__ = [
     "BatchInventory",
@@ -26,4 +31,6 @@ __all__ = [
     "DemandRecord",
     "DailySnapshot",
     "DailySnapshotGenerator",
+    "LabelingRequirement",
+    "ProductionLabelingReportGenerator",
 ]
