@@ -538,7 +538,6 @@ class UnifiedNodeModel(BaseOptimizationModel):
                         departure_date = departure_datetime.date()
 
                     # Only create shipments that can actually depart within planning horizon
-                    # Can't depart before planning starts or after it ends
                     if departure_date < self.start_date or departure_date > self.end_date:
                         continue  # Shipment requires departure outside planning horizon
 
@@ -799,6 +798,7 @@ class UnifiedNodeModel(BaseOptimizationModel):
         solution['total_production_cost'] = total_production_cost
         solution['total_transport_cost'] = total_transport_cost
         solution['total_shortage_cost'] = total_shortage_cost
+        solution['total_shortage_units'] = sum(shortages_by_dest_product_date.values())
         solution['total_cost'] = value(model.obj) if hasattr(model, 'obj') else 0.0
 
         # Production batches for UI
@@ -1155,11 +1155,12 @@ class UnifiedNodeModel(BaseOptimizationModel):
             state_transitions_in = 0
             state_transitions_out = 0
 
-            # Balance equation
-            return model.inventory_cohort[node_id, prod, prod_date, curr_date, state] == (
-                prev_inv + production_inflow + arrivals + state_transitions_in -
-                demand_consumption - departures - state_transitions_out
-            )
+            # Balance equation - CRITICAL FIX: Structure to avoid sign flips
+            # Write as: inflows = inventory + outflows
+            # This prevents Pyomo from negating signs when moving terms
+            return (prev_inv + production_inflow + arrivals + state_transitions_in ==
+                    model.inventory_cohort[node_id, prod, prod_date, curr_date, state] +
+                    demand_consumption + departures + state_transitions_out)
 
         model.inventory_balance_con = Constraint(
             model.cohort_index,
@@ -1179,10 +1180,12 @@ class UnifiedNodeModel(BaseOptimizationModel):
             demand_qty = self.demand[(node_id, prod, demand_date)]
 
             # Sum demand satisfied from all cohorts
+            # CRITICAL FIX: Iterate over demand_cohort_index_set directly, not model.dates
+            # This ensures initial inventory cohorts (with prod_date before planning horizon) are included
             cohort_supply = sum(
-                model.demand_from_cohort[node_id, prod, prod_date, demand_date]
-                for prod_date in model.dates
-                if (node_id, prod, prod_date, demand_date) in self.demand_cohort_index_set
+                model.demand_from_cohort[n, p, pd, dd]
+                for (n, p, pd, dd) in self.demand_cohort_index_set
+                if n == node_id and p == prod and dd == demand_date
             )
 
             if self.allow_shortages:
@@ -1202,30 +1205,63 @@ class UnifiedNodeModel(BaseOptimizationModel):
             doc="Demand satisfaction from cohorts"
         )
 
-        # CRITICAL: Link demand_from_cohort to actual inventory
-        # Without this, demand can be "satisfied" from non-existent inventory!
+        # CRITICAL: Link demand_from_cohort to BEGINNING-OF-DAY inventory (not end-of-day)
+        # BUGFIX: Previous version used end-of-day inventory (after consumption),
+        # creating circular dependency: demand <= inv[after] = prev_inv + arrivals - demand
+        # This forced demand <= (prev_inv + arrivals) / 2, causing 2x production bug!
+        #
+        # Correct constraint: demand <= inv[before] = prev_inv + arrivals + production (if same-day)
         def demand_inventory_linking_rule(model, node_id, prod, prod_date, demand_date):
-            """Demand from cohort cannot exceed total inventory across ALL states."""
+            """Demand from cohort cannot exceed BEGINNING-OF-DAY inventory (before consumption)."""
 
             if (node_id, prod, prod_date, demand_date) not in self.demand_cohort_index_set:
                 return Constraint.Skip
 
-            # Sum inventory across ALL states at this demand node
-            # (ambient nodes have 'ambient', BOTH nodes might have 'ambient' + 'thawed' + 'frozen')
-            total_inventory = 0
+            # Calculate beginning-of-day inventory for this cohort
+            # BOD inventory = previous day inventory + arrivals + same-day production
+            # (This is BEFORE demand consumption and departures)
 
-            # Check all possible states
-            for state in ['ambient', 'frozen', 'thawed']:
-                if (node_id, prod, prod_date, demand_date, state) in self.cohort_index_set:
-                    total_inventory += model.inventory_cohort[node_id, prod, prod_date, demand_date, state]
+            # Previous day inventory
+            prev_date = self.date_previous.get(demand_date)
+            prev_inventory = 0
 
-            # Demand from this cohort must not exceed total available inventory
-            return model.demand_from_cohort[node_id, prod, prod_date, demand_date] <= total_inventory
+            if prev_date is None:
+                # First date: use initial inventory
+                for state in ['ambient', 'frozen', 'thawed']:
+                    prev_inventory += self.initial_inventory.get((node_id, prod, prod_date, state), 0)
+            else:
+                # Sum inventory from previous day across all states
+                for state in ['ambient', 'frozen', 'thawed']:
+                    if (node_id, prod, prod_date, prev_date, state) in self.cohort_index_set:
+                        prev_inventory += model.inventory_cohort[node_id, prod, prod_date, prev_date, state]
+
+            # Arrivals on demand date
+            arrivals_on_demand_date = 0
+            node = self.nodes[node_id]
+            for route in self.routes_to_node[node_id]:
+                arrival_state = self._determine_arrival_state(route, node)
+                if (route.origin_node_id, route.destination_node_id, prod, prod_date, demand_date, arrival_state) in self.shipment_cohort_index_set:
+                    arrivals_on_demand_date += model.shipment_cohort[
+                        route.origin_node_id, route.destination_node_id,
+                        prod, prod_date, demand_date, arrival_state
+                    ]
+
+            # Same-day production (if node can produce and prod_date == demand_date)
+            same_day_production = 0
+            if node.can_produce() and prod_date == demand_date:
+                if (node_id, prod, demand_date) in model.production:
+                    same_day_production = model.production[node_id, prod, demand_date]
+
+            # BOD inventory = previous inventory + arrivals + same-day production
+            beginning_of_day_inventory = prev_inventory + arrivals_on_demand_date + same_day_production
+
+            # Demand from this cohort cannot exceed BOD inventory
+            return model.demand_from_cohort[node_id, prod, prod_date, demand_date] <= beginning_of_day_inventory
 
         model.demand_inventory_linking_con = Constraint(
             model.demand_cohort_index,
             rule=demand_inventory_linking_rule,
-            doc="Link demand allocation to actual inventory availability"
+            doc="Link demand allocation to BEGINNING-OF-DAY inventory (prevents circular dependency)"
         )
 
     def _add_aggregated_inventory_balance(self, model: ConcreteModel) -> None:
@@ -1283,11 +1319,11 @@ class UnifiedNodeModel(BaseOptimizationModel):
             trucks_for_route = routes_with_trucks[route_key]
 
             # Sum shipments on this route (across all cohorts and states)
+            # CRITICAL FIX: Iterate shipment_cohort_index_set directly to include initial inventory
             total_shipment = sum(
-                model.shipment_cohort[origin, dest, prod, prod_date, delivery_date, state]
-                for prod_date in model.dates
-                for state in ['frozen', 'ambient', 'thawed']
-                if (origin, dest, prod, prod_date, delivery_date, state) in self.shipment_cohort_index_set
+                model.shipment_cohort[o, d, p, pd, dd, s]
+                for (o, d, p, pd, dd, s) in self.shipment_cohort_index_set
+                if o == origin and d == dest and p == prod and dd == delivery_date
             )
 
             # Sum truck loads for this product on this delivery date to this specific destination
@@ -1479,30 +1515,16 @@ class UnifiedNodeModel(BaseOptimizationModel):
                         production_cost += self.cost_structure.production_cost_per_unit * model.production[node_id, prod, date]
 
         # Transport cost (shipments * route cost)
+        # CRITICAL FIX: Iterate shipment_cohort_index_set directly to include initial inventory
         transport_cost = 0
-        for route in self.routes:
-            cost_per_unit = route.cost_per_unit
-
-            for prod in model.products:
-                for prod_date in model.dates:
-                    for delivery_date in model.dates:
-                        if (route.origin_node_id, route.destination_node_id, prod, prod_date, delivery_date, 'ambient') in self.shipment_cohort_index_set:
-                            transport_cost += cost_per_unit * model.shipment_cohort[
-                                route.origin_node_id, route.destination_node_id,
-                                prod, prod_date, delivery_date, 'ambient'
-                            ]
-
-                        if (route.origin_node_id, route.destination_node_id, prod, prod_date, delivery_date, 'frozen') in self.shipment_cohort_index_set:
-                            transport_cost += cost_per_unit * model.shipment_cohort[
-                                route.origin_node_id, route.destination_node_id,
-                                prod, prod_date, delivery_date, 'frozen'
-                            ]
-
-                        if (route.origin_node_id, route.destination_node_id, prod, prod_date, delivery_date, 'thawed') in self.shipment_cohort_index_set:
-                            transport_cost += cost_per_unit * model.shipment_cohort[
-                                route.origin_node_id, route.destination_node_id,
-                                prod, prod_date, delivery_date, 'thawed'
-                            ]
+        for (origin, dest, prod, prod_date, delivery_date, state) in self.shipment_cohort_index_set:
+            # Find route cost
+            route = next((r for r in self.routes
+                         if r.origin_node_id == origin and r.destination_node_id == dest), None)
+            if route:
+                transport_cost += route.cost_per_unit * model.shipment_cohort[
+                    origin, dest, prod, prod_date, delivery_date, state
+                ]
 
         # Labor cost (based on actual production hours)
         # Only charge labor when production occurs
