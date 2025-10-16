@@ -370,14 +370,27 @@ class UnifiedNodeModel(BaseOptimizationModel):
         """
         cohorts = set()
 
+        # Collect all production dates: planning horizon + initial inventory
+        all_prod_dates = set(dates)
+
+        # Add initial inventory production dates (may be before planning horizon)
+        if self.use_batch_tracking and self.initial_inventory:
+            for key in self.initial_inventory.keys():
+                if len(key) >= 3:  # (node, prod, prod_date, ...) format
+                    prod_date = key[2]
+                    all_prod_dates.add(prod_date)
+
+        all_prod_dates_sorted = sorted(all_prod_dates)
+        print(f"  Production dates for cohorts: {len(dates)} in horizon + {len(all_prod_dates) - len(dates)} from initial inventory")
+
         # For each node that can store inventory
         for node in self.nodes_list:
             if not node.capabilities.can_store:
                 continue
 
             for prod in self.products:
-                for prod_date in dates:
-                    for curr_date in dates:
+                for prod_date in all_prod_dates_sorted:  # Use extended date range
+                    for curr_date in dates:  # Current dates still within planning horizon
                         if curr_date < prod_date:
                             continue  # Can't have inventory from the future
 
@@ -414,6 +427,14 @@ class UnifiedNodeModel(BaseOptimizationModel):
         """
         shipments = set()
 
+        # Collect all production dates including initial inventory
+        all_prod_dates = set(dates)
+        if self.use_batch_tracking and self.initial_inventory:
+            for key in self.initial_inventory.keys():
+                if len(key) >= 3:
+                    prod_date = key[2]
+                    all_prod_dates.add(prod_date)
+
         for route in self.routes:
             origin_node = self.nodes[route.origin_node_id]
             dest_node = self.nodes[route.destination_node_id]
@@ -441,7 +462,8 @@ class UnifiedNodeModel(BaseOptimizationModel):
                         continue  # Shipment requires departure outside planning horizon
 
                     # For each production date that could supply this shipment
-                    for prod_date in dates:
+                    # IMPORTANT: Include initial inventory production dates (before planning horizon)
+                    for prod_date in all_prod_dates:
                         # Production must occur before or on departure
                         if prod_date <= departure_date:
                             # Check if cohort could exist at origin on departure date
@@ -480,9 +502,17 @@ class UnifiedNodeModel(BaseOptimizationModel):
         """
         demand_cohorts = set()
 
+        # Collect all production dates including initial inventory
+        all_prod_dates = set(dates)
+        if self.use_batch_tracking and self.initial_inventory:
+            for key in self.initial_inventory.keys():
+                if len(key) >= 3:
+                    prod_date = key[2]
+                    all_prod_dates.add(prod_date)
+
         for (node_id, prod, demand_date) in self.demand.keys():
             # Any cohort produced before demand date and still fresh
-            for prod_date in dates:
+            for prod_date in all_prod_dates:
                 if prod_date <= demand_date:
                     age_days = (demand_date - prod_date).days
 
@@ -688,6 +718,80 @@ class UnifiedNodeModel(BaseOptimizationModel):
             })
 
         solution['production_batches'] = production_batches
+
+        # Extract batch_shipments (Shipment objects with production_date) for labeling report
+        batch_shipments = []
+        if self.use_batch_tracking and hasattr(model, 'shipment_cohort'):
+            from src.models.shipment import Shipment
+            from src.shelf_life.tracker import RouteLeg
+            from src.network.route_finder import RoutePath
+
+            shipment_id_counter = 1
+            batch_id_map = {}  # Map (prod_date, product) to batch_id
+
+            # Create batch IDs
+            for (date_val, prod), qty in production_by_date_product.items():
+                batch_id = f"BATCH-{date_val.strftime('%Y%m%d')}-{prod}"
+                batch_id_map[(date_val, prod)] = batch_id
+
+            # Extract cohort shipments
+            for (origin, dest, prod, prod_date, delivery_date, state) in self.shipment_cohort_index_set:
+                qty = value(model.shipment_cohort[origin, dest, prod, prod_date, delivery_date, state])
+
+                if qty > 0.01:
+                    # Find route
+                    route = next((r for r in self.routes
+                                 if r.origin_node_id == origin and r.destination_node_id == dest), None)
+
+                    transit_days = route.transit_days if route else 0
+
+                    # Create route leg
+                    leg = RouteLeg(
+                        from_location_id=origin,
+                        to_location_id=dest,
+                        transport_mode=state,  # Use the arrival state as transport mode
+                        transit_days=transit_days
+                    )
+
+                    route_path = RoutePath(
+                        path=[origin, dest],
+                        total_transit_days=transit_days,
+                        total_cost=0.0,
+                        transport_modes=[state],
+                        route_legs=[leg],
+                        intermediate_stops=[]
+                    )
+
+                    # Get batch ID
+                    batch_id = batch_id_map.get((prod_date, prod), f"BATCH-{prod_date}-{prod}")
+
+                    shipment = Shipment(
+                        id=f"SHIP-{shipment_id_counter:05d}",
+                        batch_id=batch_id,
+                        product_id=prod,
+                        quantity=qty,
+                        origin_id=origin,
+                        destination_id=dest,
+                        delivery_date=delivery_date,
+                        route=route_path,
+                        production_date=prod_date  # CRITICAL: Include production date for labeling
+                    )
+
+                    batch_shipments.append(shipment)
+                    shipment_id_counter += 1
+
+        solution['batch_shipments'] = batch_shipments
+
+        # Build route_arrival_state mapping for labeling report
+        # Format: {(origin, dest): 'frozen' or 'ambient'}
+        route_arrival_states = {}
+        for route in self.routes:
+            dest_node = self.nodes[route.destination_node_id]
+            arrival_state = self._determine_arrival_state(route, dest_node)
+            route_arrival_states[(route.origin_node_id, route.destination_node_id)] = arrival_state
+
+        # Store as instance attribute for access by UI
+        self.route_arrival_state = route_arrival_states
 
         return solution
 

@@ -31,19 +31,32 @@ def render_production_labeling_view(optimization_model, optimization_result):
         st.write("**Batch Tracking Enabled:**", optimization_result.get('use_batch_tracking', False))
         st.write("**Batch Shipments Count:**", len(optimization_result.get('batch_shipments', [])))
         st.write("**Production Batches Count:**", len(optimization_result.get('production_by_date_product', {})))
-        st.write("**Has leg_arrival_state:**", hasattr(optimization_model, 'leg_arrival_state'))
-        if hasattr(optimization_model, 'leg_arrival_state'):
+
+        # Check for both legacy (leg_arrival_state) and unified (route_arrival_state) models
+        has_leg_state = hasattr(optimization_model, 'leg_arrival_state')
+        has_route_state = hasattr(optimization_model, 'route_arrival_state')
+        st.write("**Has leg_arrival_state (legacy):**", has_leg_state)
+        st.write("**Has route_arrival_state (unified):**", has_route_state)
+
+        if has_leg_state:
             frozen_legs = [(o, d) for (o, d), state in optimization_model.leg_arrival_state.items() if state == 'frozen']
-            st.write("**Frozen Legs:**", frozen_legs)
+            st.write("**Frozen Legs (legacy):**", frozen_legs)
+        if has_route_state:
+            frozen_routes = [(o, d) for (o, d), state in optimization_model.route_arrival_state.items() if state == 'frozen']
+            st.write("**Frozen Routes (unified):**", frozen_routes)
 
     # Create report generator
     generator = ProductionLabelingReportGenerator(optimization_result)
 
-    # Set leg states from model if available
+    # Set leg/route states from model (support both legacy and unified models)
     if hasattr(optimization_model, 'leg_arrival_state'):
+        # Legacy model
         generator.set_leg_states(optimization_model.leg_arrival_state)
+    elif hasattr(optimization_model, 'route_arrival_state'):
+        # Unified model
+        generator.set_leg_states(optimization_model.route_arrival_state)
     else:
-        st.warning("⚠️ Leg state information not available from model. Cannot distinguish frozen vs ambient routes.")
+        st.warning("⚠️ Route state information not available from model. Cannot distinguish frozen vs ambient routes.")
 
     # Generate report
     df = generator.generate_report_dataframe()
