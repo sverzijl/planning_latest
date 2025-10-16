@@ -17,8 +17,8 @@ from src.models.truck_schedule import TruckSchedule, TruckScheduleCollection
 from src.models.cost_structure import CostStructure
 from src.models.manufacturing import ManufacturingSite
 from src.network import NetworkGraphBuilder, RouteFinder
-from src.production.scheduler import ProductionScheduler, ProductionSchedule
-from src.distribution import ShipmentPlanner, TruckLoader, TruckLoadPlan
+from src.models.production_schedule import ProductionSchedule
+from src.models.truck_load import TruckLoadPlan
 from src.models.shipment import Shipment
 from src.costs import CostCalculator
 from src.costs.cost_breakdown import TotalCostBreakdown

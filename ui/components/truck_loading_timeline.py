@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
 from datetime import datetime, time
-from src.distribution import TruckLoadPlan
+from src.models.truck_load import TruckLoadPlan
 
 
 def render_truck_loading_timeline(truck_plan: TruckLoadPlan, height: int = 600):

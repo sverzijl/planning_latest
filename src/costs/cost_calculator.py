@@ -13,7 +13,7 @@ from src.models.cost_structure import CostStructure
 from src.models.labor_calendar import LaborCalendar
 from src.models.forecast import Forecast
 from src.models.shipment import Shipment
-from src.production.scheduler import ProductionSchedule
+from src.models.production_schedule import ProductionSchedule
 from .cost_breakdown import TotalCostBreakdown
 from .labor_cost_calculator import LaborCostCalculator
 from .production_cost_calculator import ProductionCostCalculator

@@ -915,7 +915,8 @@ class UnifiedNodeModel(BaseOptimizationModel):
         if not self.solution:
             return None
 
-        from src.production.scheduler import ProductionSchedule, ProductionBatch
+        from src.models.production_schedule import ProductionSchedule
+        from src.models.production_batch import ProductionBatch
 
         # Get production data
         production_by_date_product = self.solution.get('production_by_date_product', {})

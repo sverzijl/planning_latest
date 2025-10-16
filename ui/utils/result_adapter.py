@@ -9,7 +9,8 @@ import logging
 from typing import Dict, Any, Optional, List
 from datetime import date as Date, timedelta
 from collections import defaultdict
-from src.production.scheduler import ProductionSchedule, ProductionBatch
+from src.models.production_schedule import ProductionSchedule
+from src.models.production_batch import ProductionBatch
 from src.costs.cost_breakdown import (
     TotalCostBreakdown,
     LaborCostBreakdown,
@@ -17,7 +18,7 @@ from src.costs.cost_breakdown import (
     TransportCostBreakdown,
     WasteCostBreakdown,
 )
-from src.distribution.truck_loader import TruckLoadPlan, TruckLoad
+from src.models.truck_load import TruckLoadPlan, TruckLoad
 from src.models.shipment import Shipment
 
 logger = logging.getLogger(__name__)

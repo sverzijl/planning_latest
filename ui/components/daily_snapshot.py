@@ -16,7 +16,8 @@ from typing import Dict, List, Any, Optional, Tuple
 from collections import defaultdict
 
 from src.models.location import Location
-from src.production.scheduler import ProductionSchedule, ProductionBatch
+from src.models.production_schedule import ProductionSchedule
+from src.models.production_batch import ProductionBatch
 from src.models.shipment import Shipment
 from src.analysis.daily_snapshot import DailySnapshotGenerator
 from ui.components.styling import (

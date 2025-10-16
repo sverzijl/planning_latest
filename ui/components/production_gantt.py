@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
 from datetime import datetime
-from src.production.scheduler import ProductionSchedule
+from src.models.production_schedule import ProductionSchedule
 
 
 def render_production_gantt(production_schedule: ProductionSchedule, height: int = 500):

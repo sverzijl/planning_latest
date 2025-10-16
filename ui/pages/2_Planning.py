@@ -1,7 +1,6 @@
-"""Planning - Run heuristic planning, mathematical optimization, or manage scenarios.
+"""Planning - Run mathematical optimization or manage scenarios.
 
 Consolidates:
-- 3_Planning_Workflow.py (Heuristic)
 - 10_Optimization.py (Mathematical Optimization)
 - 13_Scenario_Management.py (Scenarios)
 """
@@ -43,7 +42,7 @@ if 'scenario_manager' not in st.session_state:
 render_page_header(
     title="Planning",
     icon="📋",
-    subtitle="Run heuristic planning, mathematical optimization, or manage scenarios"
+    subtitle="Run mathematical optimization or manage scenarios"
 )
 
 # Check if data is loaded
@@ -53,197 +52,11 @@ if not check_data_required():
 st.divider()
 
 # Create tabs for planning options
-tab_heuristic, tab_optimization, tab_scenarios = st.tabs(["🎯 Heuristic", "⚡ Optimization", "📊 Scenarios"])
+tab_optimization, tab_scenarios = st.tabs(["⚡ Optimization", "📊 Scenarios"])
 
 
 # ===========================
-# TAB 1: HEURISTIC PLANNING
-# ===========================
-
-with tab_heuristic:
-    st.markdown("""
-    <div class="info-box">
-        <div style="font-weight: 600; margin-bottom: 8px;">🎯 Heuristic Planning Workflow</div>
-        <div>Fast rule-based planning that generates production schedules, assigns shipments, and calculates costs.</div>
-        <div style="margin-top: 8px; font-size: 13px; color: #757575;">
-            This workflow executes 5 steps: Build network → Schedule production → Create shipments → Assign trucks → Calculate costs
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Show data summary
-    with st.expander("📊 Loaded Data Summary", expanded=False):
-        stats = session_state.get_summary_stats()
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.markdown(colored_metric("Locations", str(stats.get('locations', 0)), "primary"), unsafe_allow_html=True)
-            st.markdown(colored_metric("Routes", str(stats.get('routes', 0)), "primary"), unsafe_allow_html=True)
-        with col2:
-            st.markdown(colored_metric("Forecast Entries", f"{stats.get('forecast_entries', 0):,}", "secondary"), unsafe_allow_html=True)
-            st.markdown(colored_metric("Products", str(stats.get('products_in_forecast', 0)), "secondary"), unsafe_allow_html=True)
-        with col3:
-            st.markdown(colored_metric("Total Demand", f"{stats.get('total_demand', 0):,.0f}", "accent"), unsafe_allow_html=True)
-            st.markdown(colored_metric("Planning Days", str(stats.get('date_range_days', 0)), "accent"), unsafe_allow_html=True)
-        with col4:
-            st.markdown(colored_metric("Labor Days", str(stats.get('labor_days', 0)), "success"), unsafe_allow_html=True)
-            st.markdown(colored_metric("Trucks/Week", str(stats.get('truck_schedules', 0)), "success"), unsafe_allow_html=True)
-
-    st.divider()
-
-    # Run workflow button
-    st.markdown(section_header("Run Planning", level=3, icon="🚀"), unsafe_allow_html=True)
-
-    if st.button("🚀 Execute Complete Workflow", type="primary", use_container_width=True, key="run_heuristic"):
-        try:
-            with st.spinner("Running planning workflow..."):
-                from src.network import NetworkGraphBuilder, RouteFinder
-                from src.production.scheduler import ProductionScheduler
-                from src.distribution import ShipmentPlanner, TruckLoader
-                from src.costs import CostCalculator
-
-                # Get parsed data
-                data = session_state.get_parsed_data()
-
-                # Step 1: Build network graph
-                st.info("Step 1/5: Building network graph...")
-                graph_builder = NetworkGraphBuilder(
-                    data['locations'],
-                    data['routes']
-                )
-                graph = graph_builder.build_graph()
-                route_finder = RouteFinder(graph_builder)
-
-                # Step 2: Generate production schedule
-                st.info("Step 2/5: Generating production schedule...")
-                scheduler = ProductionScheduler(
-                    manufacturing_site=data['manufacturing_site'],
-                    labor_calendar=data['labor_calendar'],
-                    graph_builder=graph_builder,
-                )
-
-                production_schedule = scheduler.schedule_from_forecast(
-                    forecast=data['forecast']
-                )
-
-                # Check for infeasibilities
-                if not production_schedule.is_feasible():
-                    st.warning(f"⚠️ Production schedule has {len(production_schedule.infeasibilities)} infeasibilities")
-                    for infeas in production_schedule.infeasibilities[:5]:  # Show first 5
-                        st.warning(f"- {infeas}")
-
-                # Step 3: Create shipments
-                st.info("Step 3/5: Creating shipments...")
-                shipment_planner = ShipmentPlanner()
-                shipments = shipment_planner.create_shipments(production_schedule)
-
-                # Step 4: Assign to trucks
-                st.info("Step 4/5: Assigning shipments to trucks...")
-
-                # Determine date range from production schedule
-                if production_schedule.production_batches:
-                    start_date = production_schedule.schedule_start_date
-                    end_date = production_schedule.schedule_end_date
-                    # Extend end date to cover delivery window
-                    end_date = end_date + timedelta(days=7)
-                else:
-                    start_date = date.today()
-                    end_date = date.today() + timedelta(days=30)
-
-                truck_loader = TruckLoader(data['truck_schedules'])
-                truck_plan = truck_loader.assign_shipments_to_trucks(
-                    shipments=shipments,
-                    start_date=start_date,
-                    end_date=end_date,
-                )
-
-                # Check for truck loading infeasibilities
-                if not truck_plan.is_feasible():
-                    st.warning(f"⚠️ Truck loading has {len(truck_plan.infeasibilities)} infeasibilities")
-                    for infeas in truck_plan.infeasibilities[:5]:  # Show first 5
-                        st.warning(f"- {infeas}")
-
-                # Step 5: Calculate costs
-                st.info("Step 5/5: Calculating costs...")
-                cost_calculator = CostCalculator(
-                    data['cost_structure'],
-                    data['labor_calendar']
-                )
-
-                cost_breakdown = cost_calculator.calculate_total_cost(
-                    production_schedule=production_schedule,
-                    shipments=shipments,
-                    forecast=data['forecast'],
-                )
-
-                # Store results
-                session_state.store_planning_objects(
-                    graph_builder=graph_builder,
-                    route_finder=route_finder,
-                    scheduler=scheduler,
-                )
-
-                session_state.store_planning_results(
-                    production_schedule=production_schedule,
-                    shipments=shipments,
-                    truck_plan=truck_plan,
-                    cost_breakdown=cost_breakdown,
-                )
-
-                st.success("✅ Planning workflow completed successfully!")
-                st.rerun()
-
-        except Exception as e:
-            st.error(f"❌ Error during planning workflow: {e}")
-            import traceback
-            with st.expander("Error Details"):
-                st.code(traceback.format_exc())
-
-    # Show results if available
-    if session_state.is_planning_complete():
-        st.divider()
-        st.markdown(section_header("Planning Results", level=3, icon="📊"), unsafe_allow_html=True)
-
-        summary = session_state.get_planning_summary()
-
-        # High-level metrics
-        col1, col2, col3, col4 = st.columns(4)
-
-        with col1:
-            st.markdown(colored_metric("Production Batches", str(summary.get('production_batches', 0)), "primary"), unsafe_allow_html=True)
-            st.markdown(colored_metric("Total Units", f"{summary.get('total_units', 0):,.0f}", "primary"), unsafe_allow_html=True)
-
-        with col2:
-            st.markdown(colored_metric("Shipments", str(summary.get('shipments_count', 0)), "secondary"), unsafe_allow_html=True)
-            st.markdown(colored_metric("Trucks Used", str(summary.get('trucks_used', 0)), "secondary"), unsafe_allow_html=True)
-
-        with col3:
-            st.markdown(colored_metric("Total Cost", f"${summary.get('total_cost', 0):,.2f}", "accent"), unsafe_allow_html=True)
-            st.markdown(colored_metric("Cost/Unit", f"${summary.get('cost_per_unit', 0):.2f}", "accent"), unsafe_allow_html=True)
-
-        with col4:
-            if summary.get('production_is_feasible', True) and summary.get('truck_plan_is_feasible', True):
-                st.markdown(success_badge("Feasible Plan"), unsafe_allow_html=True)
-            else:
-                st.markdown(warning_badge("Has Infeasibilities"), unsafe_allow_html=True)
-
-        st.divider()
-
-        # Navigation to results
-        st.markdown("**View Detailed Results:**")
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            if st.button("📦 Production Schedule", use_container_width=True, key="nav_prod"):
-                st.switch_page("pages/3_Results.py")
-        with col2:
-            if st.button("🚚 Distribution Plan", use_container_width=True, key="nav_dist"):
-                st.switch_page("pages/3_Results.py")
-        with col3:
-            if st.button("💰 Cost Analysis", use_container_width=True, key="nav_cost"):
-                st.switch_page("pages/3_Results.py")
-
-
-# ===========================
-# TAB 2: OPTIMIZATION
+# TAB 1: OPTIMIZATION
 # ===========================
 
 with tab_optimization:
@@ -714,7 +527,7 @@ with tab_optimization:
 
 
 # ===========================
-# TAB 3: SCENARIO MANAGEMENT
+# TAB 2: SCENARIO MANAGEMENT
 # ===========================
 
 with tab_scenarios:

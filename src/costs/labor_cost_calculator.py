@@ -13,7 +13,7 @@ from datetime import date
 import warnings
 
 from src.models.labor_calendar import LaborCalendar, LaborDay
-from src.production.scheduler import ProductionSchedule
+from src.models.production_schedule import ProductionSchedule
 from .cost_breakdown import LaborCostBreakdown
 
 

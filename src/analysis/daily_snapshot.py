@@ -44,7 +44,7 @@ from src.models.production_batch import ProductionBatch
 from src.models.shipment import Shipment
 from src.models.location import Location
 from src.models.forecast import Forecast
-from src.production.scheduler import ProductionSchedule
+from src.models.production_schedule import ProductionSchedule
 
 
 @dataclass
