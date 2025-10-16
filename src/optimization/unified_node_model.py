@@ -728,6 +728,9 @@ class UnifiedNodeModel(BaseOptimizationModel):
         cohort_inventory: Dict[Tuple[str, str, Date, Date, str], float] = {}
         if self.use_batch_tracking:
             for (node_id, prod, prod_date, curr_date, state) in model.cohort_index:
+                var_key = (node_id, prod, prod_date, curr_date, state)
+                if var_key not in model.inventory_cohort:
+                    continue  # Skip uninitialized variables
                 qty = value(model.inventory_cohort[node_id, prod, prod_date, curr_date, state])
                 if qty > 0.01:
                     cohort_inventory[(node_id, prod, prod_date, curr_date, state)] = qty
@@ -739,6 +742,9 @@ class UnifiedNodeModel(BaseOptimizationModel):
         cohort_demand_consumption: Dict[Tuple[str, str, Date, Date], float] = {}
         if self.use_batch_tracking and hasattr(model, 'demand_from_cohort'):
             for (node_id, prod, prod_date, demand_date) in self.demand_cohort_index_set:
+                var_key = (node_id, prod, prod_date, demand_date)
+                if var_key not in model.demand_from_cohort:
+                    continue  # Skip uninitialized variables
                 qty = value(model.demand_from_cohort[node_id, prod, prod_date, demand_date])
                 if qty > 0.01:
                     cohort_demand_consumption[(node_id, prod, prod_date, demand_date)] = qty
@@ -749,6 +755,9 @@ class UnifiedNodeModel(BaseOptimizationModel):
         shipments_by_route: Dict[Tuple[str, str, str, Date], float] = {}
         if self.use_batch_tracking:
             for (origin, dest, prod, prod_date, delivery_date, state) in self.shipment_cohort_index_set:
+                var_key = (origin, dest, prod, prod_date, delivery_date, state)
+                if var_key not in model.shipment_cohort:
+                    continue  # Skip uninitialized variables
                 qty = value(model.shipment_cohort[origin, dest, prod, prod_date, delivery_date, state])
                 if qty > 0.01:
                     # Aggregate by route (sum across cohorts)
@@ -817,6 +826,11 @@ class UnifiedNodeModel(BaseOptimizationModel):
 
             # Extract cohort shipments
             for (origin, dest, prod, prod_date, delivery_date, state) in self.shipment_cohort_index_set:
+                # Check if variable exists in model (sparse variables may not all be created)
+                var_key = (origin, dest, prod, prod_date, delivery_date, state)
+                if var_key not in model.shipment_cohort:
+                    continue  # Skip if variable wasn't created
+
                 qty = value(model.shipment_cohort[origin, dest, prod, prod_date, delivery_date, state])
 
                 if qty > 0.01:
