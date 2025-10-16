@@ -391,15 +391,13 @@ class UnifiedNodeModel(BaseOptimizationModel):
 
                         # Ambient cohorts (at AMBIENT nodes)
                         if node.supports_ambient_storage():
-                            shelf_life = self.AMBIENT_SHELF_LIFE
+                            # Use MINIMUM shelf life to account for frozen arrivals that thaw
+                            # Frozen product arriving at ambient node thaws and has 14-day shelf life
+                            # Ambient product has 17-day shelf life
+                            # We use 14 days to be conservative (handles both cases)
+                            shelf_life = min(self.AMBIENT_SHELF_LIFE, self.THAWED_SHELF_LIFE)
                             if age_days <= shelf_life:
                                 cohorts.add((node.id, prod, prod_date, curr_date, 'ambient'))
-
-                            # Thawed cohorts also exist at AMBIENT nodes
-                            # (result of frozen product arriving and thawing)
-                            # Thawed state has 14-day shelf life from thaw date
-                            if age_days <= self.THAWED_SHELF_LIFE:
-                                cohorts.add((node.id, prod, prod_date, curr_date, 'thawed'))
 
         return cohorts
 
@@ -426,7 +424,16 @@ class UnifiedNodeModel(BaseOptimizationModel):
             for prod in self.products:
                 for delivery_date in dates:
                     # Calculate departure date
-                    departure_date = delivery_date - timedelta(days=route.transit_days)
+                    # CRITICAL FIX: Handle fractional transit times correctly
+                    transit_timedelta = timedelta(days=route.transit_days)
+                    departure_datetime = delivery_date - transit_timedelta
+
+                    # Convert to Date for comparisons
+                    if isinstance(departure_datetime, Date):
+                        departure_date = departure_datetime
+                    else:
+                        # It's a datetime, extract the date part
+                        departure_date = departure_datetime.date()
 
                     # Only create shipments that can actually depart within planning horizon
                     # Can't depart before planning starts or after it ends
@@ -480,9 +487,18 @@ class UnifiedNodeModel(BaseOptimizationModel):
                     age_days = (demand_date - prod_date).days
 
                     # Check shelf life
+                    # CRITICAL: Use the MINIMUM shelf life across all possible inventory states
+                    # at this node, since demand_from_cohort can draw from ANY state
                     node = self.nodes[node_id]
                     if node.supports_ambient_storage():
-                        shelf_life = self.AMBIENT_SHELF_LIFE
+                        # Ambient nodes can have both 'ambient' (17d) and 'thawed' (14d) inventory
+                        # Use the minimum to ensure all cohorts are usable
+                        shelf_life = min(self.AMBIENT_SHELF_LIFE, self.THAWED_SHELF_LIFE)
+                        if age_days <= shelf_life:
+                            demand_cohorts.add((node_id, prod, prod_date, demand_date))
+                    elif node.supports_frozen_storage():
+                        # Frozen nodes use frozen shelf life
+                        shelf_life = self.FROZEN_SHELF_LIFE
                         if age_days <= shelf_life:
                             demand_cohorts.add((node_id, prod, prod_date, demand_date))
 
@@ -516,18 +532,18 @@ class UnifiedNodeModel(BaseOptimizationModel):
     ) -> str:
         """Determine product state upon arrival at destination.
 
-        Implements clean state transition rules:
+        Implements simplified state transition rules:
         - Ambient transport + Ambient node → ambient (no change)
         - Ambient transport + Frozen node → frozen (freeze, reset to 120d)
         - Frozen transport + Frozen node → frozen (no change)
-        - Frozen transport + Ambient node → thawed (reset to 14d)
+        - Frozen transport + Ambient node → ambient (thaw immediately, treat as ambient with 14d shelf life)
 
         Args:
             route: Route being traveled
             destination_node: Destination node
 
         Returns:
-            State string: 'frozen', 'ambient', or 'thawed'
+            State string: 'frozen' or 'ambient' (no separate 'thawed' state)
         """
         if route.transport_mode == TransportMode.AMBIENT:
             if destination_node.supports_frozen_storage() and not destination_node.supports_ambient_storage():
@@ -538,8 +554,9 @@ class UnifiedNodeModel(BaseOptimizationModel):
                 return 'ambient'
         else:  # FROZEN transport
             if destination_node.supports_ambient_storage() and not destination_node.supports_frozen_storage():
-                # Frozen arriving at ambient-only node → thaw
-                return 'thawed'
+                # Frozen arriving at ambient-only node → thaw and immediately treat as ambient
+                # (with 14-day shelf life enforced via cohort building)
+                return 'ambient'
             else:
                 # Frozen arriving at frozen-capable node → stays frozen
                 return 'frozen'
@@ -893,7 +910,20 @@ class UnifiedNodeModel(BaseOptimizationModel):
 
                 # Calculate when shipment would depart to arrive on various delivery dates
                 for delivery_date in model.dates:
-                    departure_date = delivery_date - timedelta(days=route.transit_days)
+                    # CRITICAL FIX: Handle fractional transit times correctly
+                    # For same-day delivery (0.5 days), departure_date should equal delivery_date
+                    # For overnight (1.0 days), departure is previous day
+                    transit_timedelta = timedelta(days=route.transit_days)
+                    departure_datetime = delivery_date - transit_timedelta
+
+                    # Convert back to Date for comparison (rounds down to date)
+                    # For fractional days < 1, this gives the same date
+                    # For 1+ days, this gives the previous date
+                    if isinstance(departure_datetime, Date):
+                        departure_date = departure_datetime
+                    else:
+                        # It's a datetime, extract the date part
+                        departure_date = departure_datetime.date()
 
                     if departure_date == curr_date:
                         # Shipment departs today from this state
@@ -906,30 +936,20 @@ class UnifiedNodeModel(BaseOptimizationModel):
                             ]
 
             # Demand consumption (only if node has demand capability)
-            # CRITICAL: Demand is allocated from cohort, but must deduct from SPECIFIC state
-            # Priority: ambient first, then thawed, then frozen
             demand_consumption = 0
             if node.has_demand_capability():
                 if (node_id, prod, curr_date) in self.demand:
                     if (node_id, prod, prod_date, curr_date) in self.demand_cohort_index_set:
-                        # Only deduct from the PRIMARY state for this node type
-                        # Ambient nodes: deduct from 'ambient' first, 'thawed' second
-                        # Frozen nodes: deduct from 'frozen'
                         if state == 'ambient' and node.supports_ambient_storage():
-                            # Deduct from ambient inventory
+                            # Ambient nodes: deduct from ambient inventory
                             demand_consumption = model.demand_from_cohort[node_id, prod, prod_date, curr_date]
-                        elif state == 'thawed' and node.supports_ambient_storage():
-                            # Only deduct from thawed if no ambient exists
-                            # For now, don't deduct from thawed (simplification)
-                            demand_consumption = 0
                         elif state == 'frozen' and node.supports_frozen_storage():
-                            # Frozen nodes deduct from frozen
+                            # Frozen nodes: deduct from frozen inventory
                             demand_consumption = model.demand_from_cohort[node_id, prod, prod_date, curr_date]
                         else:
                             demand_consumption = 0
 
-            # State transitions (Phase 6 - for now, simplified)
-            # TODO Phase 6: Add explicit freeze/thaw operations for BOTH nodes
+            # State transitions (no longer needed - thawed is treated as ambient)
             state_transitions_in = 0
             state_transitions_out = 0
 
@@ -1093,27 +1113,24 @@ class UnifiedNodeModel(BaseOptimizationModel):
         )
 
         # Constraint: Truck availability (day-of-week enforcement)
-        def truck_availability_rule(model, truck_idx, delivery_date):
-            """Truck can only be used on delivery dates matching its day_of_week schedule."""
+        def truck_availability_rule(model, truck_idx, date):
+            """Truck can only be used on dates matching its day-of-week schedule.
+
+            CRITICAL FIX: For trucks with intermediate stops, we check if the truck
+            can DEPART on the given date, not if it arrives on that date. The date
+            parameter represents the truck's operating date (departure date).
+
+            The truck_load variables are already keyed by delivery_date (arrival at destination),
+            so we don't need route-specific logic here. We just check if the truck
+            operates on this date according to its schedule.
+            """
 
             truck = self.truck_by_index[truck_idx]
 
-            # Calculate departure date
-            # Find the route this truck serves
-            route = next((r for r in self.routes
-                         if r.origin_node_id == truck.origin_node_id
-                         and r.destination_node_id == truck.destination_node_id), None)
-
-            if not route:
-                # Truck has no matching route - shouldn't happen
-                return model.truck_used[truck_idx, delivery_date] == 0
-
-            departure_date = delivery_date - timedelta(days=route.transit_days)
-
-            # Check if truck runs on this departure date
-            if not truck.applies_on_date(departure_date):
+            # Check if truck runs on this date (based on day of week)
+            if not truck.applies_on_date(date):
                 # Truck doesn't run on this day - force to zero
-                return model.truck_used[truck_idx, delivery_date] == 0
+                return model.truck_used[truck_idx, date] == 0
             else:
                 # Truck can run - no constraint
                 return Constraint.Skip
@@ -1126,8 +1143,19 @@ class UnifiedNodeModel(BaseOptimizationModel):
         )
 
         # Constraint: Truck capacity
-        def truck_capacity_rule(model, truck_idx, date):
-            """Total load cannot exceed truck capacity (sum across ALL destinations)."""
+        # CRITICAL: For trucks with intermediate stops, we need to ensure capacity
+        # is shared across ALL deliveries from a SINGLE DEPARTURE, not across a delivery date
+        def truck_capacity_rule(model, truck_idx, departure_date):
+            """Total load cannot exceed truck capacity.
+
+            For trucks with intermediate stops, different destinations receive on
+            different dates from the SAME physical departure. We need to sum loads
+            across ALL deliveries originating from this departure date.
+
+            Args:
+                truck_idx: Truck index
+                departure_date: Date truck departs (not delivery date!)
+            """
 
             truck = self.truck_by_index[truck_idx]
 
@@ -1136,15 +1164,33 @@ class UnifiedNodeModel(BaseOptimizationModel):
             if truck.has_intermediate_stops():
                 truck_destinations.extend(truck.intermediate_stops)
 
-            # Sum load across all destinations and all products
-            total_load = sum(
-                model.truck_load[truck_idx, dest, prod, date]
-                for dest in truck_destinations
-                for prod in model.products
-                if (truck_idx, dest, prod, date) in model.truck_load
-            )
+            # For each destination, calculate delivery date from this departure
+            # and sum the load
+            total_load = 0
 
-            return total_load <= truck.capacity * model.truck_used[truck_idx, date]
+            for dest in truck_destinations:
+                # Find route to this destination
+                route = next((r for r in self.routes
+                             if r.origin_node_id == truck.origin_node_id
+                             and r.destination_node_id == dest), None)
+
+                if not route:
+                    continue  # No route to this destination
+
+                # Calculate delivery date for this destination
+                delivery_date = departure_date + timedelta(days=route.transit_days)
+
+                # Check if delivery date is within planning horizon
+                if delivery_date not in model.dates:
+                    continue  # Delivery outside planning horizon
+
+                # Sum load for this destination on its delivery date
+                for prod in model.products:
+                    if (truck_idx, dest, prod, delivery_date) in model.truck_load:
+                        total_load += model.truck_load[truck_idx, dest, prod, delivery_date]
+
+            # Total load from this departure cannot exceed capacity
+            return total_load <= truck.capacity * model.truck_used[truck_idx, departure_date]
 
         model.truck_capacity_con = Constraint(
             model.trucks,
