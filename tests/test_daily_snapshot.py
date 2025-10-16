@@ -26,7 +26,7 @@ from src.models.shipment import Shipment
 from src.models.location import Location, LocationType, StorageMode
 from src.models.forecast import Forecast, ForecastEntry
 from src.models.product import ProductState
-from src.production.scheduler import ProductionSchedule
+from src.models.production_schedule import ProductionSchedule
 
 
 # ===========================
