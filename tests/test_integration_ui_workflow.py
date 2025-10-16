@@ -1,8 +1,9 @@
-"""Integration test matching UI workflow with real data files.
+"""Integration test matching UI workflow with real data files - UNIFIED NODE MODEL.
 
 ⚠️  CRITICAL REGRESSION TEST - REQUIRED VALIDATION GATE ⚠️
 
-This test MUST pass before committing any changes to optimization model or solver code.
+This test validates the UnifiedNodeModel (unified_node_model.py) with real production data.
+It MUST pass before committing any changes to optimization model or solver code.
 It serves as the primary regression test ensuring UI workflow compatibility and performance.
 
 PURPOSE:
@@ -69,7 +70,8 @@ from datetime import date, timedelta
 import time
 
 from src.parsers.multi_file_parser import MultiFileParser
-from src.optimization import IntegratedProductionDistributionModel
+from src.optimization.unified_node_model import UnifiedNodeModel
+from src.optimization.legacy_to_unified_converter import LegacyToUnifiedConverter
 
 
 @pytest.fixture
@@ -149,12 +151,21 @@ def parsed_data(data_files):
     from src.models.truck_schedule import TruckScheduleCollection
     truck_schedules = TruckScheduleCollection(schedules=truck_schedules_list)
 
+    # Convert legacy data structures to unified format
+    converter = LegacyToUnifiedConverter()
+    nodes = converter.convert_nodes(manufacturing_site, locations, forecast)
+    unified_routes = converter.convert_routes(routes)
+    unified_truck_schedules = converter.convert_truck_schedules(truck_schedules_list, manufacturing_site.id)
+
     return {
         'forecast': forecast,
-        'locations': locations,
-        'routes': routes,
+        'locations': locations,  # Keep for reference
+        'routes': routes,  # Keep for reference
+        'nodes': nodes,  # Unified format
+        'unified_routes': unified_routes,  # Unified format
+        'unified_truck_schedules': unified_truck_schedules,  # Unified format
         'labor_calendar': labor_calendar,
-        'truck_schedules': truck_schedules,
+        'truck_schedules': truck_schedules,  # Legacy format
         'cost_structure': cost_structure,
         'manufacturing_site': manufacturing_site,
         'initial_inventory': initial_inventory,
@@ -175,14 +186,13 @@ def test_ui_workflow_4_weeks_with_initial_inventory(parsed_data):
     5. Initial inventory properly incorporated
     """
 
-    # Extract parsed data
+    # Extract parsed data (using unified format)
     forecast = parsed_data['forecast']
-    locations = parsed_data['locations']
-    routes = parsed_data['routes']
+    nodes = parsed_data['nodes']
+    unified_routes = parsed_data['unified_routes']
+    unified_truck_schedules = parsed_data['unified_truck_schedules']
     labor_calendar = parsed_data['labor_calendar']
-    truck_schedules = parsed_data['truck_schedules']
     cost_structure = parsed_data['cost_structure']
-    manufacturing_site = parsed_data['manufacturing_site']
     initial_inventory = parsed_data['initial_inventory']
     inventory_snapshot_date = parsed_data['inventory_snapshot_date']
 
@@ -203,10 +213,10 @@ def test_ui_workflow_4_weeks_with_initial_inventory(parsed_data):
     print(f"Forecast entries: {len(forecast.entries)}")
     print(f"Date range: {min(e.forecast_date for e in forecast.entries)} to {max(e.forecast_date for e in forecast.entries)}")
     print(f"Total demand: {sum(e.quantity for e in forecast.entries):,.0f} units")
-    print(f"Locations: {len(locations)}")
-    print(f"Routes: {len(routes)}")
+    print(f"Nodes: {len(nodes)}")
+    print(f"Routes: {len(unified_routes)}")
     print(f"Labor days: {len(labor_calendar.days)}")
-    print(f"Truck schedules: {len(truck_schedules.schedules)}")
+    print(f"Truck schedules: {len(unified_truck_schedules)}")
 
     if initial_inventory:
         total_init_inventory = sum(initial_inventory.to_optimization_dict().values())
@@ -218,12 +228,11 @@ def test_ui_workflow_4_weeks_with_initial_inventory(parsed_data):
 
     print(f"\nPlanning horizon: {planning_start_date} to {planning_end_date} (4 weeks)")
 
-    # UI SETTINGS (matching Planning Tab)
+    # UI SETTINGS (matching Planning Tab - Unified Model)
     settings = {
         'allow_shortages': True,              # ✓ Allow Demand Shortages
         'enforce_shelf_life': True,           # ✓ Enforce Shelf Life Constraints
         'use_batch_tracking': True,           # ✓ Enable Batch Tracking
-        'max_routes_per_destination': 5,      # Default
         'mip_gap': 0.01,                      # 1% MIP Gap Tolerance
         'time_limit_seconds': 120,            # 2 minutes (expect <30s)
         'solver_name': 'cbc',                 # Default solver
@@ -244,22 +253,20 @@ def test_ui_workflow_4_weeks_with_initial_inventory(parsed_data):
 
     model_start = time.time()
 
-    model = IntegratedProductionDistributionModel(
+    model = UnifiedNodeModel(
+        nodes=nodes,
+        routes=unified_routes,
         forecast=forecast,
         labor_calendar=labor_calendar,
-        manufacturing_site=manufacturing_site,
         cost_structure=cost_structure,
-        locations=locations,
-        routes=routes,
-        truck_schedules=truck_schedules,
-        max_routes_per_destination=settings['max_routes_per_destination'],
-        allow_shortages=settings['allow_shortages'],
-        enforce_shelf_life=settings['enforce_shelf_life'],
-        initial_inventory=initial_inventory.to_optimization_dict() if initial_inventory else None,
-        inventory_snapshot_date=inventory_snapshot_date,
         start_date=settings['start_date'],
         end_date=settings['end_date'],
+        truck_schedules=unified_truck_schedules,
+        initial_inventory=initial_inventory.to_optimization_dict() if initial_inventory else None,
+        inventory_snapshot_date=inventory_snapshot_date,
         use_batch_tracking=settings['use_batch_tracking'],
+        allow_shortages=settings['allow_shortages'],
+        enforce_shelf_life=settings['enforce_shelf_life'],
     )
 
     model_build_time = time.time() - model_start
@@ -269,7 +276,8 @@ def test_ui_workflow_4_weeks_with_initial_inventory(parsed_data):
     horizon_weeks = horizon_days / 7.0
 
     print(f"✓ Model built in {model_build_time:.2f}s")
-    print(f"  Routes enumerated: {len(model.enumerated_routes)}")
+    print(f"  Nodes: {len(model.nodes)}")
+    print(f"  Routes: {len(model.routes)}")
     print(f"  Planning horizon: {horizon_days} days ({horizon_weeks:.1f} weeks)")
     print(f"  Date range: {model.start_date} to {model.end_date}")
     print(f"  Batch tracking: {'ENABLED' if settings['use_batch_tracking'] else 'DISABLED'}")
@@ -345,7 +353,7 @@ def test_ui_workflow_4_weeks_with_initial_inventory(parsed_data):
         print(f"Average batch size: {total_production / num_batches:,.0f} units")
 
     # Shipment summary
-    shipments = model.get_shipment_plan()
+    shipments = model.extract_shipments()
     if shipments:
         print("\n" + "="*80)
         print("DISTRIBUTION SUMMARY")
@@ -486,7 +494,7 @@ def test_ui_workflow_4_weeks_with_initial_inventory(parsed_data):
                     print(f"  {loc}: {qty:,.0f} units")
 
         # Check shipments that deliver AFTER the planning horizon
-        shipments = model.get_shipment_plan() or []
+        shipments = model.extract_shipments() or []
         shipments_after_horizon = [s for s in shipments if s.delivery_date > model.end_date]
         total_in_transit_beyond = sum(s.quantity for s in shipments_after_horizon)
 
@@ -593,14 +601,13 @@ def test_ui_workflow_without_initial_inventory(parsed_data):
     requiring all demand to be satisfied from new production.
     """
 
-    # Extract parsed data (excluding initial inventory)
+    # Extract parsed data (excluding initial inventory - unified format)
     forecast = parsed_data['forecast']
-    locations = parsed_data['locations']
-    routes = parsed_data['routes']
+    nodes = parsed_data['nodes']
+    unified_routes = parsed_data['unified_routes']
+    unified_truck_schedules = parsed_data['unified_truck_schedules']
     labor_calendar = parsed_data['labor_calendar']
-    truck_schedules = parsed_data['truck_schedules']
     cost_structure = parsed_data['cost_structure']
-    manufacturing_site = parsed_data['manufacturing_site']
 
     # Use earliest forecast date as planning start
     planning_start_date = min(e.forecast_date for e in forecast.entries)
@@ -614,28 +621,27 @@ def test_ui_workflow_without_initial_inventory(parsed_data):
     # Create model WITHOUT initial inventory
     model_start = time.time()
 
-    model = IntegratedProductionDistributionModel(
+    model = UnifiedNodeModel(
+        nodes=nodes,
+        routes=unified_routes,
         forecast=forecast,
         labor_calendar=labor_calendar,
-        manufacturing_site=manufacturing_site,
         cost_structure=cost_structure,
-        locations=locations,
-        routes=routes,
-        truck_schedules=truck_schedules,
-        max_routes_per_destination=5,
-        allow_shortages=True,
-        enforce_shelf_life=True,
+        start_date=planning_start_date,  # Explicit start date
+        end_date=planning_end_date,
+        truck_schedules=unified_truck_schedules,
         initial_inventory=None,  # NO INITIAL INVENTORY
         inventory_snapshot_date=None,
-        start_date=None,  # Auto-calculate from forecast
-        end_date=planning_end_date,
         use_batch_tracking=True,
+        allow_shortages=True,
+        enforce_shelf_life=True,
     )
 
     model_build_time = time.time() - model_start
 
     print(f"✓ Model built in {model_build_time:.2f}s")
-    print(f"  Routes enumerated: {len(model.enumerated_routes)}")
+    print(f"  Nodes: {len(model.nodes)}")
+    print(f"  Routes: {len(model.routes)}")
     print(f"  Planning horizon: {len(model.production_dates)} days")
 
     # Solve
