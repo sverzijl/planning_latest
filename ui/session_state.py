@@ -155,12 +155,11 @@ def store_parsed_data(
 def store_planning_objects(
     graph_builder: NetworkGraphBuilder,
     route_finder: RouteFinder,
-    scheduler: ProductionScheduler,
 ):
-    """Store planning objects in session state."""
+    """Store planning objects in session state (heuristic planning deprecated)."""
     st.session_state.graph_builder = graph_builder
     st.session_state.route_finder = route_finder
-    st.session_state.scheduler = scheduler
+    # Note: scheduler parameter removed - heuristic planning deprecated
 
 
 def store_planning_results(
