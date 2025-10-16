@@ -526,7 +526,6 @@ with tab_production:
             infeasibilities=production_schedule.infeasibilities,
             total_units=sum(b.quantity for b in filtered_batches),
             total_labor_hours=sum(filtered_daily_labor_hours.values()),
-            requirements=production_schedule.requirements,
         )
     else:
         # No batches, use original schedule
