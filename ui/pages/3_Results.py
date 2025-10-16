@@ -42,6 +42,7 @@ from ui.components import (
     render_cost_breakdown_table,
     render_daily_snapshot,
 )
+from ui.components.production_labeling import render_production_labeling_view
 
 # Page config
 st.set_page_config(
@@ -213,9 +214,10 @@ def get_current_results():
 st.divider()
 
 # Create tabs for different result views
-tab_overview, tab_production, tab_distribution, tab_costs, tab_comparison, tab_snapshot = st.tabs([
+tab_overview, tab_production, tab_labeling, tab_distribution, tab_costs, tab_comparison, tab_snapshot = st.tabs([
     "📊 Overview",
     "📦 Production",
+    "🏷️ Labeling",
     "🚚 Distribution",
     "💰 Costs",
     "⚖️ Comparison",
@@ -610,7 +612,43 @@ with tab_production:
 
 
 # ===========================
-# TAB 2: DISTRIBUTION PLAN
+# TAB 2: PRODUCTION LABELING
+# ===========================
+
+with tab_labeling:
+    # Check if optimization results are available
+    if st.session_state.result_source != 'optimization':
+        st.warning("""
+        **Production labeling requirements are only available for optimization results.**
+
+        The labeling report analyzes optimization routing decisions to determine which
+        quantities need frozen vs. ambient labels based on their destination routes.
+        """)
+
+        st.info("Switch to **Optimization** results or run optimization to view labeling requirements.")
+
+        if st.button("⚡ Run Optimization", type="primary", use_container_width=True):
+            st.switch_page("pages/2_Planning.py")
+    else:
+        # Get optimization model and results
+        opt_results = session_state.get_optimization_results()
+        model = opt_results.get('model')
+
+        if not model:
+            st.error("❌ Optimization model not available")
+        else:
+            # Get solution
+            solution = model.get_solution() if hasattr(model, 'get_solution') else None
+
+            if not solution:
+                st.error("❌ Optimization solution not available")
+            else:
+                # Render the production labeling view
+                render_production_labeling_view(model, solution)
+
+
+# ===========================
+# TAB 3: DISTRIBUTION PLAN
 # ===========================
 
 with tab_distribution:
@@ -717,7 +755,7 @@ with tab_distribution:
 
 
 # ===========================
-# TAB 3: COST ANALYSIS
+# TAB 4: COST ANALYSIS
 # ===========================
 
 with tab_costs:
@@ -792,7 +830,7 @@ with tab_costs:
 
 
 # ===========================
-# TAB 4: RESULTS COMPARISON
+# TAB 5: RESULTS COMPARISON
 # ===========================
 
 with tab_comparison:
@@ -952,7 +990,7 @@ with tab_comparison:
 
 
 # ===========================
-# TAB 5: DAILY SNAPSHOT
+# TAB 6: DAILY SNAPSHOT
 # ===========================
 
 with tab_snapshot:
