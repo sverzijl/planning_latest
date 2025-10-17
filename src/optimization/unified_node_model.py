@@ -263,6 +263,51 @@ class UnifiedNodeModel(BaseOptimizationModel):
         print(f"  Products: {len(self.products)}")
         print(f"  Demand entries: {len(self.demand)}")
 
+    def get_max_daily_production(self) -> float:
+        """Calculate maximum possible daily production.
+
+        Returns:
+            Maximum production in units per day (accounts for max labor hours)
+        """
+        max_labor_hours = 0.0
+        for date in self.production_dates:
+            labor_day = self.labor_calendar.get_labor_day(date)
+            if labor_day:
+                # Calculate available hours:
+                # - Fixed days: fixed_hours + overtime capacity (assume 2 hours max OT)
+                # - Non-fixed days: use fixed_hours field (which represents total hours available)
+                if hasattr(labor_day, 'overtime_hours') and labor_day.overtime_hours:
+                    day_hours = labor_day.fixed_hours + labor_day.overtime_hours
+                elif labor_day.is_fixed_day:
+                    # Assume standard: 12 fixed + 2 OT = 14 total
+                    day_hours = labor_day.fixed_hours + 2.0
+                else:
+                    # Non-fixed day: use fixed_hours field as total available
+                    day_hours = labor_day.fixed_hours
+
+                max_labor_hours = max(max_labor_hours, day_hours)
+
+        # Get production rate from first manufacturing node (assume uniform)
+        if self.manufacturing_nodes:
+            node_id = next(iter(self.manufacturing_nodes))
+            node = self.nodes[node_id]
+            prod_rate = node.capabilities.production_rate_per_hour or 1400.0
+        else:
+            prod_rate = 1400.0  # Default
+
+        return prod_rate * max_labor_hours
+
+    def get_max_truck_capacity(self) -> float:
+        """Calculate maximum truck capacity across all trucks.
+
+        Returns:
+            Maximum truck capacity in units
+        """
+        if self.truck_schedules:
+            return max(t.capacity for t in self.truck_schedules)
+        else:
+            return 14080.0  # Default: 44 pallets × 320 units
+
     def build_model(self) -> ConcreteModel:
         """Build Pyomo optimization model (skeleton only - constraints in Phase 5).
 
@@ -304,6 +349,10 @@ class UnifiedNodeModel(BaseOptimizationModel):
         # DECISION VARIABLES
         # ==================
 
+        # Calculate bounds for variable tightening (Quick Wins from bound analysis)
+        max_daily_production = self.get_max_daily_production()
+        max_truck_capacity = self.get_max_truck_capacity()
+
         # Production variables (only for manufacturing nodes)
         production_index = [
             (node_id, prod, date)
@@ -314,7 +363,8 @@ class UnifiedNodeModel(BaseOptimizationModel):
         model.production = Var(
             production_index,
             within=NonNegativeReals,
-            doc="Production quantity at manufacturing nodes"
+            bounds=(0, max_daily_production),  # Quick Win #1: Tightened bounds
+            doc="Production quantity at manufacturing nodes (bounded by daily capacity)"
         )
 
         # Inventory variables (cohort-based if batch tracking enabled)
@@ -323,13 +373,16 @@ class UnifiedNodeModel(BaseOptimizationModel):
             model.inventory_cohort = Var(
                 model.cohort_index,
                 within=NonNegativeReals,
+                bounds=(0, max_daily_production),  # Phase 2 #7: Cohort max = one day's production
                 doc="Inventory by node, product, production cohort, date, and state"
             )
         else:
             # Aggregated inventory[node, product, date]
+            max_cumulative_inventory = max_daily_production * len(model.dates)
             model.inventory = Var(
                 model.inventory_index,
                 within=NonNegativeReals,
+                bounds=(0, max_cumulative_inventory),  # Phase 3 #11: Cumulative inventory bound
                 doc="Aggregated inventory by node, product, and date"
             )
 
@@ -340,9 +393,11 @@ class UnifiedNodeModel(BaseOptimizationModel):
             model.shipment_cohort_index = list(self.shipment_cohort_index_set)
 
             # shipment_cohort[route, product, prod_date, delivery_date, arrival_state]
+            shipment_bound = min(max_daily_production, max_truck_capacity)
             model.shipment_cohort = Var(
                 model.shipment_cohort_index,
                 within=NonNegativeReals,
+                bounds=(0, shipment_bound),  # Phase 2 #8: Shipment bounded by min(production, truck)
                 doc="Shipment quantity by route, product, production cohort, delivery date, and arrival state"
             )
             print(f"  Shipment cohort indices: {len(self.shipment_cohort_index_set):,}")
@@ -357,6 +412,7 @@ class UnifiedNodeModel(BaseOptimizationModel):
             model.shipment = Var(
                 shipment_index,
                 within=NonNegativeReals,
+                bounds=(0, max_truck_capacity),  # Phase 3 #11: Aggregated shipment bound
                 doc="Shipment quantity by route, product, and delivery date"
             )
 
@@ -366,9 +422,11 @@ class UnifiedNodeModel(BaseOptimizationModel):
             self.demand_cohort_index_set = self._build_demand_cohort_indices(model.dates)
             model.demand_cohort_index = list(self.demand_cohort_index_set)
 
+            max_demand = max(self.demand.values()) if self.demand else 10000.0
             model.demand_from_cohort = Var(
                 model.demand_cohort_index,
                 within=NonNegativeReals,
+                bounds=(0, max_demand),  # Phase 3 #6: Demand cohort bounded by max demand
                 doc="Demand satisfied from specific production cohort"
             )
             print(f"  Demand cohort indices: {len(self.demand_cohort_index_set):,}")
@@ -376,9 +434,11 @@ class UnifiedNodeModel(BaseOptimizationModel):
         # Shortage variables (if allowed)
         if self.allow_shortages:
             shortage_index = list(self.demand.keys())
+            max_demand = max(self.demand.values()) if self.demand else 10000.0
             model.shortage = Var(
                 shortage_index,
                 within=NonNegativeReals,
+                bounds=(0, max_demand),  # Phase 3 #5: Shortage bounded by max demand
                 doc="Unmet demand (shortage) with penalty"
             )
 
@@ -413,6 +473,7 @@ class UnifiedNodeModel(BaseOptimizationModel):
             model.truck_load = Var(
                 truck_load_index,
                 within=NonNegativeReals,
+                bounds=(0, max_truck_capacity),  # Quick Win #3: Truck load bounded by capacity
                 doc="Quantity loaded on truck to specific destination by product and delivery date (in units)"
             )
 
@@ -1835,8 +1896,10 @@ class UnifiedNodeModel(BaseOptimizationModel):
             If production > 0, then product_produced must be 1.
 
             M is chosen as conservative upper bound on daily production per product.
+            LOW-IMPACT #9: Tightened M from 20000 to actual max daily production.
             """
-            M = 20000  # Max daily production = 19,600 units (1,400/hr × 14hr)
+            # Use actual calculated max daily production instead of hardcoded value
+            M = self.get_max_daily_production()  # More accurate than hardcoded 20000
             return model.production[node_id, prod, date] <= M * model.product_produced[node_id, prod, date]
 
         model.product_produced_linking_con = Constraint(
@@ -2051,8 +2114,12 @@ class UnifiedNodeModel(BaseOptimizationModel):
 
             overtime_hours_used <= M * uses_overtime
             If uses_overtime = 0, forces overtime_hours_used = 0
+
+            CRITICAL FIX (Quick Win #4): M should be max OVERTIME hours (2.0),
+            not total labor hours (14.0). overtime_hours_used only represents
+            the OT portion, not the total hours!
             """
-            M = 14.0  # Max labor hours per day (12 fixed + 2 OT)
+            M = 2.0  # Quick Win #4: Max OVERTIME hours per day (was 14.0 - 7x too large!)
             return model.overtime_hours_used[node_id, date] <= M * model.uses_overtime[node_id, date]
 
         model.overtime_indicator_upper_con = Constraint(
@@ -2237,17 +2304,19 @@ class UnifiedNodeModel(BaseOptimizationModel):
                     raise ValueError("Storage rates cannot be negative")
 
                 # Calculate maximum pallet count for variable bounds (tightens search space)
-                max_daily_production = 19600  # units (with overtime)
-                planning_days = len(model.dates)
-                max_inventory_per_cohort = max_daily_production * planning_days
-                max_pallets = int(math.ceil(max_inventory_per_cohort / self.UNITS_PER_PALLET))
+                # CRITICAL FIX (Quick Win #2): A cohort represents production from ONE day,
+                # not cumulative days! Maximum inventory in any cohort = max daily production.
+                # OLD (WRONG): max_inventory_per_cohort = max_daily_production * planning_days  # Gave 1,715 pallets!
+                # NEW (CORRECT): max_pallets_per_cohort = ceil(max_daily_production / UNITS_PER_PALLET)  # Gives 62 pallets (27x tighter!)
+                max_daily_production = self.get_max_daily_production()  # Use actual calculated max
+                max_pallets_per_cohort = int(math.ceil(max_daily_production / self.UNITS_PER_PALLET))
 
-                # Add integer pallet count variables with bounds
+                # Add integer pallet count variables with TIGHTENED bounds
                 model.pallet_count = Var(
                     model.cohort_index,
                     within=NonNegativeIntegers,
-                    bounds=(0, max_pallets),
-                    doc="Pallet count for inventory cohort (rounded up, partial pallets count as full)"
+                    bounds=(0, max_pallets_per_cohort),  # Quick Win #2: Fixed from (0, 1715) to (0, 62)!
+                    doc="Pallet count for inventory cohort (max = one day's production in pallets)"
                 )
 
                 # Ceiling constraint: enforce pallet_count >= ceil(inventory_qty / UNITS_PER_PALLET)
