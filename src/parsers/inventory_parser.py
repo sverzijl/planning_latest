@@ -19,19 +19,24 @@ class InventoryParser:
     - Columns:
         - Material: Product code (may need alias resolution)
         - Plant: Location ID (e.g., 6122, 6130)
-        - Storage Location: 4000 = at plant, 4070 = at Lineage
-        - Unrestricted: Quantity in cases (10 units per case)
+        - Storage Location: 4000 = at plant, 4070 = at Lineage, 5000 = ignore
+        - Base Unit of Measure: CAS (cases, 10 units each) or EA (each, 1 unit)
+        - Unrestricted: Quantity in the unit specified by Base Unit of Measure
 
     The parser:
     1. Reads the inventory data
-    2. Aggregates quantities by Material + Plant + Storage Location
-    3. Converts cases to units (multiply by 10)
-    4. Handles negative quantities (sets to 0 with warning)
-    5. Optionally resolves product aliases
+    2. Skips entries with Storage Location 5000
+    3. Converts quantities to units based on Base Unit of Measure (CAS: ×10, EA: ×1)
+    4. Aggregates quantities by Material + Plant + Storage Location
+    5. Handles negative quantities (sets to 0 with warning)
+    6. Optionally resolves product aliases
     """
 
-    # Units per case
-    UNITS_PER_CASE = 10.0
+    # Unit conversion factors
+    UNIT_CONVERSION = {
+        'CAS': 10.0,  # Cases: 10 units per case
+        'EA': 1.0,    # Each: already in units
+    }
 
     def __init__(
         self,
@@ -77,7 +82,7 @@ class InventoryParser:
         )
 
         # Validate required columns
-        required_cols = {"Material", "Plant", "Unrestricted"}
+        required_cols = {"Material", "Plant", "Unrestricted", "Base Unit of Measure"}
         if not required_cols.issubset(df.columns):
             missing = required_cols - set(df.columns)
             raise ValueError(f"Missing required columns: {missing}")
@@ -89,12 +94,15 @@ class InventoryParser:
         raw_entries = []
         negative_count = 0
         unmapped_products = set()
+        skipped_5000 = 0
+        unknown_units = set()
 
         for _, row in df.iterrows():
             # Extract data
             material = str(row["Material"]).strip()
             plant = str(int(row["Plant"])) if pd.notna(row["Plant"]) else None
-            quantity_cases = float(row["Unrestricted"]) if pd.notna(row["Unrestricted"]) else 0.0
+            quantity_raw = float(row["Unrestricted"]) if pd.notna(row["Unrestricted"]) else 0.0
+            base_unit = str(row["Base Unit of Measure"]).strip().upper() if pd.notna(row["Base Unit of Measure"]) else None
             storage_location = None
             if has_storage_location and pd.notna(row.get("Storage Location")):
                 storage_location = str(int(row["Storage Location"]))
@@ -103,8 +111,17 @@ class InventoryParser:
             if plant is None:
                 continue
 
-            # Convert cases to units
-            quantity_units = quantity_cases * self.UNITS_PER_CASE
+            # Skip Storage Location 5000
+            if storage_location == "5000":
+                skipped_5000 += 1
+                continue
+
+            # Convert to units based on Base Unit of Measure
+            if base_unit not in self.UNIT_CONVERSION:
+                unknown_units.add(base_unit)
+                quantity_units = quantity_raw  # Default to 1:1 if unknown
+            else:
+                quantity_units = quantity_raw * self.UNIT_CONVERSION[base_unit]
 
             # Handle negative quantities
             if quantity_units < 0:
@@ -149,6 +166,18 @@ class InventoryParser:
         if negative_count > 0:
             warnings.warn(
                 f"Found {negative_count} negative quantity values. These were set to 0.",
+                UserWarning
+            )
+
+        if skipped_5000 > 0:
+            warnings.warn(
+                f"Skipped {skipped_5000} entries with Storage Location 5000 (excluded from inventory).",
+                UserWarning
+            )
+
+        if unknown_units:
+            warnings.warn(
+                f"Found {len(unknown_units)} unknown unit types (using 1:1 conversion): {sorted(list(unknown_units))}",
                 UserWarning
             )
 
