@@ -140,17 +140,49 @@ class WasteCostBreakdown:
 
 
 @dataclass
+class HoldingCostBreakdown:
+    """
+    Detailed holding cost breakdown by storage type.
+
+    Tracks pallet-based storage costs for frozen and ambient inventory.
+    Uses ceiling rounding: partial pallets cost as full pallets (50 units = 1 pallet cost).
+
+    Attributes:
+        total_cost: Total holding cost across all inventory
+        frozen_cost: Cost of frozen storage
+        ambient_cost: Cost of ambient storage (includes thawed)
+        cost_by_location: Holding cost breakdown by location
+        cost_by_product: Holding cost breakdown by product
+        cost_by_date: Holding cost breakdown by date
+    """
+    total_cost: float = 0.0
+    frozen_cost: float = 0.0
+    ambient_cost: float = 0.0
+    cost_by_location: Dict[str, float] = field(default_factory=dict)
+    cost_by_product: Dict[str, float] = field(default_factory=dict)
+    cost_by_date: Dict[date, float] = field(default_factory=dict)
+
+    def __str__(self) -> str:
+        """String representation."""
+        return (
+            f"Holding Cost: ${self.total_cost:,.2f} "
+            f"(Frozen: ${self.frozen_cost:,.2f}, Ambient: ${self.ambient_cost:,.2f})"
+        )
+
+
+@dataclass
 class TotalCostBreakdown:
     """
     Aggregated cost breakdown across all components.
 
-    Combines labor, production, transport, and waste costs into total cost to serve.
+    Combines labor, production, transport, holding, and waste costs into total cost to serve.
 
     Attributes:
         total_cost: Total cost to serve (sum of all components)
         labor: Labor cost breakdown
         production: Production cost breakdown
         transport: Transport cost breakdown
+        holding: Holding/storage cost breakdown (pallet-based)
         waste: Waste cost breakdown
         cost_per_unit_delivered: Average cost per unit delivered to customer
     """
@@ -158,6 +190,7 @@ class TotalCostBreakdown:
     labor: LaborCostBreakdown = field(default_factory=LaborCostBreakdown)
     production: ProductionCostBreakdown = field(default_factory=ProductionCostBreakdown)
     transport: TransportCostBreakdown = field(default_factory=TransportCostBreakdown)
+    holding: HoldingCostBreakdown = field(default_factory=HoldingCostBreakdown)
     waste: WasteCostBreakdown = field(default_factory=WasteCostBreakdown)
     cost_per_unit_delivered: float = 0.0
 
@@ -168,6 +201,7 @@ class TotalCostBreakdown:
             f"  {self.labor}\n"
             f"  {self.production}\n"
             f"  {self.transport}\n"
+            f"  {self.holding}\n"
             f"  {self.waste}\n"
             f"  Cost per unit delivered: ${self.cost_per_unit_delivered:.4f}"
         )
@@ -180,11 +214,12 @@ class TotalCostBreakdown:
             Dictionary mapping component name to proportion (0.0 to 1.0)
         """
         if self.total_cost == 0:
-            return {"labor": 0.0, "production": 0.0, "transport": 0.0, "waste": 0.0}
+            return {"labor": 0.0, "production": 0.0, "transport": 0.0, "holding": 0.0, "waste": 0.0}
 
         return {
             "labor": self.labor.total_cost / self.total_cost,
             "production": self.production.total_cost / self.total_cost,
             "transport": self.transport.total_cost / self.total_cost,
+            "holding": self.holding.total_cost / self.total_cost,
             "waste": self.waste.total_cost / self.total_cost,
         }

@@ -82,7 +82,7 @@ class CostStructure(BaseModel):
         ge=0
     )
 
-    # Storage costs
+    # Storage costs (unit-based - legacy)
     storage_cost_frozen_per_unit_day: float = Field(
         default=0.05,
         description="Frozen storage cost per unit per day ($/unit/day)",
@@ -91,6 +91,23 @@ class CostStructure(BaseModel):
     storage_cost_ambient_per_unit_day: float = Field(
         default=0.02,
         description="Ambient storage cost per unit per day ($/unit/day)",
+        ge=0
+    )
+
+    # Storage costs (pallet-based - new preferred method)
+    storage_cost_fixed_per_pallet: Optional[float] = Field(
+        default=None,
+        description="Fixed cost per pallet when entering storage ($/pallet)",
+        ge=0
+    )
+    storage_cost_per_pallet_day_frozen: Optional[float] = Field(
+        default=None,
+        description="Daily holding cost per pallet in frozen storage ($/pallet/day)",
+        ge=0
+    )
+    storage_cost_per_pallet_day_ambient: Optional[float] = Field(
+        default=None,
+        description="Daily holding cost per pallet in ambient storage ($/pallet/day)",
         ge=0
     )
 

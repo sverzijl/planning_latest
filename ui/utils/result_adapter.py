@@ -16,6 +16,7 @@ from src.costs.cost_breakdown import (
     LaborCostBreakdown,
     ProductionCostBreakdown,
     TransportCostBreakdown,
+    HoldingCostBreakdown,
     WasteCostBreakdown,
 )
 from src.models.truck_load import TruckLoadPlan, TruckLoad
@@ -302,12 +303,14 @@ def _create_cost_breakdown(model: Any, solution: dict) -> TotalCostBreakdown:
     shortage_cost = solution.get('total_shortage_cost', 0)
     freeze_cost = solution.get('total_freeze_cost', 0)  # Freeze/thaw state transition costs
     thaw_cost = solution.get('total_thaw_cost', 0)
-    inventory_cost = solution.get('total_inventory_cost', 0)  # Holding costs
+    holding_cost = solution.get('total_holding_cost', 0)  # Pallet-based storage costs
+    frozen_holding_cost = solution.get('frozen_holding_cost', 0)
+    ambient_holding_cost = solution.get('ambient_holding_cost', 0)
 
     # Calculate total cost (sum of all components)
     total_cost = (
         labor_cost + production_cost + transport_cost + truck_cost +
-        shortage_cost + freeze_cost + thaw_cost + inventory_cost
+        shortage_cost + freeze_cost + thaw_cost + holding_cost
     )
 
     # Get daily labor hours and costs
@@ -392,12 +395,23 @@ def _create_cost_breakdown(model: Any, solution: dict) -> TotalCostBreakdown:
         waste_details=[],  # Explicit empty list
     )
 
+    # Build holding cost breakdown (pallet-based storage costs)
+    holding_breakdown = HoldingCostBreakdown(
+        total_cost=holding_cost,
+        frozen_cost=frozen_holding_cost,
+        ambient_cost=ambient_holding_cost,
+        cost_by_location={},  # Could populate from cohort_inventory if needed
+        cost_by_product={},  # Could populate from cohort_inventory if needed
+        cost_by_date={},  # Could populate from cohort_inventory if needed
+    )
+
     # Build total cost breakdown
     return TotalCostBreakdown(
         total_cost=total_cost,
         labor=labor_breakdown,
         production=production_breakdown,
         transport=transport_breakdown,
+        holding=holding_breakdown,
         waste=waste_breakdown,
         cost_per_unit_delivered=total_cost / total_units if total_units > 0 else 0,
     )
