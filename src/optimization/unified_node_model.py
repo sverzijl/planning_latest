@@ -353,6 +353,24 @@ class UnifiedNodeModel(BaseOptimizationModel):
         max_daily_production = self.get_max_daily_production()
         max_truck_capacity = self.get_max_truck_capacity()
 
+        # Calculate max initial inventory to ensure bounds accommodate existing stock
+        # This prevents infeasibility when initial inventory cohorts exceed daily production
+        max_initial_inventory = 0.0
+        if self.initial_inventory:
+            # initial_inventory format: {(node, prod, prod_date, state): qty}
+            max_initial_inventory = max(self.initial_inventory.values())
+
+        # Use the larger of daily production or initial inventory for inventory bounds
+        # This ensures both production cohorts AND initial inventory cohorts fit within bounds
+        max_inventory_cohort = max(max_daily_production, max_initial_inventory)
+
+        # Store as instance variable for use in _add_objective()
+        self.max_inventory_cohort = max_inventory_cohort
+
+        if max_initial_inventory > max_daily_production:
+            print(f"  ⚠️  Initial inventory ({max_initial_inventory:,.0f} units) exceeds daily production ({max_daily_production:,.0f} units)")
+            print(f"      Adjusting inventory bounds to accommodate existing stock")
+
         # Production variables (only for manufacturing nodes)
         production_index = [
             (node_id, prod, date)
@@ -373,7 +391,7 @@ class UnifiedNodeModel(BaseOptimizationModel):
             model.inventory_cohort = Var(
                 model.cohort_index,
                 within=NonNegativeReals,
-                bounds=(0, max_daily_production),  # Phase 2 #7: Cohort max = one day's production
+                bounds=(0, max_inventory_cohort),  # Adaptive bound: max(daily_production, initial_inventory)
                 doc="Inventory by node, product, production cohort, date, and state"
             )
         else:
@@ -393,11 +411,12 @@ class UnifiedNodeModel(BaseOptimizationModel):
             model.shipment_cohort_index = list(self.shipment_cohort_index_set)
 
             # shipment_cohort[route, product, prod_date, delivery_date, arrival_state]
-            shipment_bound = min(max_daily_production, max_truck_capacity)
+            # Use max_inventory_cohort (not max_daily_production) to accommodate initial inventory shipments
+            shipment_bound = min(max_inventory_cohort, max_truck_capacity)
             model.shipment_cohort = Var(
                 model.shipment_cohort_index,
                 within=NonNegativeReals,
-                bounds=(0, shipment_bound),  # Phase 2 #8: Shipment bounded by min(production, truck)
+                bounds=(0, shipment_bound),  # Adaptive bound: min(max_inventory_cohort, truck_capacity)
                 doc="Shipment quantity by route, product, production cohort, delivery date, and arrival state"
             )
             print(f"  Shipment cohort indices: {len(self.shipment_cohort_index_set):,}")
@@ -2306,17 +2325,20 @@ class UnifiedNodeModel(BaseOptimizationModel):
                 # Calculate maximum pallet count for variable bounds (tightens search space)
                 # CRITICAL FIX (Quick Win #2): A cohort represents production from ONE day,
                 # not cumulative days! Maximum inventory in any cohort = max daily production.
+                # ADAPTIVE BOUNDS: Also consider initial inventory to handle edge cases where
+                # existing stock exceeds daily production capacity.
+                #
                 # OLD (WRONG): max_inventory_per_cohort = max_daily_production * planning_days  # Gave 1,715 pallets!
-                # NEW (CORRECT): max_pallets_per_cohort = ceil(max_daily_production / UNITS_PER_PALLET)  # Gives 62 pallets (27x tighter!)
-                max_daily_production = self.get_max_daily_production()  # Use actual calculated max
-                max_pallets_per_cohort = int(math.ceil(max_daily_production / self.UNITS_PER_PALLET))
+                # NEW (CORRECT): max_pallets_per_cohort = ceil(max_inventory_cohort / UNITS_PER_PALLET)
+                #                where max_inventory_cohort = max(daily_production, initial_inventory)
+                max_pallets_per_cohort = int(math.ceil(self.max_inventory_cohort / self.UNITS_PER_PALLET))
 
-                # Add integer pallet count variables with TIGHTENED bounds
+                # Add integer pallet count variables with ADAPTIVE TIGHTENED bounds
                 model.pallet_count = Var(
                     model.cohort_index,
                     within=NonNegativeIntegers,
-                    bounds=(0, max_pallets_per_cohort),  # Quick Win #2: Fixed from (0, 1715) to (0, 62)!
-                    doc="Pallet count for inventory cohort (max = one day's production in pallets)"
+                    bounds=(0, max_pallets_per_cohort),  # Adaptive bound accommodates both production and initial inventory
+                    doc="Pallet count for inventory cohort (adaptive bound based on max cohort size)"
                 )
 
                 # Ceiling constraint: enforce pallet_count >= ceil(inventory_qty / UNITS_PER_PALLET)
