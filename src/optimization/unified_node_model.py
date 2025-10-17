@@ -430,6 +430,49 @@ class UnifiedNodeModel(BaseOptimizationModel):
             #     doc="Pallet count loaded on truck (rounded up, partial pallets count as full)"
             # )
 
+        # Changeover tracking variables (for startup/shutdown/changeover overhead)
+        # These binary and integer variables track production days and product counts
+        # to enable accurate capacity modeling with manufacturing overhead time
+        if self.manufacturing_nodes:
+            # Binary: Is any production happening at this node on this date?
+            production_day_index = [
+                (node_id, date)
+                for node_id in self.manufacturing_nodes
+                for date in model.dates
+            ]
+            model.production_day = Var(
+                production_day_index,
+                within=Binary,
+                doc="Binary: 1 if any production occurs at this node on this date"
+            )
+
+            # Relaxed binary: Is each specific product produced? (continuous [0,1])
+            # NOTE: Relaxed from Binary to NonNegativeReals with bounds=(0,1) for performance
+            # The sum constraint ensures these will be integer in optimal solution
+            product_produced_index = [
+                (node_id, prod, date)
+                for node_id in self.manufacturing_nodes
+                for prod in model.products
+                for date in model.dates
+            ]
+            model.product_produced = Var(
+                product_produced_index,
+                within=NonNegativeReals,
+                bounds=(0, 1),
+                doc="Indicator: 1 if this product is produced (relaxed for performance)"
+            )
+
+            # Integer: Count of distinct products produced
+            model.num_products_produced = Var(
+                production_day_index,
+                within=NonNegativeIntegers,
+                bounds=(0, len(model.products)),
+                doc="Number of distinct products produced on this date (for changeover calculation)"
+            )
+
+            print(f"  Changeover tracking: {len(production_day_index):,} production days, "
+                  f"{len(product_produced_index):,} product indicators")
+
         print(f"  Variables created successfully")
 
         # ==================
@@ -447,6 +490,7 @@ class UnifiedNodeModel(BaseOptimizationModel):
             self._add_aggregated_demand_satisfaction(model)
 
         self._add_production_capacity_constraints(model)
+        self._add_changeover_tracking_constraints(model)
 
         # Add truck constraints (Phase 7)
         if self.truck_schedules:
@@ -1541,10 +1585,32 @@ class UnifiedNodeModel(BaseOptimizationModel):
         )
 
     def _add_production_capacity_constraints(self, model: ConcreteModel) -> None:
-        """Add production capacity constraints for manufacturing nodes."""
+        """Add production capacity constraints for manufacturing nodes.
+
+        Enforces capacity considering:
+        1. Production time (quantity / production_rate)
+        2. Daily overhead: startup + shutdown (if any production)
+        3. Changeover time: (num_products - 1) * changeover_time
+
+        Uses changeover tracking variables to accurately model manufacturing overhead.
+        """
 
         def production_capacity_rule(model, node_id, date):
-            """Total production cannot exceed capacity at manufacturing nodes."""
+            """Total production time + overhead cannot exceed available labor hours.
+
+            Constraint structure:
+                production_time + overhead_time <= labor_hours
+
+            Where:
+                production_time = total_quantity / production_rate
+                overhead_time = (startup + shutdown - changeover) * production_day +
+                               changeover * num_products_produced
+
+            This formulation correctly models:
+                - 0 products: overhead = 0
+                - 1 product:  overhead = startup + shutdown
+                - N products: overhead = startup + shutdown + (N-1) * changeover
+            """
 
             node = self.nodes[node_id]
             if not node.can_produce():
@@ -1561,7 +1627,7 @@ class UnifiedNodeModel(BaseOptimizationModel):
                 )
                 return total_prod == 0
 
-            # Calculate capacity: production_rate * labor_hours
+            # Get production rate
             production_rate = node.capabilities.production_rate_per_hour
 
             # Handle missing production rate
@@ -1574,22 +1640,47 @@ class UnifiedNodeModel(BaseOptimizationModel):
                 )
                 return total_prod == 0
 
+            # Calculate available labor hours
             labor_hours = labor_day.fixed_hours + (labor_day.overtime_hours if hasattr(labor_day, 'overtime_hours') else 0)
 
             # If this is a non-fixed day, use minimum hours
             if not labor_day.is_fixed_day and hasattr(labor_day, 'minimum_hours'):
                 labor_hours = max(labor_hours, labor_day.minimum_hours)
 
-            capacity = production_rate * labor_hours
-
-            # Total production across all products cannot exceed capacity
-            total_prod = sum(
+            # Calculate production time needed
+            total_production = sum(
                 model.production[node_id, prod, date]
                 for prod in model.products
                 if (node_id, prod, date) in model.production
             )
+            production_time = total_production / production_rate
 
-            return total_prod <= capacity
+            # Calculate overhead time (if changeover tracking enabled)
+            if hasattr(model, 'production_day') and (node_id, date) in model.production_day:
+                # Get overhead parameters from node capabilities
+                startup_hours = getattr(node, 'daily_startup_hours', 0.5)
+                shutdown_hours = getattr(node, 'daily_shutdown_hours', 0.5)
+                changeover_hours = getattr(node, 'default_changeover_hours', 1.0)
+
+                # Overhead calculation using reformulated expression:
+                # overhead = (startup + shutdown - changeover) * production_day + changeover * num_products
+                #
+                # This correctly calculates:
+                #   - 0 products: 0 overhead (production_day=0, num_products=0)
+                #   - 1 product:  startup + shutdown (production_day=1, num_products=1)
+                #   - N products: startup + shutdown + (N-1)*changeover (production_day=1, num_products=N)
+                overhead_time = (
+                    (startup_hours + shutdown_hours - changeover_hours) * model.production_day[node_id, date] +
+                    changeover_hours * model.num_products_produced[node_id, date]
+                )
+
+                # Total time constraint: production time + overhead <= available hours
+                return production_time + overhead_time <= labor_hours
+            else:
+                # Changeover tracking not enabled - use old capacity calculation
+                # (This preserves backward compatibility if changeover vars not created)
+                capacity = production_rate * labor_hours
+                return total_production <= capacity
 
         manufacturing_date_pairs = [
             (node_id, date)
@@ -1602,6 +1693,105 @@ class UnifiedNodeModel(BaseOptimizationModel):
             rule=production_capacity_rule,
             doc="Production capacity limits at manufacturing nodes"
         )
+
+    def _add_changeover_tracking_constraints(self, model: ConcreteModel) -> None:
+        """Add constraints to track production days and product changeovers.
+
+        These constraints link production quantities to binary indicators and count
+        the number of distinct products made each day. This enables accurate
+        capacity modeling that accounts for startup, shutdown, and changeover time.
+
+        Binary linking strategy:
+        1. production > 0 => product_produced = 1 (big-M constraint)
+        2. num_products_produced = sum(product_produced) (counting)
+        3. production_day = 1 iff num_products_produced >= 1 (upper/lower bounds)
+        """
+
+        if not hasattr(model, 'production_day'):
+            # Changeover tracking variables not created (no manufacturing nodes)
+            return
+
+        # Get index sets (must match variable creation in build_model)
+        production_day_index = [
+            (node_id, date)
+            for node_id in self.manufacturing_nodes
+            for date in model.dates
+        ]
+
+        product_produced_index = [
+            (node_id, prod, date)
+            for node_id in self.manufacturing_nodes
+            for prod in model.products
+            for date in model.dates
+        ]
+
+        # Constraint 1: Link production quantity to product indicator
+        def product_produced_linking_rule(model, node_id, prod, date):
+            """If product is produced (qty > 0), force product_produced = 1.
+
+            Uses big-M formulation: production <= M * product_produced
+            If product_produced = 0, then production must be 0.
+            If production > 0, then product_produced must be 1.
+
+            M is chosen as conservative upper bound on daily production per product.
+            """
+            M = 20000  # Max daily production = 19,600 units (1,400/hr × 14hr)
+            return model.production[node_id, prod, date] <= M * model.product_produced[node_id, prod, date]
+
+        model.product_produced_linking_con = Constraint(
+            product_produced_index,
+            rule=product_produced_linking_rule,
+            doc="Link production quantity to binary product indicator (big-M)"
+        )
+
+        # Constraint 2: Count number of distinct products produced
+        def num_products_counting_rule(model, node_id, date):
+            """Count how many distinct products are produced on this date.
+
+            num_products_produced = sum of product_produced indicators
+            """
+            return model.num_products_produced[node_id, date] == sum(
+                model.product_produced[node_id, prod, date]
+                for prod in model.products
+                if (node_id, prod, date) in model.product_produced
+            )
+
+        model.num_products_counting_con = Constraint(
+            production_day_index,
+            rule=num_products_counting_rule,
+            doc="Count number of distinct products produced each day"
+        )
+
+        # Constraint 3a: Link production_day to num_products (lower bound)
+        def production_day_lower_rule(model, node_id, date):
+            """If num_products >= 1, then production_day must be 1.
+
+            num_products <= max_products * production_day
+            """
+            max_products = len(model.products)
+            return model.num_products_produced[node_id, date] <= max_products * model.production_day[node_id, date]
+
+        model.production_day_lower_con = Constraint(
+            production_day_index,
+            rule=production_day_lower_rule,
+            doc="Production day indicator: lower bound"
+        )
+
+        # Constraint 3b: Link production_day to num_products (upper bound)
+        def production_day_upper_rule(model, node_id, date):
+            """If num_products = 0, then production_day must be 0.
+
+            production_day <= num_products (forces 0 when no production)
+            """
+            return model.production_day[node_id, date] <= model.num_products_produced[node_id, date]
+
+        model.production_day_upper_con = Constraint(
+            production_day_index,
+            rule=production_day_upper_rule,
+            doc="Production day indicator: upper bound"
+        )
+
+        print(f"  Changeover tracking constraints added ({len(product_produced_index) + 3 * len(production_day_index):,} constraints)")
 
     def _add_objective(self, model: ConcreteModel) -> None:
         """Add objective function: minimize total cost.
