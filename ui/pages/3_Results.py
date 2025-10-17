@@ -20,7 +20,7 @@ import pandas as pd
 from datetime import datetime
 import math
 from ui import session_state
-from ui.utils import adapt_optimization_results
+from ui.utils import adapt_optimization_results, extract_labor_hours
 from ui.components.styling import apply_custom_css, section_header, colored_metric, success_badge, error_badge, warning_badge
 from ui.components.navigation import render_page_header, check_planning_required
 from ui.components import (
@@ -421,8 +421,13 @@ with tab_overview:
 
     # Production insights
     if production_schedule.daily_labor_hours:
-        max_hours_day = max(production_schedule.daily_labor_hours.items(), key=lambda x: x[1])
-        insights.append(f"📅 **Peak production day:** {max_hours_day[0]} with {max_hours_day[1]:.1f} labor hours")
+        # Find day with maximum labor hours (handle both dict and numeric formats)
+        max_hours_day = max(
+            production_schedule.daily_labor_hours.items(),
+            key=lambda x: extract_labor_hours(x[1], 0)
+        )
+        max_hours_value = extract_labor_hours(max_hours_day[1], 0)
+        insights.append(f"📅 **Peak production day:** {max_hours_day[0]} with {max_hours_value:.1f} labor hours")
 
     # Cost insights
     if cost_breakdown:
@@ -525,7 +530,7 @@ with tab_production:
             daily_labor_hours=filtered_daily_labor_hours,
             infeasibilities=production_schedule.infeasibilities,
             total_units=sum(b.quantity for b in filtered_batches),
-            total_labor_hours=sum(filtered_daily_labor_hours.values()),
+            total_labor_hours=sum(extract_labor_hours(hrs, 0) for hrs in filtered_daily_labor_hours.values()),
         )
     else:
         # No batches, use original schedule

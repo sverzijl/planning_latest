@@ -5,6 +5,7 @@ import plotly.express as px
 import pandas as pd
 from datetime import datetime
 from src.models.production_schedule import ProductionSchedule
+from ui.utils import extract_labor_hours
 
 
 def render_production_gantt(production_schedule: ProductionSchedule, height: int = 500):
@@ -104,7 +105,8 @@ def render_labor_hours_chart(production_schedule: ProductionSchedule, height: in
     # Sort by date
     sorted_dates = sorted(daily_labor.keys())
     dates_str = [str(d) for d in sorted_dates]
-    hours = [daily_labor[d] for d in sorted_dates]
+    # Extract numeric hours from dict/numeric format
+    hours = [extract_labor_hours(daily_labor[d], 0) for d in sorted_dates]
 
     # Get labor calendar to show capacity
     # For now, just show actual hours

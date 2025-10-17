@@ -6,6 +6,7 @@ from typing import List
 from src.models.production_schedule import ProductionSchedule
 from src.models.shipment import Shipment
 from src.models.truck_load import TruckLoadPlan
+from ui.utils import extract_labor_hours
 
 
 def render_production_batches_table(production_schedule: ProductionSchedule, max_rows: int = None):
@@ -268,11 +269,16 @@ def render_daily_breakdown_table(production_schedule: ProductionSchedule):
 
     data = []
     for date in all_dates:
+        # Extract numeric labor hours (handle both dict and numeric formats)
+        labor_hours = extract_labor_hours(daily_labor.get(date), 0)
+        production_units = daily_totals.get(date, 0)
+        units_per_hour = production_units / labor_hours if labor_hours > 0 else 0
+
         data.append({
             'Date': date,
-            'Production (units)': f"{daily_totals.get(date, 0):,.0f}",
-            'Labor Hours': f"{daily_labor.get(date, 0):.1f}",
-            'Units/Hour': f"{daily_totals.get(date, 0) / daily_labor.get(date, 1) if daily_labor.get(date, 0) > 0 else 0:.0f}",
+            'Production (units)': f"{production_units:,.0f}",
+            'Labor Hours': f"{labor_hours:.1f}",
+            'Units/Hour': f"{units_per_hour:.0f}",
         })
 
     df = pd.DataFrame(data)
