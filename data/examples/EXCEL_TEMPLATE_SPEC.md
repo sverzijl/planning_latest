@@ -245,8 +245,19 @@ T4   Afternoon 6110    afternoon       14:00          6110            14080     
 | `shortage_penalty_per_unit` | Stockout penalty | $/unit | 10.00 |
 | `default_regular_rate` | Default labor rate | $/hour | 25.00 |
 | `default_overtime_rate` | Default OT rate | $/hour | 37.50 |
-| `storage_cost_frozen_per_unit_day` | Frozen storage (alt) | $/(unit·day) | 0.10 |
-| `storage_cost_ambient_per_unit_day` | Ambient storage (alt) | $/(unit·day) | 0.05 |
+| `storage_cost_frozen_per_unit_day` | Frozen storage (unit-based, legacy) | $/(unit·day) | 0.10 |
+| `storage_cost_ambient_per_unit_day` | Ambient storage (unit-based, legacy) | $/(unit·day) | 0.05 |
+| `storage_cost_fixed_per_pallet` | Fixed pallet storage cost (NEW 2025-10-17) | $/pallet | 0.0 |
+| `storage_cost_per_pallet_day_frozen` | Frozen storage per pallet per day (NEW) | $/pallet/day | 0.5 |
+| `storage_cost_per_pallet_day_ambient` | Ambient storage per pallet per day (NEW) | $/pallet/day | 0.2 |
+
+**Pallet-Based Storage Costs (Added 2025-10-17):**
+- **Pallet definition:** 320 units = 32 cases = 1 pallet
+- **Rounding behavior:** Partial pallets cost as full pallets (50 units = 1 pallet cost)
+- **Precedence:** If both pallet-based and unit-based costs are specified, pallet-based takes precedence
+- **Conversion:** To convert unit-based to pallet-based: `pallet_cost = unit_cost × 320`
+- **Recommended:** Use pallet-based costs for accurate storage cost representation
+- **Legacy support:** Unit-based costs still supported for backward compatibility
 
 **Example Rows:**
 ```

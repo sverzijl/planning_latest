@@ -431,6 +431,10 @@ class ExcelParser:
             truck_fixed_cost=cost_dict.get("truck_fixed_cost", 100.0),
             storage_cost_frozen_per_unit_day=cost_dict.get("storage_cost_frozen_per_unit_day", 0.05),
             storage_cost_ambient_per_unit_day=cost_dict.get("storage_cost_ambient_per_unit_day", 0.02),
+            # Pallet-based storage costs (new - 2025-10-17)
+            storage_cost_fixed_per_pallet=cost_dict.get("storage_cost_fixed_per_pallet"),  # None if not present
+            storage_cost_per_pallet_day_frozen=cost_dict.get("storage_cost_per_pallet_day_frozen"),  # None if not present
+            storage_cost_per_pallet_day_ambient=cost_dict.get("storage_cost_per_pallet_day_ambient"),  # None if not present
             waste_cost_multiplier=cost_dict.get("waste_cost_multiplier", 1.5),
             shortage_penalty_per_unit=cost_dict.get("shortage_penalty_per_unit", 10.0),
         )

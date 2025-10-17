@@ -50,6 +50,10 @@ class UnifiedModelParser:
             capabilities = NodeCapabilities(
                 can_manufacture=bool(row.get('can_manufacture', False)),
                 production_rate_per_hour=float(row['production_rate_per_hour']) if pd.notna(row.get('production_rate_per_hour')) else None,
+                # Manufacturing overhead parameters (defaults match NodeCapabilities model)
+                daily_startup_hours=float(row.get('daily_startup_hours', 0.5)),
+                daily_shutdown_hours=float(row.get('daily_shutdown_hours', 0.5)),
+                default_changeover_hours=float(row.get('default_changeover_hours', 1.0)),
                 can_store=bool(row.get('can_store', True)),
                 storage_mode=self._parse_storage_mode(row.get('storage_mode', 'ambient')),
                 storage_capacity=float(row['storage_capacity']) if pd.notna(row.get('storage_capacity')) else None,

@@ -473,6 +473,43 @@ class UnifiedNodeModel(BaseOptimizationModel):
             print(f"  Changeover tracking: {len(production_day_index):,} production days, "
                   f"{len(product_produced_index):,} product indicators")
 
+            # Labor cost decision variables (for piecewise labor cost modeling)
+            # These variables enable accurate labor cost calculation:
+            # - Fixed day: split hours into fixed (regular rate) vs overtime (OT rate)
+            # - Non-fixed day: enforce 4-hour minimum payment
+            # - Include overhead: startup + shutdown + changeover time
+            model.labor_hours_used = Var(
+                production_day_index,
+                within=NonNegativeReals,
+                doc="Actual labor hours used (production time + overhead time)"
+            )
+
+            model.labor_hours_paid = Var(
+                production_day_index,
+                within=NonNegativeReals,
+                doc="Labor hours paid (includes 4-hour minimum on non-fixed days)"
+            )
+
+            model.fixed_hours_used = Var(
+                production_day_index,
+                within=NonNegativeReals,
+                doc="Labor hours charged at regular rate"
+            )
+
+            model.overtime_hours_used = Var(
+                production_day_index,
+                within=NonNegativeReals,
+                doc="Labor hours charged at overtime rate"
+            )
+
+            model.uses_overtime = Var(
+                production_day_index,
+                within=Binary,
+                doc="Binary indicator: 1 if overtime is used (for piecewise enforcement)"
+            )
+
+            print(f"  Labor cost variables: {len(production_day_index):,} labor hour variables added")
+
         print(f"  Variables created successfully")
 
         # ==================
@@ -491,6 +528,10 @@ class UnifiedNodeModel(BaseOptimizationModel):
 
         self._add_production_capacity_constraints(model)
         self._add_changeover_tracking_constraints(model)
+
+        # Add labor cost constraints (piecewise labor cost modeling)
+        if self.manufacturing_nodes and hasattr(model, 'labor_hours_used'):
+            self._add_labor_cost_constraints(model)
 
         # Add truck constraints (Phase 7)
         if self.truck_schedules:
@@ -915,6 +956,66 @@ class UnifiedNodeModel(BaseOptimizationModel):
         solution['frozen_holding_cost'] = frozen_holding_cost
         solution['ambient_holding_cost'] = ambient_holding_cost
         solution['total_cost'] = value(model.obj) if hasattr(model, 'obj') else 0.0
+
+        # Extract labor cost breakdown (piecewise labor cost model)
+        labor_hours_by_date = {}
+        total_labor_cost = 0.0
+        labor_cost_breakdown = {
+            'fixed_hours_cost': 0.0,
+            'overtime_cost': 0.0,
+            'non_fixed_cost': 0.0,
+            'total_fixed_hours': 0.0,
+            'total_overtime_hours': 0.0,
+            'total_non_fixed_hours': 0.0,
+        }
+
+        if hasattr(model, 'labor_hours_used'):
+            for node_id in self.manufacturing_nodes:
+                for date_val in model.dates:
+                    if (node_id, date_val) not in model.labor_hours_used:
+                        continue
+
+                    try:
+                        hours_used = value(model.labor_hours_used[node_id, date_val])
+                        hours_paid = value(model.labor_hours_paid[node_id, date_val])
+                        fixed_hours = value(model.fixed_hours_used[node_id, date_val])
+                        overtime_hours = value(model.overtime_hours_used[node_id, date_val])
+
+                        if hours_used > 0.01:  # Only store non-zero values
+                            labor_hours_by_date[date_val] = {
+                                'used': hours_used,
+                                'paid': hours_paid,
+                                'fixed': fixed_hours,
+                                'overtime': overtime_hours,
+                            }
+
+                            # Calculate cost for this date
+                            labor_day = self.labor_calendar.get_labor_day(date_val)
+                            if labor_day:
+                                if labor_day.is_fixed_day:
+                                    cost = (
+                                        labor_day.regular_rate * fixed_hours +
+                                        labor_day.overtime_rate * overtime_hours
+                                    )
+                                    labor_cost_breakdown['fixed_hours_cost'] += labor_day.regular_rate * fixed_hours
+                                    labor_cost_breakdown['overtime_cost'] += labor_day.overtime_rate * overtime_hours
+                                    labor_cost_breakdown['total_fixed_hours'] += fixed_hours
+                                    labor_cost_breakdown['total_overtime_hours'] += overtime_hours
+                                else:
+                                    # Non-fixed day
+                                    non_fixed_rate = labor_day.non_fixed_rate or labor_day.overtime_rate
+                                    cost = non_fixed_rate * hours_paid
+                                    labor_cost_breakdown['non_fixed_cost'] += cost
+                                    labor_cost_breakdown['total_non_fixed_hours'] += hours_paid
+
+                                total_labor_cost += cost
+                    except (ValueError, KeyError):
+                        # Variable not solved
+                        continue
+
+        solution['labor_hours_by_date'] = labor_hours_by_date
+        solution['labor_cost_breakdown'] = labor_cost_breakdown
+        solution['total_labor_cost'] = total_labor_cost
 
         # Backward compatibility alias
         solution['total_inventory_cost'] = total_holding_cost
@@ -1658,9 +1759,9 @@ class UnifiedNodeModel(BaseOptimizationModel):
             # Calculate overhead time (if changeover tracking enabled)
             if hasattr(model, 'production_day') and (node_id, date) in model.production_day:
                 # Get overhead parameters from node capabilities
-                startup_hours = getattr(node, 'daily_startup_hours', 0.5)
-                shutdown_hours = getattr(node, 'daily_shutdown_hours', 0.5)
-                changeover_hours = getattr(node, 'default_changeover_hours', 1.0)
+                startup_hours = node.capabilities.daily_startup_hours or 0.5
+                shutdown_hours = node.capabilities.daily_shutdown_hours or 0.5
+                changeover_hours = node.capabilities.default_changeover_hours or 1.0
 
                 # Overhead calculation using reformulated expression:
                 # overhead = (startup + shutdown - changeover) * production_day + changeover * num_products
@@ -1793,6 +1894,216 @@ class UnifiedNodeModel(BaseOptimizationModel):
 
         print(f"  Changeover tracking constraints added ({len(product_produced_index) + 3 * len(production_day_index):,} constraints)")
 
+    def _add_labor_cost_constraints(self, model: ConcreteModel) -> None:
+        """Add piecewise labor cost tracking constraints.
+
+        Implements accurate labor cost calculation with:
+        - Fixed day piecewise costs: regular rate for fixed hours, overtime rate for excess
+        - Non-fixed day costs: premium rate with 4-hour minimum payment enforcement
+        - Overhead time inclusion: startup + shutdown + changeover time included in labor hours
+
+        Constraints added:
+            1. labor_hours_linking_con: Links production quantity to labor hours (production + overhead)
+            2. fixed_hours_limit_con: Enforces fixed hours cannot exceed available fixed hours
+            3. overtime_calculation_con: Calculates overtime as hours used - fixed hours
+            4. minimum_hours_enforcement_con: Enforces 4-hour minimum on non-fixed days
+            5. labor_hours_paid_lower_con: Paid hours >= used hours
+            6. overtime_indicator_con: Binary enforcement for piecewise cost structure
+
+        Args:
+            model: Pyomo ConcreteModel with variables defined
+        """
+        if not hasattr(model, 'labor_hours_used'):
+            # Labor variables not created
+            return
+
+        production_day_index = [
+            (node_id, date)
+            for node_id in self.manufacturing_nodes
+            for date in model.dates
+        ]
+
+        # Constraint 1: Link production quantity to labor hours
+        # labor_hours_used = production_time + overhead_time
+        def labor_hours_linking_rule(model, node_id, date):
+            """Calculate total labor hours from production quantity and overhead.
+
+            labor_hours_used = (total_production / production_rate) + overhead_hours
+
+            Where overhead_hours = startup + shutdown + changeover time (from changeover tracking)
+            """
+            node = self.nodes[node_id]
+            production_rate = node.capabilities.production_rate_per_hour
+
+            if not production_rate or production_rate <= 0:
+                return Constraint.Skip
+
+            # Calculate production time
+            total_production = sum(
+                model.production[node_id, prod, date]
+                for prod in model.products
+                if (node_id, prod, date) in model.production
+            )
+            production_time = total_production / production_rate
+
+            # Calculate overhead time (if changeover tracking enabled)
+            if hasattr(model, 'production_day') and (node_id, date) in model.production_day:
+                startup_hours = node.capabilities.daily_startup_hours or 0.5
+                shutdown_hours = node.capabilities.daily_shutdown_hours or 0.5
+                changeover_hours = node.capabilities.default_changeover_hours or 1.0
+
+                overhead_time = (
+                    (startup_hours + shutdown_hours - changeover_hours) * model.production_day[node_id, date] +
+                    changeover_hours * model.num_products_produced[node_id, date]
+                )
+
+                # Link labor_hours_used to production + overhead
+                return model.labor_hours_used[node_id, date] == production_time + overhead_time
+            else:
+                # No changeover tracking - labor hours = production time only
+                return model.labor_hours_used[node_id, date] == production_time
+
+        model.labor_hours_linking_con = Constraint(
+            production_day_index,
+            rule=labor_hours_linking_rule,
+            doc="Link production quantity to labor hours (production time + overhead)"
+        )
+
+        # Constraint 2: Fixed hours upper bound and non-fixed day enforcement
+        # On fixed days: fixed_hours_used <= available_fixed_hours
+        # On non-fixed days: fixed_hours_used = 0 (all hours at non_fixed_rate)
+        def fixed_hours_limit_rule(model, node_id, date):
+            """Enforce fixed hours limits based on day type."""
+            labor_day = self.labor_calendar.get_labor_day(date)
+
+            if not labor_day or not labor_day.is_fixed_day:
+                # Non-fixed day or no labor: all hours at non_fixed_rate (no fixed hours)
+                return model.fixed_hours_used[node_id, date] == 0
+            else:
+                # Fixed day: limit to available fixed hours
+                return model.fixed_hours_used[node_id, date] <= labor_day.fixed_hours
+
+        model.fixed_hours_limit_con = Constraint(
+            production_day_index,
+            rule=fixed_hours_limit_rule,
+            doc="Fixed hours bounded by available fixed hours (zero on non-fixed days)"
+        )
+
+        # Constraint 3: Overtime calculation
+        # On fixed days: overtime_hours_used = labor_hours_used - fixed_hours_used
+        # On non-fixed days: overtime_hours_used = 0 (uses non_fixed_rate instead)
+        def overtime_calculation_rule(model, node_id, date):
+            """Calculate overtime hours on fixed days."""
+            labor_day = self.labor_calendar.get_labor_day(date)
+
+            if not labor_day or not labor_day.is_fixed_day:
+                # Non-fixed day: no overtime concept (uses non_fixed_rate)
+                return model.overtime_hours_used[node_id, date] == 0
+            else:
+                # Fixed day: overtime = total used - fixed used
+                return (model.overtime_hours_used[node_id, date] ==
+                        model.labor_hours_used[node_id, date] - model.fixed_hours_used[node_id, date])
+
+        model.overtime_calculation_con = Constraint(
+            production_day_index,
+            rule=overtime_calculation_rule,
+            doc="Calculate overtime hours as excess beyond fixed hours"
+        )
+
+        # Constraint 4: Paid hours lower bound (paid >= used)
+        def labor_hours_paid_lower_rule(model, node_id, date):
+            """Paid hours must at least equal used hours."""
+            return model.labor_hours_paid[node_id, date] >= model.labor_hours_used[node_id, date]
+
+        model.labor_hours_paid_lower_con = Constraint(
+            production_day_index,
+            rule=labor_hours_paid_lower_rule,
+            doc="Paid hours at least equal used hours"
+        )
+
+        # Constraint 5: Minimum hours enforcement (non-fixed days only)
+        def minimum_hours_enforcement_rule(model, node_id, date):
+            """Enforce 4-hour minimum payment on non-fixed days."""
+            labor_day = self.labor_calendar.get_labor_day(date)
+
+            if not labor_day or labor_day.is_fixed_day:
+                # Fixed days or no labor: no minimum hours requirement
+                return Constraint.Skip
+
+            # Non-fixed day: enforce minimum hours if specified
+            if hasattr(labor_day, 'minimum_hours') and labor_day.minimum_hours > 0:
+                return model.labor_hours_paid[node_id, date] >= labor_day.minimum_hours
+            else:
+                return Constraint.Skip
+
+        model.minimum_hours_enforcement_con = Constraint(
+            production_day_index,
+            rule=minimum_hours_enforcement_rule,
+            doc="Enforce minimum hours payment on non-fixed days"
+        )
+
+        # Constraint 6: Overtime binary indicator (for piecewise cost enforcement)
+        # Uses big-M to link overtime_hours_used to uses_overtime binary
+        # If overtime_hours_used > 0, then uses_overtime = 1
+        # If overtime_hours_used = 0, then uses_overtime can be 0 or 1 (minimization chooses 0)
+        def overtime_indicator_upper_rule(model, node_id, date):
+            """Link overtime hours to binary indicator (upper bound).
+
+            overtime_hours_used <= M * uses_overtime
+            If uses_overtime = 0, forces overtime_hours_used = 0
+            """
+            M = 14.0  # Max labor hours per day (12 fixed + 2 OT)
+            return model.overtime_hours_used[node_id, date] <= M * model.uses_overtime[node_id, date]
+
+        model.overtime_indicator_upper_con = Constraint(
+            production_day_index,
+            rule=overtime_indicator_upper_rule,
+            doc="Link overtime hours to binary indicator (big-M upper)"
+        )
+
+        def overtime_indicator_lower_rule(model, node_id, date):
+            """Link overtime hours to binary indicator (lower bound).
+
+            overtime_hours_used >= epsilon * uses_overtime
+            If overtime_hours_used > epsilon, forces uses_overtime = 1
+            """
+            epsilon = 0.01  # Small threshold
+            return model.overtime_hours_used[node_id, date] >= epsilon * model.uses_overtime[node_id, date]
+
+        model.overtime_indicator_lower_con = Constraint(
+            production_day_index,
+            rule=overtime_indicator_lower_rule,
+            doc="Link overtime hours to binary indicator (big-M lower)"
+        )
+
+        # Constraint 7: Piecewise enforcement - fixed hours must be "filled" before overtime
+        # If overtime is used (uses_overtime = 1), then fixed_hours_used must equal available_fixed_hours
+        # If no overtime (uses_overtime = 0), then fixed_hours_used = labor_hours_used
+        def piecewise_enforcement_rule(model, node_id, date):
+            """Enforce piecewise cost structure: fill fixed hours before overtime.
+
+            If uses_overtime = 1: fixed_hours_used >= available_fixed_hours - epsilon
+            This ensures we use all fixed hours before paying overtime rate.
+
+            The combination of this + overtime_calculation ensures correct piecewise split.
+            """
+            labor_day = self.labor_calendar.get_labor_day(date)
+
+            if not labor_day or not labor_day.is_fixed_day:
+                return Constraint.Skip  # Only applies to fixed days
+
+            # On fixed days: if overtime is used, must use ALL fixed hours first
+            # fixed_hours_used >= fixed_hours_available * uses_overtime
+            return model.fixed_hours_used[node_id, date] >= labor_day.fixed_hours * model.uses_overtime[node_id, date]
+
+        model.piecewise_enforcement_con = Constraint(
+            production_day_index,
+            rule=piecewise_enforcement_rule,
+            doc="Enforce piecewise structure: use all fixed hours before overtime"
+        )
+
+        print(f"  Labor cost constraints added ({len(production_day_index):,} node-date pairs, {8 * len(production_day_index):,} constraints)")
+
     def _add_objective(self, model: ConcreteModel) -> None:
         """Add objective function: minimize total cost.
 
@@ -1824,45 +2135,61 @@ class UnifiedNodeModel(BaseOptimizationModel):
                     origin, dest, prod, prod_date, delivery_date, state
                 ]
 
-        # Labor cost (based on actual production hours)
-        # Only charge labor when production occurs
+        # Labor cost (piecewise with overhead inclusion and 4-hour minimum enforcement)
+        # Uses labor decision variables for accurate cost calculation
         labor_cost = 0
-        for node_id in self.manufacturing_nodes:
-            node = self.nodes[node_id]
-            production_rate = node.capabilities.production_rate_per_hour
 
-            # Skip if no production rate defined
-            if not production_rate or production_rate <= 0:
-                continue
+        if hasattr(model, 'labor_hours_used'):
+            # Piecewise labor cost model
+            for node_id in self.manufacturing_nodes:
+                for date in model.dates:
+                    labor_day = self.labor_calendar.get_labor_day(date)
 
-            for date in model.dates:
-                # Calculate total production on this date
-                total_production = sum(
-                    model.production[node_id, prod, date]
-                    for prod in model.products
-                    if (node_id, prod, date) in model.production
-                )
+                    if not labor_day:
+                        # No labor on this date - no cost
+                        continue
 
-                # Calculate labor hours needed (production / rate)
-                labor_hours_needed = total_production / production_rate
+                    if labor_day.is_fixed_day:
+                        # Fixed day: piecewise cost (regular rate + overtime rate)
+                        # Cost = fixed_hours_used × regular_rate + overtime_hours_used × overtime_rate
+                        labor_cost += (
+                            labor_day.regular_rate * model.fixed_hours_used[node_id, date] +
+                            labor_day.overtime_rate * model.overtime_hours_used[node_id, date]
+                        )
+                    else:
+                        # Non-fixed day: premium rate × paid hours (includes 4-hour minimum)
+                        # Paid hours enforced by minimum_hours_enforcement_con constraint
+                        non_fixed_rate = labor_day.non_fixed_rate if labor_day.non_fixed_rate else labor_day.overtime_rate
+                        labor_cost += non_fixed_rate * model.labor_hours_paid[node_id, date]
 
-                # Get labor day to determine rate
-                labor_day = self.labor_calendar.get_labor_day(date)
+        else:
+            # Fallback to old blended rate calculation (if labor variables not created)
+            # This provides backward compatibility but should not be reached in normal operation
+            for node_id in self.manufacturing_nodes:
+                node = self.nodes[node_id]
+                production_rate = node.capabilities.production_rate_per_hour
 
-                if labor_day and labor_day.is_fixed_day:
-                    # Fixed day: regular rate for fixed hours, overtime for excess
-                    # Simplified: use average blended rate
-                    # This is approximate - actual cost varies by fixed vs OT hours
-                    blended_rate = (labor_day.regular_rate + labor_day.overtime_rate) / 2
-                    labor_cost += labor_hours_needed * blended_rate
-                elif labor_day and not labor_day.is_fixed_day:
-                    # Non-fixed day: premium rate with minimum hours
-                    non_fixed_rate = labor_day.non_fixed_rate if labor_day.non_fixed_rate else labor_day.overtime_rate
-                    billable_hours = labor_hours_needed  # Simplified - would need max with minimum_hours
-                    labor_cost += billable_hours * non_fixed_rate
-                else:
-                    # No labor day in calendar - use default rate
-                    labor_cost += labor_hours_needed * 25.0  # Default regular rate
+                if not production_rate or production_rate <= 0:
+                    continue
+
+                for date in model.dates:
+                    total_production = sum(
+                        model.production[node_id, prod, date]
+                        for prod in model.products
+                        if (node_id, prod, date) in model.production
+                    )
+
+                    labor_hours_needed = total_production / production_rate
+                    labor_day = self.labor_calendar.get_labor_day(date)
+
+                    if labor_day and labor_day.is_fixed_day:
+                        blended_rate = (labor_day.regular_rate + labor_day.overtime_rate) / 2
+                        labor_cost += labor_hours_needed * blended_rate
+                    elif labor_day and not labor_day.is_fixed_day:
+                        non_fixed_rate = labor_day.non_fixed_rate if labor_day.non_fixed_rate else labor_day.overtime_rate
+                        labor_cost += labor_hours_needed * non_fixed_rate
+                    else:
+                        labor_cost += labor_hours_needed * 25.0
 
         # Shortage penalty (if shortages allowed)
         shortage_cost = 0

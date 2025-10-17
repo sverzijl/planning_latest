@@ -42,6 +42,23 @@ class NodeCapabilities(BaseModel):
         description="Units per hour production rate (required if can_manufacture=True)"
     )
 
+    # Manufacturing overhead parameters (for capacity modeling)
+    daily_startup_hours: Optional[float] = Field(
+        default=0.5,
+        description="Daily production line startup time in hours (applies if can_manufacture=True)",
+        ge=0
+    )
+    daily_shutdown_hours: Optional[float] = Field(
+        default=0.5,
+        description="Daily production line shutdown time in hours (applies if can_manufacture=True)",
+        ge=0
+    )
+    default_changeover_hours: Optional[float] = Field(
+        default=1.0,
+        description="Default product changeover time in hours (applies if can_manufacture=True)",
+        ge=0
+    )
+
     # Storage capability
     can_store: bool = Field(
         default=True,
