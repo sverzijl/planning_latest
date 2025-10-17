@@ -146,11 +146,24 @@ def _create_production_schedule(
     daily_labor_hours = solution.get('labor_hours_by_date', {})
 
     # Update batch labor hours proportionally
+    # FIX: Handle new dict format for labor_hours_by_date
     for batch in batches:
         date_total = daily_totals.get(batch.production_date, 1)
         if date_total > 0:
             proportion = batch.quantity / date_total
-            batch.labor_hours_used = daily_labor_hours.get(batch.production_date, 0) * proportion
+
+            # Extract labor hours value (handle both dict and numeric formats)
+            labor_hours_value = daily_labor_hours.get(batch.production_date, 0)
+
+            # NEW FORMAT: {'used': X, 'paid': Y, 'fixed': Z, 'overtime': W}
+            if isinstance(labor_hours_value, dict):
+                labor_hours_value = labor_hours_value.get('used', 0)
+            # OLD FORMAT: numeric value (backward compatibility)
+            elif labor_hours_value is None:
+                labor_hours_value = 0
+            # else: use value as-is (numeric)
+
+            batch.labor_hours_used = labor_hours_value * proportion
 
     # Determine actual schedule start date
     if inventory_snapshot_date:
@@ -163,6 +176,17 @@ def _create_production_schedule(
         # Fallback to model start date
         actual_start_date = model.start_date
 
+    # Calculate total labor hours (handle both dict and numeric formats)
+    total_labor_hours = 0.0
+    for date_val, hours_val in daily_labor_hours.items():
+        if isinstance(hours_val, dict):
+            # NEW FORMAT: extract 'used' hours
+            total_labor_hours += hours_val.get('used', 0)
+        elif hours_val is not None:
+            # OLD FORMAT: numeric value
+            total_labor_hours += hours_val
+        # else: None value, skip (contributes 0)
+
     # Build ProductionSchedule
     return ProductionSchedule(
         manufacturing_site_id=manufacturing_site_id,  # Use variable determined above
@@ -173,7 +197,7 @@ def _create_production_schedule(
         daily_labor_hours=daily_labor_hours,
         infeasibilities=[],  # Optimal solution is feasible
         total_units=sum(b.quantity for b in batches if not b.id.startswith('INIT-')),  # Exclude initial inventory from production total
-        total_labor_hours=sum(daily_labor_hours.values()),
+        total_labor_hours=total_labor_hours,
     )
 
 
@@ -317,28 +341,48 @@ def _create_cost_breakdown(model: Any, solution: dict) -> TotalCostBreakdown:
     labor_hours_by_date = solution.get('labor_hours_by_date', {})
     labor_cost_by_date = solution.get('labor_cost_by_date', {})
 
-    # Convert flat cost dict to nested format matching LaborCostBreakdown.daily_breakdown type
-    # The UI expects Dict[date, Dict[str, float]] but optimization provides Dict[date, float]
+    # Convert labor hours to nested format for daily_breakdown
+    # Handle both dict and numeric formats
     daily_breakdown_nested: Dict[Date, Dict[str, float]] = {}
-    for date, total_cost in labor_cost_by_date.items():
-        daily_breakdown_nested[date] = {
-            'total_hours': labor_hours_by_date.get(date, 0),
-            'fixed_hours': 0,  # Not tracked separately in optimization
-            'overtime_hours': 0,
-            'fixed_cost': 0,
+    for date_val, total_cost_val in labor_cost_by_date.items():
+        labor_hours_val = labor_hours_by_date.get(date_val, 0)
+
+        # Extract total hours (handle both dict and numeric formats)
+        if isinstance(labor_hours_val, dict):
+            total_hours = labor_hours_val.get('used', 0)
+            fixed_hours = labor_hours_val.get('fixed', 0)
+            overtime_hours = labor_hours_val.get('overtime', 0)
+        else:
+            total_hours = labor_hours_val
+            fixed_hours = 0
+            overtime_hours = 0
+
+        daily_breakdown_nested[date_val] = {
+            'total_hours': total_hours,
+            'fixed_hours': fixed_hours,
+            'overtime_hours': overtime_hours,
+            'fixed_cost': 0,  # Not tracked separately in optimization
             'overtime_cost': 0,
             'non_fixed_cost': 0,
-            'total_cost': total_cost,
+            'total_cost': total_cost_val,
         }
 
+    # Calculate total labor hours (handle both dict and numeric formats)
+    total_labor_hours = 0.0
+    for date_val, hours_val in labor_hours_by_date.items():
+        if isinstance(hours_val, dict):
+            total_labor_hours += hours_val.get('used', 0)
+        elif hours_val is not None:
+            total_labor_hours += hours_val
+        # else: None value, skip (contributes 0)
+
     # Build labor cost breakdown
-    # Note: Optimization doesn't track fixed vs OT breakdown, so we use totals
     labor_breakdown = LaborCostBreakdown(
         total_cost=labor_cost,
         fixed_hours_cost=0,  # Not tracked separately in optimization
         overtime_cost=0,  # Not tracked separately in optimization
         non_fixed_labor_cost=0,  # Not tracked separately in optimization
-        total_hours=sum(labor_hours_by_date.values()),
+        total_hours=total_labor_hours,
         fixed_hours=0,
         overtime_hours=0,
         non_fixed_hours=0,
