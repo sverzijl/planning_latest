@@ -1,7 +1,7 @@
 {
-  "fill_rate": 0.6768519825890797,
-  "total_cost": 258914833.07010216,
-  "total_production": 67200.00000000001,
-  "solve_time": 0.4858055114746094,
+  "fill_rate": 0.7699037908782851,
+  "total_cost": 184433591.7596054,
+  "total_production": 61600.000000000015,
+  "solve_time": 43.64075589179993,
   "weekend_hub_inventory": true
 }

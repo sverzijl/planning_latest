@@ -1,0 +1,18 @@
+{
+  "test_name": "test_labor_cost_baseline_fixed_day_no_overtime",
+  "scenario": "Fixed day, 6h production (no overtime)",
+  "production_qty": 8400.0,
+  "labor_hours_production": 6.0,
+  "labor_hours_overhead": 0.75,
+  "labor_hours_total": 6.75,
+  "regular_rate": 20.0,
+  "overtime_rate": 30.0,
+  "blended_rate": 25.0,
+  "labor_cost_actual": 140.0,
+  "labor_cost_current_expected": 150.0,
+  "labor_cost_blended_with_overhead": 168.75,
+  "labor_cost_piecewise_correct": 135.0,
+  "bug": "Current model does NOT include overhead time in labor cost",
+  "error_amount": 33.75,
+  "error_pct": 25.0
+}

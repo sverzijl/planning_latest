@@ -331,7 +331,6 @@ pytest --cov=src tests/
   - Solution: Set pallet storage costs to 0.0 in Network_Config.xlsx for baseline testing
   - Performance: Test now completes in ~71s (was timing out at 188-199s)
   - Guidance: Pallet costs are optional advanced feature; disable for fast solve times with CBC
-  - See `INTEGRATION_TEST_FIX.md` for complete details
 - **2025-10-17:** Added **configurable manufacturing overhead and pallet-based storage costs** - ✅ **IMPLEMENTED**
   - Manufacturing overhead parameters (startup_hours, shutdown_hours, changeover_hours) now configurable via Network_Config.xlsx
   - Pallet-based storage costs (fixed_per_pallet, per_pallet_day_frozen, per_pallet_day_ambient) added to CostParameters sheet
@@ -339,7 +338,7 @@ pytest --cov=src tests/
   - Parsers updated (excel_parser.py, unified_model_parser.py) to load new parameters
   - UnifiedNodeModel uses node.capabilities instead of hardcoded defaults
   - Backward compatible: missing parameters use sensible defaults
-  - Documentation: NETWORK_CONFIG_PARAMETER_MIGRATION_GUIDE.md, EXCEL_TEMPLATE_SPEC.md updated
+  - Documentation: EXCEL_TEMPLATE_SPEC.md updated with new parameters
   - Example Network_Config.xlsx updated with new columns/rows
   - **Benefits:** Configurable operations parameters, accurate storage cost modeling, better cost reporting
 - **2025-10-17:** Added **piecewise labor cost modeling** with overhead time inclusion - ✅ **IMPLEMENTED**
@@ -352,7 +351,6 @@ pytest --cov=src tests/
   - Labor cost extraction: $4,925.85 example (was $0 with blended rate)
   - Variable count: +28 binary variables (0.14% increase)
   - Constraint count: +232 labor constraints (2.3% increase)
-  - See `PIECEWISE_LABOR_COST_IMPLEMENTATION.md` for complete details
 - **2025-10-17:** Added pallet-based holding costs with ceiling constraint enforcement
   - Storage: Integer `pallet_count` variables (18,675 for 4-week horizon) - ✅ **IMPLEMENTED**
   - Enforces: 50 units in storage = 1 pallet cost (not 0.156 pallets)

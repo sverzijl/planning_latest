@@ -159,7 +159,7 @@ pytest --cov=src --cov-report=html --cov-report=term
 # Then open htmlcov/index.html in browser
 ```
 
-**Test Coverage:** 266+ tests covering all core models, parsers, multi-file workflow, SAP IBP conversion, labor validation, and integrated optimization
+**Test Coverage:** 661 tests covering all core models, parsers, multi-file workflow, SAP IBP conversion, labor validation, and integrated optimization
 
 #### ⚠️ CRITICAL: Integration Test (Required for Model Changes)
 

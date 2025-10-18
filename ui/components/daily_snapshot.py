@@ -788,6 +788,10 @@ def _get_date_range(
 ) -> Optional[Tuple[Date, Date]]:
     """Get the overall date range from production and shipments.
 
+    The date range is capped at the planning horizon boundaries to ensure
+    the snapshot slider only shows dates within the optimization model's
+    planning period.
+
     Returns:
         Tuple of (min_date, max_date) or None if no data
     """
@@ -798,26 +802,36 @@ def _get_date_range(
     if hasattr(production_schedule, 'schedule_start_date') and production_schedule.schedule_start_date:
         planning_start = production_schedule.schedule_start_date
 
-    # Add production dates (only if on or after planning start)
+    # Get planning end date if available (critical for capping date range)
+    planning_end = None
+    if hasattr(production_schedule, 'schedule_end_date') and production_schedule.schedule_end_date:
+        planning_end = production_schedule.schedule_end_date
+
+    # Add production dates (only within planning horizon)
     if production_schedule and production_schedule.production_batches:
         for batch in production_schedule.production_batches:
             if planning_start is None or batch.production_date >= planning_start:
-                dates.append(batch.production_date)
+                if planning_end is None or batch.production_date <= planning_end:
+                    dates.append(batch.production_date)
 
-    # Add shipment dates
+    # Add shipment dates (only within planning horizon)
     for shipment in shipments:
         if hasattr(shipment, 'departure_date') and shipment.departure_date:
             if planning_start is None or shipment.departure_date >= planning_start:
-                dates.append(shipment.departure_date)
+                if planning_end is None or shipment.departure_date <= planning_end:
+                    dates.append(shipment.departure_date)
         if hasattr(shipment, 'arrival_date') and shipment.arrival_date:
             if planning_start is None or shipment.arrival_date >= planning_start:
-                dates.append(shipment.arrival_date)
+                if planning_end is None or shipment.arrival_date <= planning_end:
+                    dates.append(shipment.arrival_date)
         if hasattr(shipment, 'production_date') and shipment.production_date:
             if planning_start is None or shipment.production_date >= planning_start:
-                dates.append(shipment.production_date)
+                if planning_end is None or shipment.production_date <= planning_end:
+                    dates.append(shipment.production_date)
         if hasattr(shipment, 'delivery_date') and shipment.delivery_date:
             if planning_start is None or shipment.delivery_date >= planning_start:
-                dates.append(shipment.delivery_date)
+                if planning_end is None or shipment.delivery_date <= planning_end:
+                    dates.append(shipment.delivery_date)
 
     if not dates:
         return None

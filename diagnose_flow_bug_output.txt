@@ -1,4 +1,0 @@
-Traceback (most recent call last):
-  File "/home/sverzijl/planning_latest/diagnose_flow_bug.py", line 20, in <module>
-    from src.models.solver_config import SolverConfig
-ModuleNotFoundError: No module named 'src.models.solver_config'

@@ -1,1 +1,0 @@
-/bin/bash: line 1: PYTHONPATH=/home/sverzijl/planning_latest/src:: No such file or directory

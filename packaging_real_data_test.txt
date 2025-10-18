@@ -1,8 +1,0 @@
-Traceback (most recent call last):
-  File "/home/sverzijl/planning_latest/test_packaging_real_data.py", line 19, in <module>
-    from parsers.excel_parser import ExcelParser
-  File "/home/sverzijl/planning_latest/src/parsers/__init__.py", line 3, in <module>
-    from .excel_parser import ExcelParser
-  File "/home/sverzijl/planning_latest/src/parsers/excel_parser.py", line 11, in <module>
-    from ..models import (
-ImportError: attempted relative import beyond top-level package

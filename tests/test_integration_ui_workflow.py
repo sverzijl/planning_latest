@@ -361,7 +361,15 @@ def test_ui_workflow_4_weeks_with_initial_inventory(parsed_data):
     production_by_date_product = solution.get('production_by_date_product', {})
     total_production = sum(production_by_date_product.values())
     num_batches = len(solution.get('production_batches', []))
-    total_labor_hours = sum(solution.get('labor_hours_by_date', {}).values())
+
+    # Extract total labor hours (handle new dict format from piecewise labor cost)
+    labor_hours_by_date = solution.get('labor_hours_by_date', {})
+    if labor_hours_by_date and isinstance(next(iter(labor_hours_by_date.values()), {}), dict):
+        # New format: {date: {'used': X, 'paid': Y, ...}}
+        total_labor_hours = sum(v.get('used', 0) for v in labor_hours_by_date.values())
+    else:
+        # Old format: {date: float}
+        total_labor_hours = sum(labor_hours_by_date.values()) if labor_hours_by_date else 0.0
 
     print("\n" + "="*80)
     print("PRODUCTION SUMMARY")

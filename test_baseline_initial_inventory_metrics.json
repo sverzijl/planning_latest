@@ -1,7 +1,7 @@
 {
   "status": "optimal",
-  "fill_rate": 0.874599524523017,
-  "total_cost": 301768829.40067476,
-  "solve_time": 10.164992570877075,
+  "fill_rate": 0.9136402776962365,
+  "total_cost": 208157035.92075336,
+  "solve_time": 6.09935998916626,
   "initial_inventory_used": 23
 }
