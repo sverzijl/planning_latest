@@ -310,7 +310,10 @@ class BaseOptimizationModel(ABC):
                 if (result.objective_value is None or math.isinf(result.objective_value)) and hasattr(self.model, 'obj'):
                     try:
                         result.objective_value = value(self.model.obj)
-                    except:
+                    except (ValueError, AttributeError, KeyError, RuntimeError):
+                        # Objective expression may reference uninitialized variables
+                        # This can happen when costs are 0 and solver skips those variables
+                        # Objective value should already be in results.solution
                         pass
 
                 # Extract solution to our format
