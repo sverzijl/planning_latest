@@ -95,9 +95,15 @@ class CostStructure(BaseModel):
     )
 
     # Storage costs (pallet-based - new preferred method)
+    # DEPRECATED: Use state-specific fields below instead
     storage_cost_fixed_per_pallet: Optional[float] = Field(
         default=None,
-        description="Fixed cost per pallet when entering storage ($/pallet)",
+        description=(
+            "DEPRECATED: Use storage_cost_fixed_per_pallet_frozen and "
+            "storage_cost_fixed_per_pallet_ambient instead. "
+            "Fixed cost per pallet when entering storage ($/pallet), "
+            "applied to both frozen and ambient if state-specific costs not set."
+        ),
         ge=0
     )
     storage_cost_per_pallet_day_frozen: Optional[float] = Field(
@@ -108,6 +114,26 @@ class CostStructure(BaseModel):
     storage_cost_per_pallet_day_ambient: Optional[float] = Field(
         default=None,
         description="Daily holding cost per pallet in ambient storage ($/pallet/day)",
+        ge=0
+    )
+
+    # Storage costs (pallet-based, state-specific - 2025-10-18)
+    storage_cost_fixed_per_pallet_frozen: Optional[float] = Field(
+        default=None,
+        description=(
+            "Fixed cost per pallet when entering frozen storage ($/pallet). "
+            "Takes precedence over storage_cost_fixed_per_pallet. "
+            "Use this for state-specific fixed pallet costs."
+        ),
+        ge=0
+    )
+    storage_cost_fixed_per_pallet_ambient: Optional[float] = Field(
+        default=None,
+        description=(
+            "Fixed cost per pallet when entering ambient storage ($/pallet). "
+            "Takes precedence over storage_cost_fixed_per_pallet. "
+            "Use this for state-specific fixed pallet costs."
+        ),
         ge=0
     )
 
@@ -198,6 +224,51 @@ class CostStructure(BaseModel):
             Total shortage penalty
         """
         return shortage_units * self.shortage_penalty_per_unit
+
+    def get_fixed_pallet_costs(self) -> tuple[float, float]:
+        """
+        Get state-specific fixed pallet costs (frozen, ambient).
+
+        Returns tuple of (frozen_fixed_cost, ambient_fixed_cost) in $/pallet.
+
+        Precedence logic:
+        1. If state-specific fields are set, use them (storage_cost_fixed_per_pallet_frozen/ambient)
+        2. Otherwise, if legacy field is set, use it for both states (storage_cost_fixed_per_pallet)
+        3. Otherwise, return (0.0, 0.0)
+
+        This ensures backward compatibility while supporting state-specific costs.
+
+        Returns:
+            Tuple of (frozen_fixed_cost, ambient_fixed_cost) in $/pallet
+
+        Examples:
+            >>> costs = CostStructure(storage_cost_fixed_per_pallet_frozen=5.0, storage_cost_fixed_per_pallet_ambient=2.0)
+            >>> costs.get_fixed_pallet_costs()
+            (5.0, 2.0)
+
+            >>> costs = CostStructure(storage_cost_fixed_per_pallet=3.0)
+            >>> costs.get_fixed_pallet_costs()
+            (3.0, 3.0)
+
+            >>> costs = CostStructure()
+            >>> costs.get_fixed_pallet_costs()
+            (0.0, 0.0)
+        """
+        # Check if state-specific costs are set
+        frozen_fixed = self.storage_cost_fixed_per_pallet_frozen
+        ambient_fixed = self.storage_cost_fixed_per_pallet_ambient
+
+        # If both state-specific costs are set, use them
+        if frozen_fixed is not None and ambient_fixed is not None:
+            return (frozen_fixed, ambient_fixed)
+
+        # If only one state-specific cost is set, use it for that state and fall back to legacy for the other
+        legacy_fixed = self.storage_cost_fixed_per_pallet or 0.0
+
+        frozen_fixed = frozen_fixed if frozen_fixed is not None else legacy_fixed
+        ambient_fixed = ambient_fixed if ambient_fixed is not None else legacy_fixed
+
+        return (frozen_fixed, ambient_fixed)
 
     def __str__(self) -> str:
         """String representation."""

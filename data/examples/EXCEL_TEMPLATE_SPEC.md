@@ -247,13 +247,22 @@ T4   Afternoon 6110    afternoon       14:00          6110            14080     
 | `default_overtime_rate` | Default OT rate | $/hour | 37.50 |
 | `storage_cost_frozen_per_unit_day` | Frozen storage (unit-based, legacy) | $/(unit·day) | 0.10 |
 | `storage_cost_ambient_per_unit_day` | Ambient storage (unit-based, legacy) | $/(unit·day) | 0.05 |
-| `storage_cost_fixed_per_pallet` | Fixed pallet storage cost (NEW 2025-10-17) | $/pallet | 0.0 |
-| `storage_cost_per_pallet_day_frozen` | Frozen storage per pallet per day (NEW) | $/pallet/day | 0.5 |
-| `storage_cost_per_pallet_day_ambient` | Ambient storage per pallet per day (NEW) | $/pallet/day | 0.2 |
+| `storage_cost_fixed_per_pallet` | Fixed pallet storage cost (DEPRECATED - use state-specific) | $/pallet | 0.0 |
+| `storage_cost_per_pallet_day_frozen` | Frozen storage per pallet per day | $/pallet/day | 0.5 |
+| `storage_cost_per_pallet_day_ambient` | Ambient storage per pallet per day | $/pallet/day | 0.2 |
+| `storage_cost_fixed_per_pallet_frozen` | Fixed cost for frozen pallet storage (NEW 2025-10-18) | $/pallet | 0.0 |
+| `storage_cost_fixed_per_pallet_ambient` | Fixed cost for ambient pallet storage (NEW 2025-10-18) | $/pallet | 0.0 |
 
-**Pallet-Based Storage Costs (Added 2025-10-17):**
+**Pallet-Based Storage Costs (Added 2025-10-17, Enhanced 2025-10-18):**
 - **Pallet definition:** 320 units = 32 cases = 1 pallet
 - **Rounding behavior:** Partial pallets cost as full pallets (50 units = 1 pallet cost)
+- **State-specific fixed costs (NEW 2025-10-18):**
+  - `storage_cost_fixed_per_pallet_frozen`: Fixed cost when pallet enters frozen storage
+  - `storage_cost_fixed_per_pallet_ambient`: Fixed cost when pallet enters ambient storage
+  - These override the legacy `storage_cost_fixed_per_pallet` parameter
+- **Conditional pallet tracking:** If a state's pallet costs are zero, that state uses unit-based tracking (continuous variables) instead of pallet tracking (integer variables)
+  - **Performance benefit:** Fewer integer variables → faster solve times
+  - **Example:** Set frozen pallet costs to 0 → frozen inventory uses unit tracking, ambient uses pallet tracking
 - **Precedence:** If both pallet-based and unit-based costs are specified, pallet-based takes precedence
 - **Conversion:** To convert unit-based to pallet-based: `pallet_cost = unit_cost × 320`
 - **Recommended:** Use pallet-based costs for accurate storage cost representation

@@ -12,6 +12,7 @@ from src.models import (
     ProductState,
     Forecast,
     ForecastEntry,
+    CostStructure,
 )
 
 
@@ -171,3 +172,132 @@ class TestForecast:
         # Should return 0 for non-existent entry
         demand = forecast.get_demand("BR2", "P1", date(2025, 10, 15))
         assert demand == 0.0
+
+
+class TestCostStructureFixedPalletCosts:
+    """Tests for CostStructure.get_fixed_pallet_costs() with state-specific support."""
+
+    def test_get_fixed_pallet_costs_state_specific(self):
+        """
+        Test get_fixed_pallet_costs() with both state-specific fields set.
+
+        When both storage_cost_fixed_per_pallet_frozen and
+        storage_cost_fixed_per_pallet_ambient are set, they should be returned
+        as the (frozen, ambient) tuple.
+        """
+        costs = CostStructure(
+            storage_cost_fixed_per_pallet_frozen=5.0,
+            storage_cost_fixed_per_pallet_ambient=2.0
+        )
+        frozen_fixed, ambient_fixed = costs.get_fixed_pallet_costs()
+
+        assert frozen_fixed == 5.0, "Frozen fixed cost should be 5.0"
+        assert ambient_fixed == 2.0, "Ambient fixed cost should be 2.0"
+
+    def test_get_fixed_pallet_costs_legacy_only(self):
+        """
+        Test get_fixed_pallet_costs() with only legacy field set.
+
+        When only storage_cost_fixed_per_pallet is set (legacy behavior),
+        it should be applied to both frozen and ambient states.
+        """
+        costs = CostStructure(
+            storage_cost_fixed_per_pallet=3.0
+        )
+        frozen_fixed, ambient_fixed = costs.get_fixed_pallet_costs()
+
+        assert frozen_fixed == 3.0, "Frozen fixed cost should be 3.0 (from legacy)"
+        assert ambient_fixed == 3.0, "Ambient fixed cost should be 3.0 (from legacy)"
+
+    def test_get_fixed_pallet_costs_defaults(self):
+        """
+        Test get_fixed_pallet_costs() with no fields set.
+
+        When no fixed pallet cost fields are set, should return (0.0, 0.0).
+        """
+        costs = CostStructure()
+        frozen_fixed, ambient_fixed = costs.get_fixed_pallet_costs()
+
+        assert frozen_fixed == 0.0, "Frozen fixed cost should default to 0.0"
+        assert ambient_fixed == 0.0, "Ambient fixed cost should default to 0.0"
+
+    def test_get_fixed_pallet_costs_mixed_frozen_only(self):
+        """
+        Test get_fixed_pallet_costs() with only frozen state-specific set.
+
+        When only storage_cost_fixed_per_pallet_frozen is set, it should be
+        used for frozen state, while ambient falls back to legacy field.
+        """
+        costs = CostStructure(
+            storage_cost_fixed_per_pallet_frozen=5.0,
+            storage_cost_fixed_per_pallet=3.0
+        )
+        frozen_fixed, ambient_fixed = costs.get_fixed_pallet_costs()
+
+        assert frozen_fixed == 5.0, "Frozen fixed cost should be 5.0 (state-specific)"
+        assert ambient_fixed == 3.0, "Ambient fixed cost should be 3.0 (legacy fallback)"
+
+    def test_get_fixed_pallet_costs_mixed_ambient_only(self):
+        """
+        Test get_fixed_pallet_costs() with only ambient state-specific set.
+
+        When only storage_cost_fixed_per_pallet_ambient is set, it should be
+        used for ambient state, while frozen falls back to legacy field.
+        """
+        costs = CostStructure(
+            storage_cost_fixed_per_pallet_ambient=2.0,
+            storage_cost_fixed_per_pallet=3.0
+        )
+        frozen_fixed, ambient_fixed = costs.get_fixed_pallet_costs()
+
+        assert frozen_fixed == 3.0, "Frozen fixed cost should be 3.0 (legacy fallback)"
+        assert ambient_fixed == 2.0, "Ambient fixed cost should be 2.0 (state-specific)"
+
+    def test_get_fixed_pallet_costs_state_specific_precedence(self):
+        """
+        Test get_fixed_pallet_costs() precedence: state-specific overrides legacy.
+
+        When both state-specific and legacy fields are set, the state-specific
+        fields should take precedence (legacy is ignored).
+        """
+        costs = CostStructure(
+            storage_cost_fixed_per_pallet_frozen=5.0,
+            storage_cost_fixed_per_pallet_ambient=2.0,
+            storage_cost_fixed_per_pallet=3.0  # This should be ignored
+        )
+        frozen_fixed, ambient_fixed = costs.get_fixed_pallet_costs()
+
+        assert frozen_fixed == 5.0, "Frozen fixed cost should be 5.0 (state-specific wins)"
+        assert ambient_fixed == 2.0, "Ambient fixed cost should be 2.0 (state-specific wins)"
+
+    def test_get_fixed_pallet_costs_zero_values(self):
+        """
+        Test get_fixed_pallet_costs() with explicit zero values.
+
+        Explicit zero values should be treated as valid configuration
+        (not the same as None/unset).
+        """
+        costs = CostStructure(
+            storage_cost_fixed_per_pallet_frozen=0.0,
+            storage_cost_fixed_per_pallet_ambient=0.0
+        )
+        frozen_fixed, ambient_fixed = costs.get_fixed_pallet_costs()
+
+        assert frozen_fixed == 0.0, "Frozen fixed cost should be 0.0 (explicit)"
+        assert ambient_fixed == 0.0, "Ambient fixed cost should be 0.0 (explicit)"
+
+    def test_get_fixed_pallet_costs_mixed_with_zero(self):
+        """
+        Test get_fixed_pallet_costs() with one state zero, other state set.
+
+        Zero is a valid cost value (different from None), so it should be used.
+        """
+        costs = CostStructure(
+            storage_cost_fixed_per_pallet_frozen=5.0,
+            storage_cost_fixed_per_pallet_ambient=0.0,  # Explicit zero
+            storage_cost_fixed_per_pallet=3.0
+        )
+        frozen_fixed, ambient_fixed = costs.get_fixed_pallet_costs()
+
+        assert frozen_fixed == 5.0, "Frozen fixed cost should be 5.0"
+        assert ambient_fixed == 0.0, "Ambient fixed cost should be 0.0 (explicit, not fallback)"

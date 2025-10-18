@@ -39,6 +39,7 @@ from pyomo.environ import (
     Constraint,
     Objective,
     minimize,
+    Set as PyomoSet,
     NonNegativeReals,
     NonNegativeIntegers,
     Binary,
@@ -992,47 +993,91 @@ class UnifiedNodeModel(BaseOptimizationModel):
             for qty in shortages_by_dest_product_date.values()
         )
 
-        # Calculate holding cost from pallet counts
+        # Calculate holding cost from pallet counts (state-specific tracking)
         total_holding_cost = 0.0
         frozen_holding_cost = 0.0
         ambient_holding_cost = 0.0
 
-        if self.use_batch_tracking and hasattr(model, 'pallet_count'):
-            # Get cost parameters
-            pallet_fixed = self.cost_structure.storage_cost_fixed_per_pallet or 0.0
+        if self.use_batch_tracking:
+            # Get state-specific fixed costs
+            pallet_fixed_frozen, pallet_fixed_ambient = self.cost_structure.get_fixed_pallet_costs()
+
+            # Get state-specific daily costs
             pallet_frozen_per_day = self.cost_structure.storage_cost_per_pallet_day_frozen or 0.0
             pallet_ambient_per_day = self.cost_structure.storage_cost_per_pallet_day_ambient or 0.0
+
+            # Fall back to unit-based costs (legacy method)
             unit_frozen_per_day = self.cost_structure.storage_cost_frozen_per_unit_day or 0.0
             unit_ambient_per_day = self.cost_structure.storage_cost_ambient_per_unit_day or 0.0
 
-            # Determine rates (pallet-based takes precedence)
-            frozen_rate_per_pallet = pallet_frozen_per_day or (unit_frozen_per_day * self.UNITS_PER_PALLET)
-            ambient_rate_per_pallet = pallet_ambient_per_day or (unit_ambient_per_day * self.UNITS_PER_PALLET)
+            # Determine tracking mode per state
+            use_pallet_frozen = (pallet_fixed_frozen > 0 or pallet_frozen_per_day > 0)
+            use_pallet_ambient = (pallet_fixed_ambient > 0 or pallet_ambient_per_day > 0)
 
-            # Extract pallet counts from solved model
+            # Build set of states using pallet tracking
+            pallet_states = set()
+            if use_pallet_frozen:
+                pallet_states.add('frozen')
+            if use_pallet_ambient:
+                pallet_states.update(['ambient', 'thawed'])
+
+            # Determine rates for each state
+            if use_pallet_frozen:
+                frozen_rate_per_pallet = pallet_frozen_per_day
+            else:
+                frozen_rate_per_pallet = unit_frozen_per_day * self.UNITS_PER_PALLET
+
+            if use_pallet_ambient:
+                ambient_rate_per_pallet = pallet_ambient_per_day
+            else:
+                ambient_rate_per_pallet = unit_ambient_per_day * self.UNITS_PER_PALLET
+
+            # Extract costs from solved model
             for (node_id, prod, prod_date, curr_date, state) in self.cohort_index_set:
-                try:
-                    pallet_qty = value(model.pallet_count[node_id, prod, prod_date, curr_date, state])
-                except (ValueError, KeyError) as e:
-                    # Variable not solved (expected for sparse indices)
-                    continue
-
-                if pallet_qty is None or pallet_qty < self.NUMERICAL_ZERO_THRESHOLD:
-                    continue
-
-                # Calculate holding cost for this cohort
                 cost = 0.0
 
-                # Fixed cost (charged each day inventory is held)
-                if pallet_fixed > 0:
-                    cost += pallet_fixed * pallet_qty
+                # Use pallet tracking if state is in pallet_states
+                if state in pallet_states and hasattr(model, 'pallet_count'):
+                    try:
+                        pallet_qty = value(model.pallet_count[node_id, prod, prod_date, curr_date, state])
+                    except (ValueError, KeyError):
+                        # Variable not solved (expected for sparse indices or unit-tracked states)
+                        continue
 
-                # Daily holding cost based on state
+                    if pallet_qty is None or pallet_qty < self.NUMERICAL_ZERO_THRESHOLD:
+                        continue
+
+                    # Apply state-specific fixed cost
+                    if state == 'frozen' and pallet_fixed_frozen > 0:
+                        cost += pallet_fixed_frozen * pallet_qty
+                    elif state in ['ambient', 'thawed'] and pallet_fixed_ambient > 0:
+                        cost += pallet_fixed_ambient * pallet_qty
+
+                    # Apply daily holding cost
+                    if state == 'frozen' and frozen_rate_per_pallet > 0:
+                        cost += frozen_rate_per_pallet * pallet_qty
+                    elif state in ['ambient', 'thawed'] and ambient_rate_per_pallet > 0:
+                        cost += ambient_rate_per_pallet * pallet_qty
+
+                else:
+                    # Use unit tracking for this state
+                    try:
+                        inv_qty = value(model.inventory_cohort[node_id, prod, prod_date, curr_date, state])
+                    except (ValueError, KeyError):
+                        continue
+
+                    if inv_qty is None or inv_qty < self.NUMERICAL_ZERO_THRESHOLD:
+                        continue
+
+                    if state == 'frozen' and unit_frozen_per_day > 0:
+                        cost += unit_frozen_per_day * inv_qty
+                    elif state in ['ambient', 'thawed'] and unit_ambient_per_day > 0:
+                        cost += unit_ambient_per_day * inv_qty
+
+                # Accumulate to state-specific totals
                 if state == 'frozen':
-                    cost += frozen_rate_per_pallet * pallet_qty
                     frozen_holding_cost += cost
                 elif state in ['ambient', 'thawed']:
-                    cost += ambient_rate_per_pallet * pallet_qty
                     ambient_holding_cost += cost
 
                 total_holding_cost += cost
@@ -2293,12 +2338,14 @@ class UnifiedNodeModel(BaseOptimizationModel):
             for (node_id, prod, date) in self.demand.keys():
                 shortage_cost += penalty * model.shortage[node_id, prod, date]
 
-        # Holding cost (pallet-based with ceiling rounding)
+        # Holding cost (state-specific pallet-based tracking with ceiling rounding)
         holding_cost = 0
 
         if self.use_batch_tracking:
-            # Check if pallet-based costs are configured (preferred method)
-            pallet_fixed = self.cost_structure.storage_cost_fixed_per_pallet or 0.0
+            # Get state-specific fixed costs
+            pallet_fixed_frozen, pallet_fixed_ambient = self.cost_structure.get_fixed_pallet_costs()
+
+            # Get state-specific daily costs
             pallet_frozen_per_day = self.cost_structure.storage_cost_per_pallet_day_frozen or 0.0
             pallet_ambient_per_day = self.cost_structure.storage_cost_per_pallet_day_ambient or 0.0
 
@@ -2306,94 +2353,157 @@ class UnifiedNodeModel(BaseOptimizationModel):
             unit_frozen_per_day = self.cost_structure.storage_cost_frozen_per_unit_day or 0.0
             unit_ambient_per_day = self.cost_structure.storage_cost_ambient_per_unit_day or 0.0
 
-            # Determine which cost model to use (pallet-based takes precedence)
-            use_pallet_based = (pallet_fixed > 0 or pallet_frozen_per_day > 0 or pallet_ambient_per_day > 0)
-            use_unit_based = (unit_frozen_per_day > 0 or unit_ambient_per_day > 0)
+            # Determine tracking mode per state
+            # Pallet tracking: Use if any pallet-based costs are non-zero
+            # Unit tracking: Use if pallet costs are zero but unit costs are non-zero
+            use_pallet_frozen = (pallet_fixed_frozen > 0 or pallet_frozen_per_day > 0)
+            use_pallet_ambient = (pallet_fixed_ambient > 0 or pallet_ambient_per_day > 0)
+            use_unit_frozen = (unit_frozen_per_day > 0)
+            use_unit_ambient = (unit_ambient_per_day > 0)
 
-            if use_pallet_based and use_unit_based:
+            # Warn if both pallet and unit costs configured for same state
+            if use_pallet_frozen and use_unit_frozen:
                 warnings.warn(
-                    "Both pallet-based and unit-based storage costs are configured. "
-                    "Using pallet-based costs (set unit-based costs to 0 to suppress this warning)."
+                    "Both pallet-based and unit-based frozen storage costs are configured. "
+                    "Using pallet-based costs for frozen state (set unit costs to 0 to suppress)."
+                )
+            if use_pallet_ambient and use_unit_ambient:
+                warnings.warn(
+                    "Both pallet-based and unit-based ambient storage costs are configured. "
+                    "Using pallet-based costs for ambient/thawed states (set unit costs to 0 to suppress)."
                 )
 
-            if use_pallet_based or use_unit_based:
-                if use_pallet_based:
-                    # Convert unit costs to per-pallet rates if not directly specified
-                    frozen_rate_per_pallet = pallet_frozen_per_day or (unit_frozen_per_day * self.UNITS_PER_PALLET)
-                    ambient_rate_per_pallet = pallet_ambient_per_day or (unit_ambient_per_day * self.UNITS_PER_PALLET)
-                else:
-                    # Use unit-based costs converted to pallet basis
+            # Build set of states requiring pallet integer variables
+            pallet_states = set()
+            if use_pallet_frozen:
+                pallet_states.add('frozen')
+            if use_pallet_ambient:
+                pallet_states.update(['ambient', 'thawed'])
+
+            # Check if any holding costs are configured
+            has_holding_costs = (use_pallet_frozen or use_pallet_ambient or
+                               use_unit_frozen or use_unit_ambient)
+
+            if has_holding_costs:
+                # Calculate cost rates (pallet-based takes precedence over unit-based)
+                if use_pallet_frozen:
+                    frozen_rate_per_pallet = pallet_frozen_per_day
+                elif use_unit_frozen:
+                    # Convert unit cost to pallet basis for consistent calculation
                     frozen_rate_per_pallet = unit_frozen_per_day * self.UNITS_PER_PALLET
+                else:
+                    frozen_rate_per_pallet = 0.0
+
+                if use_pallet_ambient:
+                    ambient_rate_per_pallet = pallet_ambient_per_day
+                elif use_unit_ambient:
+                    # Convert unit cost to pallet basis for consistent calculation
                     ambient_rate_per_pallet = unit_ambient_per_day * self.UNITS_PER_PALLET
-                    pallet_fixed = 0.0  # No fixed cost in unit-based model
+                else:
+                    ambient_rate_per_pallet = 0.0
 
                 # Validate rates are non-negative
                 if frozen_rate_per_pallet < 0 or ambient_rate_per_pallet < 0:
                     raise ValueError("Storage rates cannot be negative")
 
-                # Calculate maximum pallet count for variable bounds (tightens search space)
-                # CRITICAL FIX (Quick Win #2): A cohort represents production from ONE day,
-                # not cumulative days! Maximum inventory in any cohort = max daily production.
-                # ADAPTIVE BOUNDS: Also consider initial inventory to handle edge cases where
-                # existing stock exceeds daily production capacity.
-                #
-                # OLD (WRONG): max_inventory_per_cohort = max_daily_production * planning_days  # Gave 1,715 pallets!
-                # NEW (CORRECT): max_pallets_per_cohort = ceil(max_inventory_cohort / UNITS_PER_PALLET)
-                #                where max_inventory_cohort = max(daily_production, initial_inventory)
-                max_pallets_per_cohort = int(math.ceil(self.max_inventory_cohort / self.UNITS_PER_PALLET))
+                # Create pallet variables only for states that need them
+                if pallet_states:
+                    # Calculate maximum pallet count for variable bounds (tightens search space)
+                    # CRITICAL FIX (Quick Win #2): A cohort represents production from ONE day,
+                    # not cumulative days! Maximum inventory in any cohort = max daily production.
+                    # ADAPTIVE BOUNDS: Also consider initial inventory to handle edge cases where
+                    # existing stock exceeds daily production capacity.
+                    #
+                    # OLD (WRONG): max_inventory_per_cohort = max_daily_production * planning_days  # Gave 1,715 pallets!
+                    # NEW (CORRECT): max_pallets_per_cohort = ceil(max_inventory_cohort / UNITS_PER_PALLET)
+                    #                where max_inventory_cohort = max(daily_production, initial_inventory)
+                    max_pallets_per_cohort = int(math.ceil(self.max_inventory_cohort / self.UNITS_PER_PALLET))
 
-                # Add integer pallet count variables with ADAPTIVE TIGHTENED bounds
-                model.pallet_count = Var(
-                    model.cohort_index,
-                    within=NonNegativeIntegers,
-                    bounds=(0, max_pallets_per_cohort),  # Adaptive bound accommodates both production and initial inventory
-                    doc="Pallet count for inventory cohort (adaptive bound based on max cohort size)"
-                )
+                    # Filter cohort indices to only those states requiring pallet tracking
+                    pallet_cohort_index = [
+                        (n, p, pd, cd, s) for (n, p, pd, cd, s) in self.cohort_index_set
+                        if s in pallet_states
+                    ]
 
-                # Ceiling constraint: enforce pallet_count >= ceil(inventory_qty / UNITS_PER_PALLET)
-                # Cost minimization automatically drives pallet_count to minimum (ceiling)
-                # No upper bound needed - solver minimizes pallet_count × holding_cost
-                def pallet_lower_bound_rule(
-                    model: ConcreteModel,
-                    node_id: str,
-                    prod: str,
-                    prod_date: Date,
-                    curr_date: Date,
-                    state: str
-                ) -> Constraint:
-                    """Pallet count must cover inventory (ceiling constraint).
+                    # Create indexed set for pallet-tracked cohorts
+                    model.pallet_cohort_index = PyomoSet(
+                        initialize=pallet_cohort_index,
+                        doc="Inventory cohorts requiring pallet-based tracking"
+                    )
 
-                    Combined with cost minimization in objective, this enforces:
-                        pallet_count = ceil(inventory_qty / UNITS_PER_PALLET)
+                    # Add integer pallet count variables with ADAPTIVE TIGHTENED bounds
+                    # Only created for states with pallet-based costs configured
+                    model.pallet_count = Var(
+                        model.pallet_cohort_index,
+                        within=NonNegativeIntegers,
+                        bounds=(0, max_pallets_per_cohort),  # Adaptive bound accommodates both production and initial inventory
+                        doc="Pallet count for inventory cohort (state-specific, adaptive bound based on max cohort size)"
+                    )
 
-                    The solver minimizes holding_cost = rate × pallet_count, so it will
-                    choose the MINIMUM integer pallet_count satisfying this constraint.
-                    """
-                    inv_qty = model.inventory_cohort[node_id, prod, prod_date, curr_date, state]
-                    pallet_var = model.pallet_count[node_id, prod, prod_date, curr_date, state]
-                    return pallet_var * self.UNITS_PER_PALLET >= inv_qty
+                    # Ceiling constraint: enforce pallet_count >= ceil(inventory_qty / UNITS_PER_PALLET)
+                    # Cost minimization automatically drives pallet_count to minimum (ceiling)
+                    # No upper bound needed - solver minimizes pallet_count × holding_cost
+                    def pallet_lower_bound_rule(
+                        model: ConcreteModel,
+                        node_id: str,
+                        prod: str,
+                        prod_date: Date,
+                        curr_date: Date,
+                        state: str
+                    ) -> Constraint:
+                        """Pallet count must cover inventory (ceiling constraint).
 
-                model.pallet_lower_bound_con = Constraint(
-                    model.cohort_index,
-                    rule=pallet_lower_bound_rule,
-                    doc="Pallet count ceiling constraint (cost minimization drives to minimum)"
-                )
+                        Combined with cost minimization in objective, this enforces:
+                            pallet_count = ceil(inventory_qty / UNITS_PER_PALLET)
 
-                # Add holding cost to objective
+                        The solver minimizes holding_cost = rate × pallet_count, so it will
+                        choose the MINIMUM integer pallet_count satisfying this constraint.
+
+                        Only applies to states with pallet-based tracking enabled.
+                        """
+                        inv_qty = model.inventory_cohort[node_id, prod, prod_date, curr_date, state]
+                        pallet_var = model.pallet_count[node_id, prod, prod_date, curr_date, state]
+                        return pallet_var * self.UNITS_PER_PALLET >= inv_qty
+
+                    model.pallet_lower_bound_con = Constraint(
+                        model.pallet_cohort_index,
+                        rule=pallet_lower_bound_rule,
+                        doc="Pallet count ceiling constraint for pallet-tracked states (cost minimization drives to minimum)"
+                    )
+
+                    print(f"  Pallet tracking enabled for states: {sorted(pallet_states)}")
+                    print(f"    - Pallet variables created: {len(pallet_cohort_index):,}")
+                    print(f"    - Unit-tracked states: {sorted(set(['frozen', 'ambient', 'thawed']) - pallet_states)}")
+
+                # Add holding cost to objective (state-specific logic)
                 for (node_id, prod, prod_date, curr_date, state) in self.cohort_index_set:
-                    pallet_count = model.pallet_count[node_id, prod, prod_date, curr_date, state]
+                    # Use pallet tracking if state is in pallet_states
+                    if state in pallet_states:
+                        pallet_count = model.pallet_count[node_id, prod, prod_date, curr_date, state]
 
-                    # Fixed cost per pallet (charged each day inventory is held)
-                    if pallet_fixed > 0:
-                        holding_cost += pallet_fixed * pallet_count
+                        # Apply state-specific fixed cost
+                        if state == 'frozen' and pallet_fixed_frozen > 0:
+                            holding_cost += pallet_fixed_frozen * pallet_count
+                        elif state in ['ambient', 'thawed'] and pallet_fixed_ambient > 0:
+                            holding_cost += pallet_fixed_ambient * pallet_count
 
-                    # Daily holding cost based on state
-                    if state == 'frozen' and frozen_rate_per_pallet > 0:
-                        holding_cost += frozen_rate_per_pallet * pallet_count
-                    elif state in ['ambient', 'thawed'] and ambient_rate_per_pallet > 0:
-                        holding_cost += ambient_rate_per_pallet * pallet_count
+                        # Apply daily holding cost
+                        if state == 'frozen' and frozen_rate_per_pallet > 0:
+                            holding_cost += frozen_rate_per_pallet * pallet_count
+                        elif state in ['ambient', 'thawed'] and ambient_rate_per_pallet > 0:
+                            holding_cost += ambient_rate_per_pallet * pallet_count
+                    else:
+                        # Use unit tracking for this state
+                        inv_qty = model.inventory_cohort[node_id, prod, prod_date, curr_date, state]
 
-                print(f"  Holding cost enabled: {len(self.cohort_index_set):,} pallet variables added")
+                        if state == 'frozen' and unit_frozen_per_day > 0:
+                            holding_cost += unit_frozen_per_day * inv_qty
+                        elif state in ['ambient', 'thawed'] and unit_ambient_per_day > 0:
+                            holding_cost += unit_ambient_per_day * inv_qty
+
+                total_cohorts = len(self.cohort_index_set)
+                pallet_cohorts = len(pallet_states) * total_cohorts // 3  # Rough estimate
+                print(f"  Holding cost enabled: {total_cohorts:,} total cohorts ({pallet_cohorts:,} pallet-tracked)")
             else:
                 print("  Holding cost skipped (all storage rates are zero)")
 
