@@ -61,3 +61,10 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Test outputs and solver files
+*.lp
+*.mps
+tests/outputs/*.csv
+tests/outputs/*.json
+!tests/baseline_metrics/*.json

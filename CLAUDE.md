@@ -271,7 +271,8 @@ planning_latest/
 │   ├── test_daily_snapshot*.py          # Daily snapshot tests
 │   └── ...
 ├── archive/
-│   └── debug_scripts/   # 235 archived troubleshooting scripts
+│   ├── debug_scripts/   # 268 archived troubleshooting scripts
+│   └── examples/        # 2 archived example scripts (deprecated model references)
 ├── docs/
 │   └── features/        # Feature-specific documentation
 ├── data/
@@ -326,6 +327,12 @@ pytest --cov=src tests/
 11. **Pallet-level granularity:** (2025-10-17) Integer pallet variables for storage enforce "partial pallets occupy full pallet space" rule. Truck pallet-level enforcement deferred (causes unexpected solver difficulty despite small variable count increase).
 
 **Recent Updates:**
+- **2025-10-18:** Cleaned up root directory: removed redundant shell test wrappers, archived broken scripts
+  - Removed 7 redundant shell test wrappers (use `pytest` directly instead)
+  - Archived 2 broken example scripts to archive/examples/ (reference deprecated IntegratedProductionDistributionModel)
+  - Archived 1 broken debug script from scripts/ (references deprecated Phase 2 code)
+  - Updated README.md with pytest usage guidance
+  - Root directory now contains only essential utilities (clear_cache.sh, fix_import_error.bat, run_integration_tests.sh)
 - **2025-10-17:** Fixed **integration test timeout** by disabling pallet-based storage costs in default configuration
   - Root cause: Pallet-based costs add ~18,675 integer variables, causing CBC solver to exceed 120s timeout
   - Solution: Set pallet storage costs to 0.0 in Network_Config.xlsx for baseline testing

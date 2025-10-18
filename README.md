@@ -135,6 +135,8 @@ See `data/examples/SAP_IBP_FORMAT.md` for details on SAP IBP format structure.
 
 ### Running Tests
 
+**Use `pytest` directly to run tests** (shell script wrappers have been removed for simplicity):
+
 ```bash
 # Run all tests
 pytest
