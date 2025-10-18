@@ -236,22 +236,20 @@ T4   Afternoon 6110    afternoon       14:00          6110            14080     
 | cost_type | Description | Typical Unit | Example Value |
 |-----------|-------------|--------------|---------------|
 | `production_cost_per_unit` | Base production cost | $/unit | 5.00 |
-| `holding_cost_ambient_per_unit_day` | Ambient storage cost | $/(unit·day) | 0.05 |
-| `holding_cost_frozen_per_unit_day` | Frozen storage cost | $/(unit·day) | 0.10 |
-| `transport_cost_ambient_per_unit` | Ambient transport | $/unit | 0.30 |
-| `transport_cost_frozen_per_unit` | Frozen transport | $/unit | 0.50 |
-| `truck_fixed_cost` | Fixed truck cost | $/departure | 100.00 |
-| `waste_cost_multiplier` | Waste cost multiplier | dimensionless | 1.5 |
-| `shortage_penalty_per_unit` | Stockout penalty | $/unit | 10.00 |
-| `default_regular_rate` | Default labor rate | $/hour | 25.00 |
-| `default_overtime_rate` | Default OT rate | $/hour | 37.50 |
-| `storage_cost_frozen_per_unit_day` | Frozen storage (unit-based, legacy) | $/(unit·day) | 0.10 |
-| `storage_cost_ambient_per_unit_day` | Ambient storage (unit-based, legacy) | $/(unit·day) | 0.05 |
+| `storage_cost_frozen_per_unit_day` | Frozen storage (unit-based) | $/(unit·day) | 0.10 |
+| `storage_cost_ambient_per_unit_day` | Ambient storage (unit-based) | $/(unit·day) | 0.002 |
+| `storage_cost_per_pallet_day_frozen` | Frozen storage per pallet per day | $/pallet/day | 0.0 |
+| `storage_cost_per_pallet_day_ambient` | Ambient storage per pallet per day | $/pallet/day | 0.0 |
 | `storage_cost_fixed_per_pallet` | Fixed pallet storage cost (DEPRECATED - use state-specific) | $/pallet | 0.0 |
-| `storage_cost_per_pallet_day_frozen` | Frozen storage per pallet per day | $/pallet/day | 0.5 |
-| `storage_cost_per_pallet_day_ambient` | Ambient storage per pallet per day | $/pallet/day | 0.2 |
 | `storage_cost_fixed_per_pallet_frozen` | Fixed cost for frozen pallet storage (NEW 2025-10-18) | $/pallet | 0.0 |
 | `storage_cost_fixed_per_pallet_ambient` | Fixed cost for ambient pallet storage (NEW 2025-10-18) | $/pallet | 0.0 |
+| `waste_cost_multiplier` | Waste cost multiplier | dimensionless | 1.5 |
+| `shortage_penalty_per_unit` | Stockout penalty | $/unit | 10000 |
+
+**Cost Parameter Notes:**
+- **Labor costs:** Configured in LaborCalendar sheet (per-date rates), not CostParameters
+- **Transport costs:** Configured in Routes sheet (per-route costs), not CostParameters
+- **Storage costs:** Use either unit-based OR pallet-based, not both simultaneously
 
 **Pallet-Based Storage Costs (Added 2025-10-17, Enhanced 2025-10-18):**
 - **Pallet definition:** 320 units = 32 cases = 1 pallet
@@ -272,15 +270,18 @@ T4   Afternoon 6110    afternoon       14:00          6110            14080     
 ```
 cost_type                          value   unit
 production_cost_per_unit           5.00    $/unit
-transport_cost_ambient_per_unit    0.30    $/unit
-truck_fixed_cost                   100.00  $/departure
+storage_cost_frozen_per_unit_day   0.1     $/(unit·day)
+storage_cost_ambient_per_unit_day  0.002   $/(unit·day)
 waste_cost_multiplier              1.5     -
+shortage_penalty_per_unit          10000   $/unit
 ```
 
 **Notes:**
 - Parser looks for specific cost_type names
 - Missing cost types use defaults from CostStructure model
 - `unit` column is optional (documentation only)
+- **Labor rates:** Not in CostParameters - use LaborCalendar sheet instead
+- **Transport costs:** Not in CostParameters - use Routes sheet `cost` column instead
 
 ---
 

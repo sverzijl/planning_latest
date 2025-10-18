@@ -497,14 +497,14 @@ The objective function minimizes **total cost to serve**, comprising:
    - **Bugs fixed:** (1) Overhead excluded from cost, (2) Blended rate approximation, (3) No 4h minimum enforcement
 
 2. **Production Costs:**
+   - **Source:** CostParameters sheet → `production_cost_per_unit`
    - Direct production costs per unit
-   - Setup costs if batch production is implemented (Phase 4)
-   - Possible economies of scale
+   - Setup costs tracked but not currently costed (Phase 4 feature)
 
 3. **Transport Costs:**
-   - Cost per unit per route leg
-   - May vary by transport mode (frozen typically more expensive than ambient)
-   - Truck fixed costs vs. variable costs
+   - **Source:** Routes sheet → `cost` column (per-route cost per unit)
+   - Cost varies by route (frozen routes typically more expensive than ambient)
+   - No fixed truck costs in current implementation
    - **Truck Capacity (Unit-Based for Tractability):**
      - Capacity enforced at unit level (14,080 units = 44 pallets per truck)
      - Uses continuous truck_load variables (not integer pallets)
@@ -585,10 +585,33 @@ The objective function minimizes **total cost to serve**, comprising:
 
    **Note:** The default Network_Config.xlsx configuration uses unit-based costs (pallet costs set to 0.0) to ensure fast solve times with CBC solver and pass integration tests within the 120-second timeout.
 
-5. **Waste Costs:**
-   - Cost of discarded product (expired or insufficient shelf life)
-   - Includes production cost + transport cost incurred to that point
-   - High penalty to incentivize meeting demand with acceptable shelf life
+5. **Shortage Penalty Costs:**
+   - **Source:** CostParameters sheet → `shortage_penalty_per_unit`
+   - High penalty for unmet demand (default: $10,000/unit)
+   - Incentivizes meeting all demand when feasible
+   - Only applied when `allow_shortages=True`
+
+## Cost Parameter Configuration Summary
+
+**CostParameters Sheet (Production & Storage Only):**
+- `production_cost_per_unit` - Base production cost
+- `storage_cost_frozen_per_unit_day` - Unit-based frozen holding cost
+- `storage_cost_ambient_per_unit_day` - Unit-based ambient holding cost
+- `storage_cost_per_pallet_day_frozen` - Pallet-based frozen holding cost
+- `storage_cost_per_pallet_day_ambient` - Pallet-based ambient holding cost
+- `storage_cost_fixed_per_pallet_frozen` - Fixed frozen pallet entry cost
+- `storage_cost_fixed_per_pallet_ambient` - Fixed ambient pallet entry cost
+- `waste_cost_multiplier` - Multiplier for waste cost (currently unused in objective)
+- `shortage_penalty_per_unit` - Penalty for demand shortfalls
+
+**LaborCalendar Sheet (Labor Rates):**
+- `regular_rate` (per date) - Regular labor rate ($/hour)
+- `overtime_rate` (per date) - Overtime labor rate ($/hour)
+- `non_fixed_rate` (per date) - Non-fixed day labor rate ($/hour)
+
+**Routes Sheet (Transport Costs):**
+- `cost` (per route) - Transport cost per unit for each route
+- Different routes can have different costs (frozen vs ambient, long vs short distance)
 
 ## Data Format Considerations
 

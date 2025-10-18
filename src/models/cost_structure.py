@@ -44,41 +44,43 @@ class CostStructure(BaseModel):
     )
     setup_cost: float = Field(
         default=0.0,
-        description="Cost per production setup ($/run)",
+        description="DEPRECATED: Not used by UnifiedNodeModel. Changeover tracking exists but costs are zero.",
         ge=0
     )
 
-    # Default labor costs
+    # Default labor costs (DEPRECATED - not used by UnifiedNodeModel)
+    # Labor rates come from LaborCalendar sheet instead
     default_regular_rate: float = Field(
         default=20.0,
-        description="Default regular labor rate ($/hour)",
+        description="DEPRECATED: Not used by UnifiedNodeModel. Use LaborCalendar.regular_rate instead.",
         ge=0
     )
     default_overtime_rate: float = Field(
         default=30.0,
-        description="Default overtime labor rate ($/hour)",
+        description="DEPRECATED: Not used by UnifiedNodeModel. Use LaborCalendar.overtime_rate instead.",
         ge=0
     )
     default_non_fixed_rate: float = Field(
         default=40.0,
-        description="Default non-fixed day labor rate ($/hour)",
+        description="DEPRECATED: Not used by UnifiedNodeModel. Use LaborCalendar.non_fixed_rate instead.",
         ge=0
     )
 
-    # Transport costs
+    # Transport costs (DEPRECATED - not used by UnifiedNodeModel)
+    # Transport costs come from Routes sheet cost column instead
     transport_cost_frozen_per_unit: float = Field(
         default=0.5,
-        description="Frozen transport cost per unit ($/unit)",
+        description="DEPRECATED: Not used by UnifiedNodeModel. Use Routes sheet 'cost' column instead.",
         ge=0
     )
     transport_cost_ambient_per_unit: float = Field(
         default=0.3,
-        description="Ambient transport cost per unit ($/unit)",
+        description="DEPRECATED: Not used by UnifiedNodeModel. Use Routes sheet 'cost' column instead.",
         ge=0
     )
     truck_fixed_cost: float = Field(
         default=100.0,
-        description="Fixed cost per truck departure ($)",
+        description="DEPRECATED: Not used by UnifiedNodeModel. Fixed truck costs not implemented.",
         ge=0
     )
 
