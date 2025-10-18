@@ -2276,7 +2276,7 @@ class UnifiedNodeModel(BaseOptimizationModel):
             overtime_hours_used >= epsilon * uses_overtime
             If overtime_hours_used > epsilon, forces uses_overtime = 1
             """
-            epsilon = 0.01  # Small threshold
+            epsilon = 0.0001  # Tighter threshold to catch all overtime usage
             return model.overtime_hours_used[node_id, date] >= epsilon * model.uses_overtime[node_id, date]
 
         model.overtime_indicator_lower_con = Constraint(
@@ -2311,7 +2311,30 @@ class UnifiedNodeModel(BaseOptimizationModel):
             doc="Enforce piecewise structure: use all fixed hours before overtime"
         )
 
-        print(f"  Labor cost constraints added ({len(production_day_index):,} node-date pairs, {8 * len(production_day_index):,} constraints)")
+        # Constraint 8: Force overtime indicator when labor exceeds fixed hours
+        # This prevents solver from using overtime capacity without paying overtime rate
+        def overtime_forcing_rule(model, node_id, date):
+            """Force uses_overtime = 1 when labor_hours_used exceeds fixed_hours.
+
+            labor_hours_used <= fixed_hours + M * uses_overtime
+            If uses_overtime = 0: can only use up to fixed_hours
+            If uses_overtime = 1: can use up to fixed_hours + M (overtime capacity)
+            """
+            labor_day = self.labor_calendar.get_labor_day(date)
+
+            if not labor_day or not labor_day.is_fixed_day:
+                return Constraint.Skip  # Only applies to fixed days
+
+            M = 2.0  # Max overtime hours (matches constraint 4)
+            return model.labor_hours_used[node_id, date] <= labor_day.fixed_hours + M * model.uses_overtime[node_id, date]
+
+        model.overtime_forcing_con = Constraint(
+            production_day_index,
+            rule=overtime_forcing_rule,
+            doc="Force uses_overtime=1 when labor exceeds fixed hours"
+        )
+
+        print(f"  Labor cost constraints added ({len(production_day_index):,} node-date pairs, {9 * len(production_day_index):,} constraints)")
 
     def _add_objective(self, model: ConcreteModel) -> None:
         """Add objective function: minimize total cost.
