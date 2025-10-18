@@ -128,6 +128,9 @@ class UnifiedNodeModel(BaseOptimizationModel):
         # Initialize parent class (sets up solver_config)
         super().__init__()
 
+        # Validate cost parameters and warn about potential issues
+        self._validate_cost_parameters()
+
         # Preprocess initial inventory to 4-tuple format
         self._preprocess_initial_inventory()
 
@@ -209,6 +212,52 @@ class UnifiedNodeModel(BaseOptimizationModel):
 
         else:
             warnings.warn(f"Unknown initial_inventory format with key length {len(first_key)}. Expected 2, 3, or 4.")
+
+    def _validate_cost_parameters(self) -> None:
+        """Validate cost parameters and warn about potential issues.
+
+        When costs are set to 0, the solver may leave variables uninitialized
+        (valid behavior), which can cause solution extraction warnings.
+        """
+        warnings_issued = []
+
+        # Check production cost
+        if self.cost_structure.production_cost_per_unit == 0:
+            warnings_issued.append("Production cost is 0")
+
+        # Check transport costs
+        zero_cost_routes = [r for r in self.routes if r.cost_per_unit == 0]
+        if zero_cost_routes:
+            if len(zero_cost_routes) == len(self.routes):
+                warnings_issued.append("All route transport costs are 0")
+            else:
+                warnings_issued.append(f"{len(zero_cost_routes)}/{len(self.routes)} routes have zero transport cost")
+
+        # Check storage costs (both unit-based and pallet-based)
+        frozen_costs, ambient_costs = self.cost_structure.get_fixed_pallet_costs()
+
+        zero_storage = []
+        if (self.cost_structure.storage_cost_frozen_per_unit_day == 0 and
+            self.cost_structure.storage_cost_per_pallet_day_frozen == 0 and
+            frozen_costs == 0):
+            zero_storage.append("frozen")
+
+        if (self.cost_structure.storage_cost_ambient_per_unit_day == 0 and
+            self.cost_structure.storage_cost_per_pallet_day_ambient == 0 and
+            ambient_costs == 0):
+            zero_storage.append("ambient")
+
+        if zero_storage:
+            warnings_issued.append(f"{'/'.join(zero_storage)} storage costs are 0")
+
+        # Issue consolidated warning if any zero costs found
+        if warnings_issued:
+            warning_msg = (
+                f"Zero cost parameters detected: {', '.join(warnings_issued)}. "
+                "This may cause solver to leave some variables uninitialized (valid behavior). "
+                "Consider using small non-zero costs (e.g., 0.0001) if you encounter solution extraction issues."
+            )
+            warnings.warn(warning_msg, UserWarning)
 
     def _extract_data(self) -> None:
         """Extract sets and build indices from input data."""
@@ -929,8 +978,9 @@ class UnifiedNodeModel(BaseOptimizationModel):
                     qty = value(model.inventory_cohort[node_id, prod, prod_date, curr_date, state])
                     if qty > 0.01:
                         cohort_inventory[(node_id, prod, prod_date, curr_date, state)] = qty
-                except ValueError:
-                    # Variable exists in index but wasn't initialized by solver (not referenced in constraints)
+                except (ValueError, AttributeError, KeyError, RuntimeError):
+                    # Variable exists in index but wasn't initialized by solver
+                    # Can happen when costs=0 or variable not referenced in active constraints
                     continue
 
         solution['cohort_inventory'] = cohort_inventory
@@ -944,8 +994,9 @@ class UnifiedNodeModel(BaseOptimizationModel):
                     qty = value(model.demand_from_cohort[node_id, prod, prod_date, demand_date])
                     if qty > 0.01:
                         cohort_demand_consumption[(node_id, prod, prod_date, demand_date)] = qty
-                except ValueError:
+                except (ValueError, AttributeError, KeyError, RuntimeError):
                     # Variable exists in index but wasn't initialized by solver
+                    # Can happen when costs=0 or variable not referenced in active constraints
                     continue
 
         solution['cohort_demand_consumption'] = cohort_demand_consumption
@@ -960,8 +1011,9 @@ class UnifiedNodeModel(BaseOptimizationModel):
                         # Aggregate by route (sum across cohorts)
                         key = (origin, dest, prod, delivery_date)
                         shipments_by_route[key] = shipments_by_route.get(key, 0.0) + qty
-                except ValueError:
+                except (ValueError, AttributeError, KeyError, RuntimeError):
                     # Variable exists in index but wasn't initialized by solver
+                    # Can happen when costs=0 or variable not referenced in active constraints
                     continue
 
         solution['shipments_by_route_product_date'] = shipments_by_route
@@ -1184,8 +1236,9 @@ class UnifiedNodeModel(BaseOptimizationModel):
             for (origin, dest, prod, prod_date, delivery_date, state) in self.shipment_cohort_index_set:
                 try:
                     qty = value(model.shipment_cohort[origin, dest, prod, prod_date, delivery_date, state])
-                except ValueError:
+                except (ValueError, AttributeError, KeyError, RuntimeError):
                     # Variable exists in index but wasn't initialized by solver
+                    # Can happen when costs=0 or variable not referenced in active constraints
                     continue
 
                 if qty > 0.01:
