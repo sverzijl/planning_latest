@@ -321,6 +321,10 @@ class BaseOptimizationModel(ABC):
 
                 # Store solution data in result metadata for easy access
                 result.metadata.update(self.solution)
+
+                # If objective value is still missing, try to get it from extracted solution
+                if result.objective_value is None and 'total_cost' in self.solution:
+                    result.objective_value = self.solution['total_cost']
             except Exception as e:
                 result.infeasibility_message = f"Error extracting solution: {e}"
                 result.success = False

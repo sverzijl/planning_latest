@@ -1141,7 +1141,8 @@ class UnifiedNodeModel(BaseOptimizationModel):
         solution['total_holding_cost'] = total_holding_cost
         solution['frozen_holding_cost'] = frozen_holding_cost
         solution['ambient_holding_cost'] = ambient_holding_cost
-        solution['total_cost'] = value(model.obj) if hasattr(model, 'obj') else 0.0
+
+        # Note: total_cost extraction moved to after all cost components are calculated
 
         # Extract labor cost breakdown (piecewise labor cost model)
         labor_hours_by_date = {}
@@ -1295,6 +1296,21 @@ class UnifiedNodeModel(BaseOptimizationModel):
 
         # Store as instance attribute for access by UI
         self.route_arrival_state = route_arrival_states
+
+        # Extract total cost from objective (may fail if variables uninitialized)
+        # Do this AFTER all cost components have been extracted
+        try:
+            solution['total_cost'] = value(model.obj) if hasattr(model, 'obj') else 0.0
+        except (ValueError, AttributeError, KeyError, RuntimeError):
+            # Objective expression references uninitialized variables
+            # Fall back to sum of cost components
+            solution['total_cost'] = (
+                solution.get('total_production_cost', 0.0) +
+                solution.get('total_labor_cost', 0.0) +
+                solution.get('total_transport_cost', 0.0) +
+                solution.get('total_holding_cost', 0.0) +
+                solution.get('total_shortage_cost', 0.0)
+            )
 
         return solution
 
