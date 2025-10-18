@@ -14,6 +14,15 @@ Architecture:
 - Routes connect nodes with transit_days (0 = instant transfer)
 - Trucks constrain routes based on origin_node_id (generalizable to any node)
 - State transitions automatic based on transport_mode + destination storage_mode
+
+COMPREHENSIVE DOCUMENTATION:
+For detailed technical specification including all decision variables, constraints,
+objective function formulation, and design patterns, see:
+    docs/UNIFIED_NODE_MODEL_SPECIFICATION.md
+
+MAINTENANCE REQUIREMENT:
+When modifying this file, update docs/UNIFIED_NODE_MODEL_SPECIFICATION.md to keep
+documentation synchronized with implementation.
 """
 
 from __future__ import annotations

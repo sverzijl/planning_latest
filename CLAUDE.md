@@ -377,6 +377,7 @@ pytest --cov=src tests/
 4. Document complex algorithms and business rules
 5. Version control Excel file format specifications
 6. **Run integration tests before committing changes to model or optimization code**
+7. **Update model documentation when modifying optimization code** (see Documentation Maintenance below)
 
 ### Testing Requirements
 
@@ -428,6 +429,45 @@ The integration test mirrors the UI Planning Tab settings:
 5. Compare with previous successful runs to identify regression
 
 This test serves as a **regression gate** to ensure optimization changes don't break existing functionality or degrade performance.
+
+### Documentation Maintenance (REQUIRED)
+
+**All changes to the optimization model MUST be synchronized with the comprehensive technical documentation.**
+
+**Primary documentation file:**
+- **Location:** `docs/UNIFIED_NODE_MODEL_SPECIFICATION.md`
+- **Content:** Complete technical specification of the UnifiedNodeModel including:
+  - All decision variables with descriptions and bounds
+  - All constraints with mathematical formulations
+  - Objective function breakdown and cost components
+  - Design patterns and implementation details
+  - Performance characteristics and solver recommendations
+
+**When to update documentation:**
+- After adding, removing, or modifying decision variables
+- After changing constraint formulations or logic
+- After modifying the objective function
+- After implementing performance optimizations
+- After fixing bugs that change model behavior
+- When updating variable bounds or constraint parameters
+- When adding new features (pallet costs, labor models, etc.)
+
+**How to update documentation:**
+1. Open `docs/UNIFIED_NODE_MODEL_SPECIFICATION.md`
+2. Update the relevant sections to match code changes
+3. Update the "Last Updated" timestamp in the header
+4. Add entry to the "Change Log" section at the bottom
+5. Ensure all mathematical formulations remain accurate
+6. Verify code references (`src/optimization/unified_node_model.py`) are correct
+
+**Why this matters:**
+- Comprehensive documentation enables understanding complex model behavior
+- Keeps technical specification synchronized with implementation
+- Helps onboard new developers and collaborators
+- Provides authoritative reference for debugging and enhancement
+- Documents design decisions and tradeoffs for future reference
+
+**The documentation file serves as the single source of truth for model behavior** - keep it accurate and up-to-date.
 
 ## Cost Components
 
