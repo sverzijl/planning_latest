@@ -332,17 +332,18 @@ class UnifiedNodeModel(BaseOptimizationModel):
         for date in self.production_dates:
             labor_day = self.labor_calendar.get_labor_day(date)
             if labor_day:
-                # Calculate available hours:
-                # - Fixed days: fixed_hours + overtime capacity (assume 2 hours max OT)
-                # - Non-fixed days: use fixed_hours field (which represents total hours available)
+                # Calculate available hours for each date:
+                # - Fixed days: fixed_hours + overtime capacity
+                # - Non-fixed days: 24 hours (unlimited capacity at premium rate)
                 if hasattr(labor_day, 'overtime_hours') and labor_day.overtime_hours:
                     day_hours = labor_day.fixed_hours + labor_day.overtime_hours
                 elif labor_day.is_fixed_day:
                     # Assume standard: 12 fixed + 2 OT = 14 total
                     day_hours = labor_day.fixed_hours + 2.0
                 else:
-                    # Non-fixed day: use fixed_hours field as total available
-                    day_hours = labor_day.fixed_hours
+                    # Non-fixed day: unlimited capacity at premium rate
+                    # Use 24 hours as reasonable physical upper bound for Big-M
+                    day_hours = 24.0  # FIX: Was labor_day.fixed_hours (which is 0)
 
                 max_labor_hours = max(max_labor_hours, day_hours)
 
