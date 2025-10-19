@@ -95,12 +95,12 @@ def test_overtime_preference_over_weekend():
                 minimum_hours=4.0,
             ))
 
-    labor_calendar = LaborCalendar(labor_days=labor_days)
+    labor_calendar = LaborCalendar(name="Test Calendar", days=labor_days)
 
     # Create forecast: 13,000 units needed on Wed (requires 13h production)
     wednesday = start_date + timedelta(days=2)
 
-    forecast = Forecast(entries=[
+    forecast = Forecast(name="Test Forecast", entries=[
         ForecastEntry(
             location_id='DEMAND',
             product_id='PRODUCT_A',
@@ -126,7 +126,7 @@ def test_overtime_preference_over_weekend():
         cost_structure=cost_structure,
         start_date=start_date,
         end_date=start_date + timedelta(days=6),
-        use_batch_tracking=False,  # Simpler for this test
+        use_batch_tracking=True,  # Required for model
         allow_shortages=False,
         enforce_shelf_life=False,
     )
@@ -302,14 +302,14 @@ def test_weekend_only_when_necessary():
                 minimum_hours=4.0,
             ))
 
-    labor_calendar = LaborCalendar(labor_days=labor_days)
+    labor_calendar = LaborCalendar(name="Test Calendar", days=labor_days)
 
     # Very high demand: 100,000 units (100h of production)
     # Weekdays can only do: 5 days × 14h = 70h = 70,000 units
     # Need weekend to meet demand
     wednesday = start_date + timedelta(days=2)
 
-    forecast = Forecast(entries=[
+    forecast = Forecast(name="Test Forecast", entries=[
         ForecastEntry(
             location_id='DEMAND',
             product_id='PRODUCT_A',
@@ -333,7 +333,7 @@ def test_weekend_only_when_necessary():
         cost_structure=cost_structure,
         start_date=start_date,
         end_date=start_date + timedelta(days=6),
-        use_batch_tracking=False,
+        use_batch_tracking=True,
         allow_shortages=False,
         enforce_shelf_life=False,
     )

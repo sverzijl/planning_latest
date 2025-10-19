@@ -1944,12 +1944,15 @@ class UnifiedNodeModel(BaseOptimizationModel):
                 )
                 return total_prod == 0
 
-            # Calculate available labor hours
-            labor_hours = labor_day.fixed_hours + (labor_day.overtime_hours if hasattr(labor_day, 'overtime_hours') else 0)
-
-            # If this is a non-fixed day, use minimum hours
-            if not labor_day.is_fixed_day and hasattr(labor_day, 'minimum_hours'):
-                labor_hours = max(labor_hours, labor_day.minimum_hours)
+            # Calculate available labor hours based on day type
+            if labor_day.is_fixed_day:
+                # Fixed days (weekdays): Hard capacity limit (regular + overtime hours)
+                labor_hours = labor_day.fixed_hours + (labor_day.overtime_hours if hasattr(labor_day, 'overtime_hours') else 0)
+            else:
+                # Non-fixed days (weekends/holidays): No capacity limit
+                # Unlimited hours available at premium rate - cost model discourages use
+                # The 4h minimum_hours is for payment calculation (cost constraint), not capacity
+                return Constraint.Skip  # Don't enforce production capacity on non-fixed days
 
             # Calculate production time needed
             total_production = sum(
