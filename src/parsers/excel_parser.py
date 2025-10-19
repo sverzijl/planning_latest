@@ -310,6 +310,7 @@ class ExcelParser:
             day = LaborDay(
                 date=pd.to_datetime(row["date"]).date(),
                 fixed_hours=float(row["fixed_hours"]) if "fixed_hours" in row and pd.notna(row["fixed_hours"]) else 0.0,
+                overtime_hours=float(row["overtime_hours"]) if "overtime_hours" in row and pd.notna(row["overtime_hours"]) else 2.0,
                 regular_rate=float(row["regular_rate"]),
                 overtime_rate=float(row["overtime_rate"]),
                 non_fixed_rate=float(row["non_fixed_rate"]) if "non_fixed_rate" in row and pd.notna(row["non_fixed_rate"]) else None,

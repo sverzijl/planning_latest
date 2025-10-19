@@ -24,6 +24,11 @@ class LaborDay(BaseModel):
         description="Fixed labor hours allocated",
         ge=0
     )
+    overtime_hours: float = Field(
+        default=2.0,
+        description="Available overtime hours (beyond fixed_hours)",
+        ge=0
+    )
     regular_rate: float = Field(
         ...,
         description="Regular hourly rate ($/hour)",
