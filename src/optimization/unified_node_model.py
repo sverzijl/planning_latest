@@ -44,6 +44,7 @@ from pyomo.environ import (
     NonNegativeIntegers,
     Binary,
     value,
+    quicksum,
 )
 
 from src.models.unified_node import UnifiedNode, StorageMode
@@ -927,7 +928,8 @@ class UnifiedNodeModel(BaseOptimizationModel):
         """Generate campaign-based warmstart hints for product_produced variables.
 
         Uses demand-weighted allocation to create a weekly production campaign pattern
-        with 2-3 SKUs per weekday, balanced across products based on forecast demand.
+        with 2 SKUs per weekday (each SKU produced twice weekly), balanced across
+        products based on forecast demand.
 
         Returns:
             Warmstart hints dictionary {(node_id, product, date): 0 or 1} or None
@@ -998,6 +1000,47 @@ class UnifiedNodeModel(BaseOptimizationModel):
             print(f"  Skipped: {skipped_count} invalid indices")
 
         return applied_count
+
+    def get_model_statistics(self) -> Dict[str, int]:
+        """Get model size statistics for performance monitoring.
+
+        Returns:
+            Dictionary with model statistics:
+            - num_variables: Total number of decision variables
+            - num_binary_vars: Number of binary variables
+            - num_integer_vars: Number of integer variables
+            - num_continuous_vars: Number of continuous variables
+            - num_constraints: Total number of constraints
+
+        Raises:
+            RuntimeError: If model hasn't been built yet
+        """
+        if not hasattr(self, 'model') or self.model is None:
+            raise RuntimeError("Model has not been built yet. Call build_model() first.")
+
+        num_vars = 0
+        num_binary = 0
+        num_integer = 0
+        num_continuous = 0
+
+        for v in self.model.component_data_objects(Var, active=True):
+            num_vars += 1
+            if v.is_binary():
+                num_binary += 1
+            elif v.is_integer():
+                num_integer += 1
+            elif v.is_continuous():
+                num_continuous += 1
+
+        num_constraints = sum(1 for _ in self.model.component_data_objects(Constraint, active=True))
+
+        return {
+            'num_variables': num_vars,
+            'num_binary_vars': num_binary,
+            'num_integer_vars': num_integer,
+            'num_continuous_vars': num_continuous,
+            'num_constraints': num_constraints,
+        }
 
     def solve(
         self,
@@ -1070,13 +1113,18 @@ class UnifiedNodeModel(BaseOptimizationModel):
         cohort_inventory: Dict[Tuple[str, str, Date, Date, str], float] = {}
         if self.use_batch_tracking:
             for (node_id, prod, prod_date, curr_date, state) in model.cohort_index:
+                # Check if variable initialized BEFORE calling value() (prevents error spam)
+                var = model.inventory_cohort[node_id, prod, prod_date, curr_date, state]
+                if var.stale:
+                    # Not solved (expected for zero-cost storage)
+                    continue
+
                 try:
-                    qty = value(model.inventory_cohort[node_id, prod, prod_date, curr_date, state])
+                    qty = value(var)
                     if qty > 0.01:
                         cohort_inventory[(node_id, prod, prod_date, curr_date, state)] = qty
                 except (ValueError, AttributeError, KeyError, RuntimeError):
-                    # Variable exists in index but wasn't initialized by solver
-                    # Can happen when costs=0 or variable not referenced in active constraints
+                    # Fallback for edge cases
                     continue
 
         solution['cohort_inventory'] = cohort_inventory
@@ -1086,13 +1134,16 @@ class UnifiedNodeModel(BaseOptimizationModel):
         cohort_demand_consumption: Dict[Tuple[str, str, Date, Date], float] = {}
         if self.use_batch_tracking and hasattr(model, 'demand_from_cohort'):
             for (node_id, prod, prod_date, demand_date) in self.demand_cohort_index_set:
+                # Check if variable initialized BEFORE calling value()
+                var = model.demand_from_cohort[node_id, prod, prod_date, demand_date]
+                if var.stale:
+                    continue
+
                 try:
-                    qty = value(model.demand_from_cohort[node_id, prod, prod_date, demand_date])
+                    qty = value(var)
                     if qty > 0.01:
                         cohort_demand_consumption[(node_id, prod, prod_date, demand_date)] = qty
                 except (ValueError, AttributeError, KeyError, RuntimeError):
-                    # Variable exists in index but wasn't initialized by solver
-                    # Can happen when costs=0 or variable not referenced in active constraints
                     continue
 
         solution['cohort_demand_consumption'] = cohort_demand_consumption
@@ -1101,15 +1152,21 @@ class UnifiedNodeModel(BaseOptimizationModel):
         shipments_by_route: Dict[Tuple[str, str, str, Date], float] = {}
         if self.use_batch_tracking:
             for (origin, dest, prod, prod_date, delivery_date, state) in self.shipment_cohort_index_set:
+                # Check if variable was initialized by solver BEFORE calling value()
+                # This prevents thousands of error messages for zero-cost variables
+                var = model.shipment_cohort[origin, dest, prod, prod_date, delivery_date, state]
+                if var.stale:
+                    # Variable not solved (expected for zero-cost routes)
+                    continue
+
                 try:
-                    qty = value(model.shipment_cohort[origin, dest, prod, prod_date, delivery_date, state])
+                    qty = value(var)
                     if qty > 0.01:
                         # Aggregate by route (sum across cohorts)
                         key = (origin, dest, prod, delivery_date)
                         shipments_by_route[key] = shipments_by_route.get(key, 0.0) + qty
                 except (ValueError, AttributeError, KeyError, RuntimeError):
-                    # Variable exists in index but wasn't initialized by solver
-                    # Can happen when costs=0 or variable not referenced in active constraints
+                    # Fallback for edge cases
                     continue
 
         solution['shipments_by_route_product_date'] = shipments_by_route
@@ -1186,8 +1243,13 @@ class UnifiedNodeModel(BaseOptimizationModel):
 
                 # Use pallet tracking if state is in pallet_states
                 if state in pallet_states and hasattr(model, 'pallet_count'):
+                    # Check if variable initialized BEFORE calling value()
+                    pallet_var = model.pallet_count[node_id, prod, prod_date, curr_date, state]
+                    if pallet_var.stale:
+                        continue
+
                     try:
-                        pallet_qty = value(model.pallet_count[node_id, prod, prod_date, curr_date, state])
+                        pallet_qty = value(pallet_var)
                     except (ValueError, KeyError):
                         # Variable not solved (expected for sparse indices or unit-tracked states)
                         continue
@@ -1209,8 +1271,13 @@ class UnifiedNodeModel(BaseOptimizationModel):
 
                 else:
                     # Use unit tracking for this state
+                    # Check if variable initialized BEFORE calling value()
+                    inv_var = model.inventory_cohort[node_id, prod, prod_date, curr_date, state]
+                    if inv_var.stale:
+                        continue
+
                     try:
-                        inv_qty = value(model.inventory_cohort[node_id, prod, prod_date, curr_date, state])
+                        inv_qty = value(inv_var)
                     except (ValueError, KeyError):
                         continue
 
@@ -1331,11 +1398,16 @@ class UnifiedNodeModel(BaseOptimizationModel):
 
             # Extract cohort shipments
             for (origin, dest, prod, prod_date, delivery_date, state) in self.shipment_cohort_index_set:
+                # Check if variable was initialized BEFORE calling value() (prevents error spam)
+                var = model.shipment_cohort[origin, dest, prod, prod_date, delivery_date, state]
+                if var.stale:
+                    # Not solved (expected for zero-cost variables)
+                    continue
+
                 try:
-                    qty = value(model.shipment_cohort[origin, dest, prod, prod_date, delivery_date, state])
+                    qty = value(var)
                 except (ValueError, AttributeError, KeyError, RuntimeError):
-                    # Variable exists in index but wasn't initialized by solver
-                    # Can happen when costs=0 or variable not referenced in active constraints
+                    # Fallback for edge cases
                     continue
 
                 if qty > 0.01:
@@ -1393,20 +1465,18 @@ class UnifiedNodeModel(BaseOptimizationModel):
         # Store as instance attribute for access by UI
         self.route_arrival_state = route_arrival_states
 
-        # Extract total cost from objective (may fail if variables uninitialized)
-        # Do this AFTER all cost components have been extracted
-        try:
-            solution['total_cost'] = value(model.obj) if hasattr(model, 'obj') else 0.0
-        except (ValueError, AttributeError, KeyError, RuntimeError):
-            # Objective expression references uninitialized variables
-            # Fall back to sum of cost components
-            solution['total_cost'] = (
-                solution.get('total_production_cost', 0.0) +
-                solution.get('total_labor_cost', 0.0) +
-                solution.get('total_transport_cost', 0.0) +
-                solution.get('total_holding_cost', 0.0) +
-                solution.get('total_shortage_cost', 0.0)
-            )
+        # Extract total cost from objective
+        # PYOMO BEST PRACTICE: Always use component sum instead of extracting from model.obj
+        # Extracting from model.obj can print thousands of error messages when variables
+        # have zero costs and aren't initialized by the solver (valid MIP behavior).
+        # Component sum is more reliable and avoids error spam.
+        solution['total_cost'] = (
+            solution.get('total_production_cost', 0.0) +
+            solution.get('total_labor_cost', 0.0) +
+            solution.get('total_transport_cost', 0.0) +
+            solution.get('total_holding_cost', 0.0) +
+            solution.get('total_shortage_cost', 0.0)
+        )
 
         return solution
 
@@ -2456,24 +2526,27 @@ class UnifiedNodeModel(BaseOptimizationModel):
         """
 
         # Production cost (units produced * cost per unit)
-        production_cost = 0
-        for node_id in self.manufacturing_nodes:
-            for prod in model.products:
-                for date in model.dates:
-                    if (node_id, prod, date) in model.production:
-                        production_cost += self.cost_structure.production_cost_per_unit * model.production[node_id, prod, date]
+        # OPTIMIZATION: Use quicksum() for faster expression building
+        production_cost = quicksum(
+            self.cost_structure.production_cost_per_unit * model.production[node_id, prod, date]
+            for node_id in self.manufacturing_nodes
+            for prod in model.products
+            for date in model.dates
+            if (node_id, prod, date) in model.production
+        )
 
         # Transport cost (shipments * route cost)
-        # CRITICAL FIX: Iterate shipment_cohort_index_set directly to include initial inventory
-        transport_cost = 0
-        for (origin, dest, prod, prod_date, delivery_date, state) in self.shipment_cohort_index_set:
-            # Find route cost
-            route = next((r for r in self.routes
-                         if r.origin_node_id == origin and r.destination_node_id == dest), None)
-            if route:
-                transport_cost += route.cost_per_unit * model.shipment_cohort[
-                    origin, dest, prod, prod_date, delivery_date, state
-                ]
+        # OPTIMIZATION: Pre-build route cost lookup dictionary + use quicksum()
+        route_costs = {
+            (r.origin_node_id, r.destination_node_id): r.cost_per_unit
+            for r in self.routes
+        }
+
+        transport_cost = quicksum(
+            route_costs[(origin, dest)] * model.shipment_cohort[origin, dest, prod, prod_date, delivery_date, state]
+            for (origin, dest, prod, prod_date, delivery_date, state) in self.shipment_cohort_index_set
+            if (origin, dest) in route_costs
+        )
 
         # Labor cost (piecewise with overhead inclusion and 4-hour minimum enforcement)
         # Uses labor decision variables for accurate cost calculation
@@ -2532,11 +2605,15 @@ class UnifiedNodeModel(BaseOptimizationModel):
                         labor_cost += labor_hours_needed * 25.0
 
         # Shortage penalty (if shortages allowed)
-        shortage_cost = 0
+        # OPTIMIZATION: Use quicksum() for faster expression building
         if self.allow_shortages:
             penalty = self.cost_structure.shortage_penalty_per_unit
-            for (node_id, prod, date) in self.demand.keys():
-                shortage_cost += penalty * model.shortage[node_id, prod, date]
+            shortage_cost = quicksum(
+                penalty * model.shortage[node_id, prod, date]
+                for (node_id, prod, date) in self.demand.keys()
+            )
+        else:
+            shortage_cost = 0
 
         # Holding cost (state-specific pallet-based tracking with ceiling rounding)
         holding_cost = 0

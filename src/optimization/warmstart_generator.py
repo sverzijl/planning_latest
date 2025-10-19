@@ -471,8 +471,8 @@ def create_default_warmstart(
 ) -> Dict[Tuple[str, str, Date], int]:
     """Convenience function to create campaign warmstart with default parameters.
 
-    Uses sensible defaults:
-        - 3 SKUs per weekday
+    Uses realistic defaults based on actual production patterns:
+        - 2 SKUs per weekday (each SKU produced twice weekly for 5 SKUs)
         - 7-day freshness window
         - Demand-weighted allocation
 
@@ -506,6 +506,6 @@ def create_default_warmstart(
         end_date=end_date,
         max_daily_production=max_daily_production,
         fixed_labor_days=fixed_labor_days,
-        target_skus_per_weekday=3,  # Default: 3 SKUs per weekday
+        target_skus_per_weekday=2,  # FIXED: 2 SKUs per weekday (each SKU twice weekly for 5 SKUs)
         freshness_days=7,  # Default: 7-day freshness
     )

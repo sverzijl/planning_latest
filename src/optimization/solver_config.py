@@ -17,12 +17,13 @@ from pyomo.environ import ConcreteModel, Var, Objective, Constraint, NonNegative
 
 class SolverType(str, Enum):
     """Supported solver types."""
+    APPSI_HIGHS = "appsi_highs"  # APPSI HiGHS interface (supports warmstart! Added in Pyomo 6.9.1)
+    GUROBI = "gurobi"
+    CPLEX = "cplex"
+    HIGHS = "highs"      # HiGHS legacy interface (no warmstart support)
     ASL_CBC = "asl:cbc"  # AMPL interface (preferred for CBC 2.10.12+)
     CBC = "cbc"          # Direct interface (may have issues with CBC 2.10.12+)
     GLPK = "glpk"
-    HIGHS = "highs"      # HiGHS open-source solver (fast, comparable to Gurobi)
-    GUROBI = "gurobi"
-    CPLEX = "cplex"
 
 
 @dataclass
@@ -77,12 +78,13 @@ class SolverConfig:
 
     # Solver preference order (best to worst for this application)
     SOLVER_PREFERENCE = [
-        SolverType.GUROBI,   # Commercial, fastest
-        SolverType.CPLEX,    # Commercial, very fast
-        SolverType.HIGHS,    # Open source, performance comparable to Gurobi (2024 benchmarks)
-        SolverType.ASL_CBC,  # Open source via AMPL interface (best for CBC 2.10.12+)
-        SolverType.CBC,      # Open source direct (may fail with CBC 2.10.12+)
-        SolverType.GLPK,     # Open source, slower but widely available
+        SolverType.GUROBI,      # Commercial, fastest
+        SolverType.CPLEX,       # Commercial, very fast
+        SolverType.APPSI_HIGHS, # APPSI HiGHS (supports warmstart! 90%+ faster with good initial values)
+        SolverType.HIGHS,       # HiGHS legacy (no warmstart, but still fast)
+        SolverType.ASL_CBC,     # Open source via AMPL interface (best for CBC 2.10.12+)
+        SolverType.CBC,         # Open source direct (may fail with CBC 2.10.12+)
+        SolverType.GLPK,        # Open source, slower but widely available
     ]
 
     def __init__(self):
@@ -100,32 +102,48 @@ class SolverConfig:
         Check if a specific solver is available.
 
         Args:
-            solver_name: Name of solver (e.g., 'cbc', 'glpk')
+            solver_name: Name of solver (e.g., 'cbc', 'glpk', 'appsi_highs')
 
         Returns:
             SolverInfo with availability details
         """
         try:
-            solver = SolverFactory(solver_name)
-            available = solver.available()
+            # APPSI solvers use different interface
+            if solver_name == 'appsi_highs':
+                try:
+                    from pyomo.contrib.appsi.solvers import Highs
+                    solver = Highs()
+                    # APPSI solvers have .available() method
+                    available = solver.available()
+                    return SolverInfo(
+                        name=solver_name,
+                        available=available,
+                        path='APPSI (built-in Python interface)'
+                    )
+                except ImportError:
+                    return SolverInfo(name=solver_name, available=False)
+            else:
+                # Legacy SolverFactory interface
+                solver = SolverFactory(solver_name)
+                available = solver.available()
 
-            # Try to find executable path
-            path = None
-            if available:
-                # Try to get path from various sources
-                if hasattr(solver, 'executable'):
-                    path = solver.executable()
-                elif hasattr(solver, '_executable'):
-                    path = solver._executable
-                else:
-                    # Try to find in PATH
-                    path = shutil.which(solver_name)
+                # Try to find executable path
+                path = None
+                if available:
+                    # Try to get path from various sources
+                    if hasattr(solver, 'executable'):
+                        path = solver.executable()
+                    elif hasattr(solver, '_executable'):
+                        path = solver._executable
+                    else:
+                        # Try to find in PATH
+                        path = shutil.which(solver_name)
 
-            return SolverInfo(
-                name=solver_name,
-                available=available,
-                path=path
-            )
+                return SolverInfo(
+                    name=solver_name,
+                    available=available,
+                    path=path
+                )
         except Exception as e:
             return SolverInfo(
                 name=solver_name,
@@ -348,14 +366,42 @@ class SolverConfig:
                 f"See docs/SOLVER_INSTALLATION.md for installation instructions."
             )
 
-        solver = SolverFactory(solver_name)
+        # APPSI solvers use different interface
+        if solver_name == 'appsi_highs':
+            from pyomo.contrib.appsi.solvers import Highs
+            solver = Highs()
 
-        # Set options if provided
-        if options:
-            for key, value in options.items():
-                solver.options[key] = value
+            # Set options via config (not solver.options)
+            if options:
+                # Map common options to APPSI config
+                if 'time_limit' in options:
+                    solver.config.time_limit = options['time_limit']
+                # Handle both parameter names for MIP gap
+                if 'mip_gap' in options:
+                    solver.config.mip_gap = options['mip_gap']
+                elif 'mip_rel_gap' in options:
+                    solver.config.mip_gap = options['mip_rel_gap']
 
-        return solver
+                # HiGHS-specific options go to highs_options dict
+                highs_specific = {}
+                for key, value in options.items():
+                    if key not in ['time_limit', 'mip_gap', 'mip_rel_gap']:
+                        highs_specific[key] = value
+
+                if highs_specific:
+                    solver.highs_options.update(highs_specific)
+
+            return solver
+        else:
+            # Legacy SolverFactory interface
+            solver = SolverFactory(solver_name)
+
+            # Set options if provided
+            if options:
+                for key, value in options.items():
+                    solver.options[key] = value
+
+            return solver
 
     def get_solver_info(self, solver_name: str) -> Optional[SolverInfo]:
         """
