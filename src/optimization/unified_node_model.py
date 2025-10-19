@@ -598,9 +598,8 @@ class UnifiedNodeModel(BaseOptimizationModel):
             ]
             model.product_produced = Var(
                 product_produced_index,
-                within=NonNegativeReals,
-                bounds=(0, 1),
-                doc="Indicator: 1 if this product is produced (relaxed for performance)"
+                within=Binary,
+                doc="Binary indicator: 1 if this product is produced, 0 otherwise"
             )
 
             # Integer: Count of distinct products produced
@@ -684,6 +683,10 @@ class UnifiedNodeModel(BaseOptimizationModel):
         if self.truck_schedules:
             print(f"  Truck constraints added (generalized for any node)")
         print(f"  Model complete and ready to solve")
+
+        # Apply warmstart hints if provided (before returning model)
+        if hasattr(self, '_warmstart_hints') and self._warmstart_hints:
+            self._apply_warmstart(model, self._warmstart_hints)
 
         return model
 
@@ -920,6 +923,82 @@ class UnifiedNodeModel(BaseOptimizationModel):
                 # Frozen arriving at frozen-capable node → stays frozen
                 return 'frozen'
 
+    def _generate_warmstart(self) -> Optional[Dict[Tuple[str, str, Date], int]]:
+        """Generate campaign-based warmstart hints for product_produced variables.
+
+        Uses demand-weighted allocation to create a weekly production campaign pattern
+        with 2-3 SKUs per weekday, balanced across products based on forecast demand.
+
+        Returns:
+            Warmstart hints dictionary {(node_id, product, date): 0 or 1} or None
+        """
+        try:
+            from .warmstart_generator import create_default_warmstart
+
+            if not self.manufacturing_nodes:
+                return None
+
+            manufacturing_node_id = next(iter(self.manufacturing_nodes))
+
+            # Get max daily production from manufacturing node
+            max_daily_prod = self.get_max_daily_production()
+
+            # Generate hints using demand-weighted campaign pattern
+            hints = create_default_warmstart(
+                demand_forecast=self.demand,
+                manufacturing_node_id=manufacturing_node_id,
+                products=list(self.products),
+                start_date=self.start_date,
+                end_date=self.end_date,
+                max_daily_production=max_daily_prod,
+                fixed_labor_days=None,  # Will auto-detect Mon-Fri
+            )
+
+            return hints if hints else None
+
+        except Exception as e:
+            print(f"Warning: Warmstart generation failed - {e}")
+            return None
+
+    def _apply_warmstart(self, model: ConcreteModel, warmstart_hints: Dict[Tuple[str, str, Date], int]) -> int:
+        """Apply warmstart hints to product_produced binary variables.
+
+        Args:
+            model: Built Pyomo model
+            warmstart_hints: Dictionary {(node_id, product, date): 0 or 1}
+
+        Returns:
+            Number of variables successfully initialized
+        """
+        if not warmstart_hints or not hasattr(model, 'product_produced'):
+            return 0
+
+        print(f"\nApplying warmstart hints...")
+
+        applied_count = 0
+        skipped_count = 0
+
+        for (node_id, product, date_val), hint_value in warmstart_hints.items():
+            # Check if this variable index exists in the model
+            if (node_id, product, date_val) not in model.product_produced:
+                skipped_count += 1
+                continue
+
+            # Set initial value for this binary variable using direct assignment
+            # Per Stack Exchange: use m.var = value (not m.var.set_value(value))
+            try:
+                model.product_produced[node_id, product, date_val] = hint_value
+                applied_count += 1
+            except Exception as e:
+                skipped_count += 1
+                continue
+
+        print(f"  Warmstart applied: {applied_count} variables initialized")
+        if skipped_count > 0:
+            print(f"  Skipped: {skipped_count} invalid indices")
+
+        return applied_count
+
     def solve(
         self,
         solver_name: Optional[str] = None,
@@ -927,6 +1006,8 @@ class UnifiedNodeModel(BaseOptimizationModel):
         mip_gap: Optional[float] = None,
         tee: bool = False,
         use_aggressive_heuristics: bool = False,
+        use_warmstart: bool = False,
+        warmstart_hints: Optional[Dict[Tuple[str, str, Date], int]] = None,
     ) -> OptimizationResult:
         """Build and solve the unified node model.
 
@@ -936,10 +1017,22 @@ class UnifiedNodeModel(BaseOptimizationModel):
             mip_gap: MIP gap tolerance
             tee: Show solver output
             use_aggressive_heuristics: Enable aggressive CBC heuristics (for large problems)
+            use_warmstart: Enable warmstart with campaign-based production pattern
+            warmstart_hints: Optional pre-generated warmstart hints.
+                If None and use_warmstart=True, hints are generated automatically.
+                Format: {(node_id, product_id, date): 0 or 1}
 
         Returns:
             OptimizationResult with solve status and metrics
         """
+        # Generate or store warmstart hints (applied during build_model)
+        if use_warmstart:
+            if warmstart_hints is None:
+                warmstart_hints = self._generate_warmstart()
+            self._warmstart_hints = warmstart_hints
+        else:
+            self._warmstart_hints = None
+
         # Call base class solve (builds model + solves)
         return super().solve(
             solver_name=solver_name,
@@ -947,6 +1040,7 @@ class UnifiedNodeModel(BaseOptimizationModel):
             mip_gap=mip_gap,
             tee=tee,
             use_aggressive_heuristics=use_aggressive_heuristics,
+            use_warmstart=use_warmstart,  # Pass to base class so Pyomo generates -mipstart flag
         )
 
     def extract_solution(self, model: ConcreteModel) -> Dict[str, Any]:

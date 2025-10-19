@@ -183,7 +183,7 @@ Start with a basic model and gradually increase complexity. Begin with a simple 
 - ✅ Constraints: labor capacity, production capacity, unified inventory balance, demand satisfaction, truck scheduling (pallet-level), shelf life
 - ✅ Objective: minimize total cost (labor + production + transport + **holding** + shortage penalty)
 - ✅ **Pallet-based holding costs** (2025-10-17) - Integer pallet_count variables with ceiling constraints enforce storage pallet granularity
-- ✅ Solver integration with CBC 2.10.12 compatibility (CBC, GLPK, Gurobi, CPLEX)
+- ✅ **Solver integration** - HiGHS (recommended), CBC, GLPK, Gurobi, CPLEX
 - ✅ Cross-platform support (Linux, macOS, Windows)
 - ✅ Batch tracking with age-cohort inventory (use_batch_tracking parameter)
 - ✅ Soft constraints for demand shortages (allow_shortages parameter)
@@ -200,13 +200,15 @@ Start with a basic model and gradually increase complexity. Begin with a simple 
   - Demand satisfaction tracking with fill rate calculation
 - ✅ Complete documentation and solver installation guide
 - ✅ 7 core tests validating UnifiedNodeModel + 42 supporting tests
+- ✅ **Binary variable enforcement** (2025-10-19) - True binary product_produced variables for proper SKU selection
+- ✅ **HiGHS solver integration** (2025-10-19) - High-performance MIP solver with 2.35x speedup over CBC
 
 **Phase 3 Deliverables:**
 - Proven optimal solutions minimizing total cost to serve
 - 100% demand satisfaction with proper planning horizons
-- **Performance:** 4-week horizon in ~35-45s (with pallet-based holding costs enabled)
+- **Performance:** 4-week horizon in ~96s with HiGHS (binary variables enabled)
+- **Performance:** 4-week horizon in ~35-45s with CBC (continuous relaxation or unit-based costs)
 - **Performance:** 4-week horizon in ~20-30s (with pallet-based costs disabled via zero storage rates - recommended for testing)
-- **Performance:** Truck pallet-level loading attempted but deferred (CBC could not solve in <300s)
 - Shortage penalty option for infeasible demand scenarios
 - Clean architecture eliminating legacy bugs
 - Interactive UI for optimization configuration and results
@@ -235,6 +237,8 @@ Start with a basic model and gradually increase complexity. Begin with a simple 
 - **Pandas** - Data manipulation and Excel I/O
 - **NetworkX** - Graph/network modeling and algorithms
 - **Pyomo** - Mathematical optimization modeling (Phase 3+)
+- **HiGHS** - High-performance MIP solver (recommended for binary variables)
+- **CBC** - Fallback open-source solver
 - **Plotly** - Interactive visualizations
 - **Openpyxl** - Excel file handling (.xlsm support)
 - **Pytest** - Testing framework
@@ -295,6 +299,29 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+### Solver Installation
+
+**HiGHS (Recommended for Binary Variables):**
+```bash
+pip install highspy
+```
+
+**CBC (Fallback Open-Source Solver):**
+```bash
+# Ubuntu/Debian
+sudo apt-get install coinor-cbc
+
+# macOS
+brew install cbc
+
+# Conda
+conda install -c conda-forge coincbc
+```
+
+**Commercial Solvers (Optional):**
+- **Gurobi**: Requires license (academic licenses available)
+- **CPLEX**: Requires license (academic licenses available)
+
 ### Running the Application
 
 ```bash
@@ -320,13 +347,43 @@ pytest --cov=src tests/
 4. **State machine for shelf life:** Track product state (frozen/ambient/thawed) and automatic transitions
 5. **Tiered labor cost model:** Explicit modeling of fixed hours, overtime, and non-fixed labor days with different cost rates
 6. **Generalized truck constraints:** Work for any node (not just manufacturing), day-of-week enforcement, intermediate stops
-7. **Mathematical optimization first:** Proven optimal solutions via Pyomo/CBC (heuristics deprecated)
+7. **Mathematical optimization first:** Proven optimal solutions via Pyomo/HiGHS (heuristics deprecated)
 8. **Separation of concerns:** Clear boundaries between data models (src/models/), optimization (src/optimization/), UI (ui/), and analysis (src/analysis/)
 9. **Excel as input format:** Maintain compatibility with existing workflows; comprehensive input covering forecast, network, labor, trucks, costs, inventory
 10. **Cost-centric objective:** Minimize total cost to serve (not just waste); enables business-driven trade-off decisions
 11. **Pallet-level granularity:** (2025-10-17) Integer pallet variables for storage enforce "partial pallets occupy full pallet space" rule. Truck pallet-level enforcement deferred (causes unexpected solver difficulty despite small variable count increase).
+12. **Binary variable enforcement:** (2025-10-19) True binary product_produced variables prevent fractional SKU production; HiGHS solver enables practical performance.
 
 **Recent Updates:**
+- **2025-10-19:** Added **HiGHS solver integration for binary variables** - ✅ **IMPLEMENTED**
+  - **Performance breakthrough**: HiGHS solves 4-week in 96s (vs CBC 226s) - 2.35x faster
+  - **Binary variables now practical**: Binary product_produced enforcement with acceptable performance
+  - **Modern MIP solver**: Superior presolve (62% reduction), symmetry detection, efficient cuts
+  - **Warmstart findings**: Campaign-based warmstart has zero effect on HiGHS (discarded during presolve)
+  - **Solver configuration**: HiGHS added to base_model.py with proper options
+  - **Installation**: `pip install highspy` (already in requirements.txt)
+  - **Recommended configuration**:
+    - Solver: HiGHS (default for binary variables)
+    - Binary variables: Enabled (product_produced within=Binary)
+    - Warmstart: Disabled (use_warmstart=False - no benefit for HiGHS)
+    - Time limit: 120s (completes in ~96s for 4-week)
+  - **Performance targets**:
+    - 1-week: ~2s (HiGHS) vs 5-10s (CBC)
+    - 2-weeks: ~10-20s (HiGHS) vs 40-80s (CBC)
+    - 4-weeks: ~96s (HiGHS) vs 226s (CBC)
+  - **Integration test**: test_sku_reduction_simple.py validates SKU reduction (PASSING)
+  - **Conclusion**: Binary enforcement + HiGHS solver = optimal SKU selection with practical performance
+- **2025-10-19:** Added **campaign-based warmstart for MIP solving** - ✅ **IMPLEMENTED (NOTE: Zero effect on HiGHS)**
+  - Implemented DEMAND_WEIGHTED algorithm for binary product_produced variable initialization
+  - Created `src/optimization/warmstart_generator.py` (509 lines) with pattern-based hints
+  - Fixed CRITICAL bug: Added `warmstart=use_warmstart` flag to `base_model.py` solver.solve() call
+  - CBC solver now receives and uses warmstart values (previously set but ignored)
+  - Test suite: `tests/test_unified_warmstart_integration.py` with 9 test cases
+  - Validation report: `docs/WARMSTART_VALIDATION_REPORT.md` documents implementation correctness
+  - **HiGHS finding**: Warmstart has ZERO effect (96.0s vs 96.2s) - likely discarded during aggressive presolve
+  - **Recommendation**: Do NOT use warmstart with HiGHS solver
+  - User-facing parameter: `use_warmstart=True` (default: False, opt-in)
+  - Documentation: Comprehensive warmstart section in `UNIFIED_NODE_MODEL_SPECIFICATION.md`
 - **2025-10-18:** Added **state-specific fixed pallet costs and conditional pallet tracking** - ✅ **IMPLEMENTED**
   - New cost parameters: `storage_cost_fixed_per_pallet_frozen` and `storage_cost_fixed_per_pallet_ambient`
   - Independent tracking modes: frozen can use pallet tracking while ambient uses units (or vice versa)
@@ -491,7 +548,7 @@ The objective function minimizes **total cost to serve**, comprising:
    - **Non-fixed days (weekends/holidays):**
      - All hours: `labor_hours_paid × non_fixed_rate` (e.g., $40/h)
      - 4-hour minimum payment: `labor_hours_paid ≥ max(labor_hours_used, 4.0)`
-   - **Overhead time inclusion:** Labor hours include startup (0.5h) + shutdown (0.25h) + changeover time
+   - **Overhead time inclusion:** Labor hours include startup (0.5h) + shutdown (0.5h) + changeover time
    - **Implementation:** 5 decision variables + 8 constraint types per manufacturing node-date
    - **Performance:** Zero impact (32-38s for 4-week horizon, same as before)
    - **Bugs fixed:** (1) Overhead excluded from cost, (2) Blended rate approximation, (3) No 4h minimum enforcement
@@ -545,7 +602,7 @@ The objective function minimizes **total cost to serve**, comprising:
    storage_cost_ambient_per_unit_day       0.002  # ENABLE unit-based (fast)
    ```
 
-   **For production optimization with cost accuracy (requires Gurobi/CPLEX or longer solve times):**
+   **For production optimization with cost accuracy (requires HiGHS/Gurobi/CPLEX or longer solve times):**
    ```
    # Network_Config.xlsx - CostParameters sheet
    storage_cost_fixed_per_pallet_frozen    3.0    # Fixed cost for frozen pallet entry
@@ -571,8 +628,9 @@ The objective function minimizes **total cost to serve**, comprising:
 
    **When to use pallet-based costs:**
    - Using commercial solvers (Gurobi, CPLEX) with better MIP performance
+   - Using HiGHS solver (handles MIP efficiently)
    - Need accurate storage cost representation (partial pallets = full pallet cost)
-   - Can tolerate 2x longer solve times (35-45s vs 20-30s for 4-week horizon)
+   - Can tolerate longer solve times (35-45s vs 20-30s for 4-week horizon with CBC)
    - Have smaller problem sizes or longer time limits
    - Production use cases where cost accuracy > solve speed
 

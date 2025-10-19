@@ -192,6 +192,7 @@ class BaseOptimizationModel(ABC):
         time_limit_seconds: Optional[float] = None,
         mip_gap: Optional[float] = None,
         use_aggressive_heuristics: bool = False,
+        use_warmstart: bool = False,
     ) -> OptimizationResult:
         """
         Build and solve the optimization model.
@@ -205,6 +206,8 @@ class BaseOptimizationModel(ABC):
             use_aggressive_heuristics: If True, enable aggressive heuristics for CBC
                 (feasibility pump, RINS, proximity search, diving, etc.)
                 Recommended for large problems (21+ day windows)
+            use_warmstart: If True, pass warmstart flag to solver (requires variables
+                to have initial values set via .set_value()). Used for MIP warmstarting.
 
         Returns:
             OptimizationResult with solve status and objective value
@@ -215,6 +218,7 @@ class BaseOptimizationModel(ABC):
                 time_limit_seconds=300,
                 mip_gap=0.01,
                 use_aggressive_heuristics=True,  # For large problems
+                use_warmstart=True,  # Use warmstart values if available
                 tee=True
             )
         """
@@ -268,6 +272,25 @@ class BaseOptimizationModel(ABC):
                 options['timelimit'] = time_limit_seconds
             if mip_gap is not None:
                 options['mip_tolerances_mipgap'] = mip_gap
+        elif solver_name == 'highs':
+            # HiGHS-specific options
+            # HiGHS uses different parameter names than CBC/Gurobi/CPLEX
+            import os
+
+            # ALWAYS enable parallel threads for HiGHS (not just with aggressive heuristics)
+            options['threads'] = os.cpu_count() or 4
+
+            if time_limit_seconds is not None:
+                options['time_limit'] = time_limit_seconds
+            if mip_gap is not None:
+                options['mip_rel_gap'] = mip_gap
+
+            # Additional HiGHS options for better MIP performance
+            if use_aggressive_heuristics:
+                # Enable aggressive presolve and MIP heuristics
+                options['presolve'] = 'on'
+                options['mip_heuristic_effort'] = 1.0  # Maximum effort (0.0-1.0)
+                options['mip_detect_symmetry'] = True
 
         # Create solver
         try:
@@ -287,12 +310,20 @@ class BaseOptimizationModel(ABC):
         # Pass options to avoid compatibility issues with CBC
         # symbolic_solver_labels=False prevents -printingOptions error
         # load_solutions=False to handle errors more gracefully
-        results = solver.solve(
-            self.model,
-            tee=tee,
-            symbolic_solver_labels=False,
-            load_solutions=False,  # Load manually to handle errors better
-        )
+        # warmstart=True tells solver to use variable initial values (CBC only)
+
+        # HiGHS doesn't support warmstart kwarg - only CBC/Gurobi/CPLEX do
+        solve_kwargs = {
+            'tee': tee,
+            'symbolic_solver_labels': False,
+            'load_solutions': False,  # Load manually to handle errors better
+        }
+
+        # Only pass warmstart for solvers that support it
+        if use_warmstart and solver_name not in ['highs']:
+            solve_kwargs['warmstart'] = True
+
+        results = solver.solve(self.model, **solve_kwargs)
         solve_time = time.time() - solve_start
 
         # Extract result information

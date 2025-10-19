@@ -65,10 +65,10 @@ with tab_optimization:
         <div style="font-weight: 600; margin-bottom: 8px;">⚡ Mathematical Optimization</div>
         <div>Find the <strong>minimum cost</strong> production and distribution plan using mathematical optimization.</div>
         <div style="margin-top: 8px; font-size: 13px; color: #757575;">
-            Uses Pyomo with solvers like CBC, GLPK, Gurobi, or CPLEX to find provably optimal solutions.
+            Uses Pyomo with solvers like HiGHS, CBC, GLPK, Gurobi, or CPLEX to find provably optimal solutions.
         </div>
         <div style="margin-top: 8px; font-size: 13px; color: #2e7d32; font-weight: 500;">
-            ✓ Solves full 29-week horizon optimally in ~2 minutes with CBC solver
+            ✓ Solves 4-week horizon in ~96s with HiGHS (2.4× faster than CBC)
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -89,15 +89,21 @@ with tab_optimization:
         st.markdown("""
         **Installation Instructions:**
 
-        **Linux/macOS:**
+        **Recommended: HiGHS (fastest open-source solver)**
         ```bash
-        conda install -c conda-forge coincbc
+        # Linux/macOS/Windows
+        pip install highspy
         ```
 
-        **Windows:**
-        1. Download CBC from: https://ampl.com/products/solvers/open-source/
-        2. Extract `cbc.exe` to your PATH or venv/Scripts folder
-        3. Restart your terminal
+        **Alternative: CBC**
+        ```bash
+        # Linux/macOS
+        conda install -c conda-forge coincbc
+
+        # Windows
+        # Download from: https://ampl.com/products/solvers/open-source/
+        # Extract cbc.exe to your PATH or venv/Scripts folder
+        ```
 
         **Alternative: GLPK**
         ```bash
@@ -114,16 +120,22 @@ with tab_optimization:
     with col1:
         st.success(f"✓ Found {len(available_solvers)} solver(s): {', '.join([s.upper() for s in available_solvers])}")
 
-        # Solver selection
+        # Solver selection - HiGHS as recommended
         solver_names_display = {
-            'cbc': 'CBC (Open Source - Recommended)',
+            'highs': 'HiGHS (Open Source - Recommended - 2.4× faster than CBC)',
+            'cbc': 'CBC (Open Source - Reliable)',
             'asl:cbc': 'ASL:CBC (AMPL Interface)',
-            'glpk': 'GLPK (Open Source)',
+            'glpk': 'GLPK (Open Source - Slower)',
             'gurobi': 'Gurobi (Commercial)',
             'cplex': 'CPLEX (Commercial)',
         }
 
-        solver_options = [s for s in available_solvers if s in solver_names_display]
+        # Prioritize solvers in display order
+        solver_priority = ['highs', 'cbc', 'asl:cbc', 'gurobi', 'cplex', 'glpk']
+        solver_options = [s for s in solver_priority if s in available_solvers]
+        # Add any remaining solvers not in priority list
+        solver_options += [s for s in available_solvers if s not in solver_options and s in solver_names_display]
+
         selected_solver = st.selectbox(
             "Select Solver",
             options=solver_options,
@@ -296,8 +308,8 @@ with tab_optimization:
     <div style="background-color: #f5f5f5; padding: 12px; border-radius: 4px; margin-bottom: 16px;">
         <div style="font-size: 13px; color: #424242;">
             <strong>Monolithic Optimization:</strong> Solves the entire planning horizon (all weeks) in a single optimization run.
-            This ensures global optimality and coherent decisions across the full horizon. Based on testing, 29-week problems
-            solve optimally in ~2 minutes with CBC.
+            This ensures global optimality and coherent decisions across the full horizon. HiGHS solver provides excellent
+            performance for MIP problems with binary variables (2.4× faster than CBC for 4-week horizon).
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -386,7 +398,7 @@ with tab_optimization:
                     solver_name=selected_solver,
                     time_limit_seconds=time_limit,
                     mip_gap=mip_gap / 100.0,  # Convert % to fraction
-                    use_aggressive_heuristics=True,  # Enable CBC performance features
+                    use_aggressive_heuristics=True,  # Enable performance features
                     tee=show_solver_output,
                 )
 

@@ -630,6 +630,129 @@ def test_ui_workflow_4_weeks_with_initial_inventory(parsed_data):
         pytest.fail("\n".join(deferred_assertions))
 
 
+def test_ui_workflow_4_weeks_with_highs(parsed_data):
+    """Test 4-week optimization with HiGHS solver (2.35x faster than CBC).
+
+    This test validates:
+    1. HiGHS solver integration and compatibility
+    2. Performance improvement over CBC (96s vs 226s expected)
+    3. Solution quality maintained with HiGHS
+    4. Binary variable handling with HiGHS (no warmstart)
+
+    Context:
+    - HiGHS solves 4-week in ~96s (vs CBC ~226s with binary variables)
+    - Binary product_produced variables work well with HiGHS
+    - Warmstart has no effect on HiGHS (not supported)
+    - Expected speedup: 2.35x over CBC
+    """
+
+    # Extract parsed data
+    forecast = parsed_data['forecast']
+    nodes = parsed_data['nodes']
+    unified_routes = parsed_data['unified_routes']
+    unified_truck_schedules = parsed_data['unified_truck_schedules']
+    labor_calendar = parsed_data['labor_calendar']
+    cost_structure = parsed_data['cost_structure']
+    initial_inventory = parsed_data['initial_inventory']
+    inventory_snapshot_date = parsed_data['inventory_snapshot_date']
+
+    # Validate or set inventory snapshot date
+    if inventory_snapshot_date is not None:
+        print(f"\n✓ Inventory snapshot date: {inventory_snapshot_date}")
+    else:
+        inventory_snapshot_date = min(e.forecast_date for e in forecast.entries)
+        print(f"\n⚠ No inventory file - using earliest forecast date: {inventory_snapshot_date}")
+
+    # Calculate 4-week planning horizon
+    planning_start_date = inventory_snapshot_date
+    planning_end_date = planning_start_date + timedelta(weeks=4)
+
+    print("\n" + "="*80)
+    print("TEST: 4-WEEK HORIZON WITH HIGHS SOLVER")
+    print("="*80)
+    print(f"Planning horizon: {planning_start_date} to {planning_end_date} (4 weeks)")
+    print(f"Solver: HiGHS (expected 2.35x speedup over CBC)")
+
+    # Create model
+    model_start = time.time()
+
+    model = UnifiedNodeModel(
+        nodes=nodes,
+        routes=unified_routes,
+        forecast=forecast,
+        labor_calendar=labor_calendar,
+        cost_structure=cost_structure,
+        start_date=planning_start_date,
+        end_date=planning_end_date,
+        truck_schedules=unified_truck_schedules,
+        initial_inventory=initial_inventory.to_optimization_dict() if initial_inventory else None,
+        inventory_snapshot_date=inventory_snapshot_date,
+        use_batch_tracking=True,
+        allow_shortages=True,
+        enforce_shelf_life=True,
+    )
+
+    model_build_time = time.time() - model_start
+
+    print(f"✓ Model built in {model_build_time:.2f}s")
+    print(f"  Nodes: {len(model.nodes)}")
+    print(f"  Routes: {len(model.routes)}")
+    print(f"  Planning horizon: {len(model.production_dates)} days")
+
+    # Solve with HiGHS
+    solve_start = time.time()
+
+    result = model.solve(
+        solver_name='highs',  # Use HiGHS solver
+        time_limit_seconds=120,  # Should complete in ~96s
+        mip_gap=0.01,
+        use_aggressive_heuristics=True,  # Enable HiGHS performance features
+        use_warmstart=False,  # No benefit for HiGHS (not supported)
+        tee=False,
+    )
+
+    solve_time = time.time() - solve_start
+
+    print(f"\n✓ HIGHS SOLVE COMPLETE:")
+    print(f"   Status: {result.termination_condition}")
+    print(f"   Solve time: {solve_time:.1f}s (expected <120s)")
+    print(f"   Objective: ${result.objective_value:,.2f}")
+    print(f"   MIP gap: {result.gap * 100:.2f}%" if result.gap else "   MIP gap: N/A")
+
+    # Assertions
+    assert result.is_optimal() or result.is_feasible(), \
+        f"Expected optimal/feasible, got {result.termination_condition}"
+
+    assert solve_time < 120, \
+        f"HiGHS took {solve_time:.1f}s (expected <120s based on 96s benchmark)"
+
+    # Validate solution quality
+    solution = model.get_solution()
+    assert solution is not None, "Solution should not be None"
+
+    # Extract metrics
+    production_by_date_product = solution.get('production_by_date_product', {})
+    total_production = sum(production_by_date_product.values())
+    total_shortage = solution.get('total_shortage_units', 0)
+
+    demand_in_horizon = sum(
+        e.quantity for e in forecast.entries
+        if planning_start_date <= e.forecast_date <= planning_end_date
+    )
+    fill_rate = 100 * (1 - total_shortage / demand_in_horizon) if demand_in_horizon > 0 else 100
+
+    print(f"\nSOLUTION QUALITY:")
+    print(f"   Production: {total_production:,.0f} units")
+    print(f"   Demand: {demand_in_horizon:,.0f} units")
+    print(f"   Fill rate: {fill_rate:.1f}%")
+
+    # Quality assertions
+    assert total_production > 0, "Should produce units"
+    assert fill_rate >= 85.0, f"Fill rate {fill_rate:.1f}% below 85% threshold"
+
+    print("\n✓ HIGHS TEST PASSED - SOLVER INTEGRATION VERIFIED")
+
+
 def test_ui_workflow_without_initial_inventory(parsed_data):
     """
     Test 4-week optimization WITHOUT initial inventory (pure forecast-driven).
@@ -729,6 +852,124 @@ def test_ui_workflow_without_initial_inventory(parsed_data):
     assert fill_rate >= 85.0, f"Fill rate {fill_rate:.1f}% below 85% threshold"
 
     print("\nTEST PASSED ✓")
+
+
+def test_ui_workflow_with_warmstart(parsed_data):
+    """Test 4-week optimization WITH warmstart for performance improvement.
+
+    This test validates:
+    1. Warmstart hint generation from demand-weighted campaign pattern
+    2. Application of warmstart to product_produced binary variables
+    3. Solver speedup from warmstart initialization
+    4. Solution quality maintained with warmstart
+    """
+
+    # Extract parsed data
+    forecast = parsed_data['forecast']
+    nodes = parsed_data['nodes']
+    unified_routes = parsed_data['unified_routes']
+    unified_truck_schedules = parsed_data['unified_truck_schedules']
+    labor_calendar = parsed_data['labor_calendar']
+    cost_structure = parsed_data['cost_structure']
+    initial_inventory = parsed_data['initial_inventory']
+    inventory_snapshot_date = parsed_data['inventory_snapshot_date']
+
+    # Validate or set inventory snapshot date
+    if inventory_snapshot_date is not None:
+        print(f"\n✓ Inventory snapshot date: {inventory_snapshot_date}")
+    else:
+        inventory_snapshot_date = min(e.forecast_date for e in forecast.entries)
+        print(f"\n⚠ No inventory file - using earliest forecast date: {inventory_snapshot_date}")
+
+    # Planning horizon
+    planning_start_date = inventory_snapshot_date
+    planning_end_date = planning_start_date + timedelta(weeks=4)
+
+    print("\n" + "=" * 80)
+    print("TEST: 4-WEEK HORIZON WITH WARMSTART")
+    print("=" * 80)
+    print(f"Planning horizon: {planning_start_date} to {planning_end_date} (28 days)")
+    print(f"Warmstart: ENABLED (campaign-based production pattern)")
+
+    # Create model
+    model_start = time.time()
+
+    model = UnifiedNodeModel(
+        nodes=nodes,
+        routes=unified_routes,
+        forecast=forecast,
+        labor_calendar=labor_calendar,
+        cost_structure=cost_structure,
+        start_date=planning_start_date,
+        end_date=planning_end_date,
+        truck_schedules=unified_truck_schedules,
+        initial_inventory=initial_inventory.to_optimization_dict() if initial_inventory else None,
+        inventory_snapshot_date=inventory_snapshot_date,
+        use_batch_tracking=True,
+        allow_shortages=True,
+        enforce_shelf_life=True,
+    )
+
+    model_build_time = time.time() - model_start
+
+    print(f"✓ Model built in {model_build_time:.2f}s")
+    print(f"  Nodes: {len(model.nodes)}")
+    print(f"  Routes: {len(model.routes)}")
+    print(f"  Planning horizon: {len(model.production_dates)} days")
+
+    # Solve WITH warmstart
+    print("\nSolving with warmstart...")
+    solve_start = time.time()
+
+    result = model.solve(
+        solver_name='cbc',
+        use_warmstart=True,  # ENABLE WARMSTART
+        time_limit_seconds=180,
+        mip_gap=0.01,
+        tee=False,
+    )
+
+    solve_time = time.time() - solve_start
+
+    print(f"\n✓ WARMSTART SOLVE COMPLETE:")
+    print(f"   Status: {result.termination_condition}")
+    print(f"   Solve time: {solve_time:.1f}s")
+    print(f"   Objective: ${result.objective_value:,.2f}")
+    print(f"   MIP gap: {result.gap * 100:.2f}%" if result.gap else "   MIP gap: N/A")
+
+    # Assertions
+    assert result.is_optimal() or result.is_feasible(), \
+        f"Expected optimal/feasible, got {result.termination_condition}"
+
+    # Performance assertion: Should complete in reasonable time
+    assert solve_time < 180, \
+        f"Warmstart solve took {solve_time:.1f}s (timeout at 180s)"
+
+    # Solution quality
+    solution = model.get_solution()
+    assert solution is not None, "Solution should not be None"
+
+    # Extract metrics
+    production_by_date_product = solution.get('production_by_date_product', {})
+    total_production = sum(production_by_date_product.values())
+    total_shortage = solution.get('total_shortage_units', 0)
+
+    demand_in_horizon = sum(
+        e.quantity for e in forecast.entries
+        if planning_start_date <= e.forecast_date <= planning_end_date
+    )
+    fill_rate = 100 * (1 - total_shortage / demand_in_horizon) if demand_in_horizon > 0 else 100
+
+    print(f"\nSOLUTION QUALITY:")
+    print(f"   Production: {total_production:,.0f} units")
+    print(f"   Demand: {demand_in_horizon:,.0f} units")
+    print(f"   Fill rate: {fill_rate:.1f}%")
+
+    # Quality assertions
+    assert total_production > 0, "Should produce units"
+    assert fill_rate >= 85.0, f"Fill rate {fill_rate:.1f}% below 85% threshold"
+
+    print("\n✓ WARMSTART TEST PASSED")
 
 
 if __name__ == "__main__":
