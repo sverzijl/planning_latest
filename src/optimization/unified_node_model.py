@@ -360,12 +360,13 @@ class UnifiedNodeModel(BaseOptimizationModel):
         """Calculate maximum truck capacity across all trucks.
 
         Returns:
-            Maximum truck capacity in units
+            Maximum truck capacity in units, or infinity if no trucks
         """
         if self.truck_schedules:
             return max(t.capacity for t in self.truck_schedules)
         else:
-            return 14080.0  # Default: 44 pallets × 320 units
+            # No trucks = no capacity limit on shipments
+            return float('inf')
 
     def build_model(self) -> ConcreteModel:
         """Build Pyomo optimization model (skeleton only - constraints in Phase 5).
@@ -2336,8 +2337,9 @@ class UnifiedNodeModel(BaseOptimizationModel):
             if not labor_day or not labor_day.is_fixed_day:
                 return Constraint.Skip  # Only applies to fixed days
 
-            M = 2.0  # Max overtime hours (matches constraint 4)
-            return model.labor_hours_used[node_id, date] <= labor_day.fixed_hours + M * model.uses_overtime[node_id, date]
+            # Use actual overtime capacity from labor calendar (not hardcoded 2.0)
+            overtime_capacity = labor_day.overtime_hours
+            return model.labor_hours_used[node_id, date] <= labor_day.fixed_hours + overtime_capacity * model.uses_overtime[node_id, date]
 
         model.overtime_forcing_con = Constraint(
             production_day_index,

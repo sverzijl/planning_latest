@@ -161,14 +161,12 @@ def test_overtime_preference_over_weekend():
             print(f"  {date} ({day_name}): {qty:,.0f} units")
 
     print("\nLabor Hours Used:")
-    for date, hours in labor_by_date.items():
+    for date, hours_info in labor_by_date.items():
         day_name = date.strftime('%A')
-        labor_info = labor_breakdown.get(date, {})
-        print(f"  {date} ({day_name}): {hours:.2f}h used")
-        if labor_info:
-            print(f"    Fixed hours: {labor_info.get('fixed_hours_used', 0):.2f}h")
-            print(f"    Overtime hours: {labor_info.get('overtime_hours_used', 0):.2f}h")
-            print(f"    Cost: ${labor_info.get('total_cost', 0):.2f}")
+        print(f"  {date} ({day_name}): {hours_info['used']:.2f}h used")
+        print(f"    Fixed hours: {hours_info.get('fixed', 0):.2f}h")
+        print(f"    Overtime hours: {hours_info.get('overtime', 0):.2f}h")
+        print(f"    Hours paid: {hours_info.get('paid', 0):.2f}h")
 
     print("\nLabor Cost Breakdown:")
     total_labor = solution.get('total_labor_cost', 0)
@@ -205,9 +203,9 @@ def test_overtime_preference_over_weekend():
 
     # Check for overtime usage
     production_date = weekday_with_production[0]
-    labor_info = labor_breakdown.get(production_date, {})
+    hours_info = labor_by_date.get(production_date, {})
 
-    overtime_used = labor_info.get('overtime_hours_used', 0)
+    overtime_used = hours_info.get('overtime', 0)
     print(f"\nOvertime hours used on {production_date}: {overtime_used:.2f}h")
 
     assert overtime_used > 0.5, \
