@@ -1982,7 +1982,9 @@ class UnifiedNodeModel(BaseOptimizationModel):
                 )
 
                 # Total time constraint: production time + overhead <= available hours
-                return production_time + overhead_time <= labor_hours
+                # DEBUG: Print capacity violations during solve
+                constraint_expr = production_time + overhead_time <= labor_hours
+                return constraint_expr
             else:
                 # Changeover tracking not enabled - use old capacity calculation
                 # (This preserves backward compatibility if changeover vars not created)
@@ -2602,8 +2604,27 @@ class UnifiedNodeModel(BaseOptimizationModel):
             else:
                 print("  Holding cost skipped (all storage rates are zero)")
 
+        # Weekend usage penalty
+        # Add strong penalty for using weekend/holiday production to force overtime preference
+        # Penalty should be larger than cost difference between overtime and weekend rates
+        # Cost difference: (non_fixed_rate - overtime_rate) × max_weekend_hours
+        #                ≈ ($1,320 - $660) × 24h = $15,840/day
+        # Using penalty of $20,000/day to ensure weekday overtime always preferred
+        weekend_penalty_cost = 0
+        if hasattr(model, 'production_day'):
+            WEEKEND_PENALTY_PER_DAY = 20000.0
+
+            for node_id in self.manufacturing_nodes:
+                for date in model.dates:
+                    labor_day = self.labor_calendar.get_labor_day(date)
+
+                    # Apply penalty only to non-fixed days (weekends/holidays)
+                    if labor_day and not labor_day.is_fixed_day:
+                        if (node_id, date) in model.production_day:
+                            weekend_penalty_cost += WEEKEND_PENALTY_PER_DAY * model.production_day[node_id, date]
+
         # Total cost
-        total_cost = production_cost + transport_cost + labor_cost + shortage_cost + holding_cost
+        total_cost = production_cost + transport_cost + labor_cost + shortage_cost + holding_cost + weekend_penalty_cost
 
         model.obj = Objective(
             expr=total_cost,
