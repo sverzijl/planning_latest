@@ -1,0 +1,13 @@
+# Code Artifacts Directory
+
+This directory will contain code snippets and draft implementations during the development phase.
+
+**Status:** Empty (awaiting implementation phase)
+
+**Expected Contents:**
+- base_model_changes.md - Snippets showing modifications to base_model.py
+- unified_model_changes.md - Snippets showing modifications to unified_node_model.py
+- warmstart_generator.py - Draft implementation of WarmstartGenerator class
+
+**Created By:** context-manager
+**Date:** 2025-10-19

@@ -1,0 +1,16 @@
+{
+  "test_name": "test_labor_cost_baseline_non_fixed_day",
+  "scenario": "Non-fixed day (weekend), 2h production",
+  "production_qty": 2800.0,
+  "labor_hours_production": 2.0,
+  "labor_hours_overhead": 0.75,
+  "labor_hours_total": 2.75,
+  "minimum_hours": 4.0,
+  "non_fixed_rate": 40.0,
+  "labor_cost_actual": 160.0,
+  "labor_cost_expected_no_minimum": 110.0,
+  "labor_cost_expected_with_minimum": 160.0,
+  "error_amount": 50.0,
+  "error_pct": 31.25,
+  "bug": "Current model does NOT enforce 4-hour minimum payment"
+}

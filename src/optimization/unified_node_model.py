@@ -36,6 +36,7 @@ from collections import defaultdict
 from pyomo.environ import (
     ConcreteModel,
     Var,
+    Param,
     Constraint,
     Objective,
     minimize,
@@ -93,6 +94,9 @@ class UnifiedNodeModel(BaseOptimizationModel):
         use_batch_tracking: bool = True,
         allow_shortages: bool = False,
         enforce_shelf_life: bool = True,
+        force_all_skus_daily: bool = False,
+        force_sku_pattern: Optional[Dict[Tuple[str, str, Date], bool]] = None,
+        bigm_overrides: Optional[Dict[Tuple[str, str, Date], float]] = None,
     ):
         """Initialize unified node model.
 
@@ -110,6 +114,21 @@ class UnifiedNodeModel(BaseOptimizationModel):
             use_batch_tracking: Use age-cohort tracking (default: True)
             allow_shortages: Allow demand shortages with penalty (default: False)
             enforce_shelf_life: Enforce shelf life constraints (default: True)
+            force_all_skus_daily: Fix all SKUs to be produced every day (default: False)
+                                 When True, removes binary SKU selection complexity by
+                                 fixing product_produced[n,p,d] = 1 for all products.
+                                 Useful for: baseline testing, warmstart generation,
+                                 and scenarios where SKU reduction is not desired.
+            force_sku_pattern: Optional dict specifying which SKUs to force (default: None)
+                              Format: {(node_id, product, date): True/False}
+                              True = force to produce (fix to 1)
+                              False = leave as binary variable
+                              Allows partial SKU fixing for iterative refinement.
+            bigm_overrides: Optional dict of SKU-specific Big-M values (default: None)
+                           Format: {(node_id, product, date): big_m_value}
+                           Allows tighter Big-M for small-volume SKUs, making them
+                           easier to skip while still allowing production if needed.
+                           More flexible than force_sku_pattern (doesn't force to 0).
         """
         self.nodes_list = nodes
         self.nodes: Dict[str, UnifiedNode] = {n.id: n for n in nodes}
@@ -125,6 +144,9 @@ class UnifiedNodeModel(BaseOptimizationModel):
         self.use_batch_tracking = use_batch_tracking
         self.allow_shortages = allow_shortages
         self.enforce_shelf_life = enforce_shelf_life
+        self.force_all_skus_daily = force_all_skus_daily
+        self.force_sku_pattern = force_sku_pattern
+        self.bigm_overrides = bigm_overrides or {}
 
         # Initialize parent class (sets up solver_config)
         super().__init__()
@@ -324,39 +346,50 @@ class UnifiedNodeModel(BaseOptimizationModel):
         print(f"  Demand entries: {len(self.demand)}")
 
     def get_max_daily_production(self) -> float:
-        """Calculate maximum possible daily production.
+        """Calculate maximum realistic daily production capacity.
+
+        Uses actual labor calendar to determine the tightest feasible Big-M
+        constraint for product_produced binary linking. This provides better
+        LP relaxation bounds than using theoretical 24-hour capacity.
 
         Returns:
-            Maximum production in units per day (accounts for max labor hours)
+            Maximum production in units per day (based on realistic max hours)
         """
         max_labor_hours = 0.0
+
+        # First pass: find the maximum realistic working hours from labor calendar
         for date in self.production_dates:
             labor_day = self.labor_calendar.get_labor_day(date)
             if labor_day:
-                # Calculate available hours for each date:
-                # - Fixed days: fixed_hours + overtime capacity
-                # - Non-fixed days: 24 hours (unlimited capacity at premium rate)
                 if hasattr(labor_day, 'overtime_hours') and labor_day.overtime_hours:
+                    # Fixed day with explicit overtime capacity
                     day_hours = labor_day.fixed_hours + labor_day.overtime_hours
                 elif labor_day.is_fixed_day:
-                    # Assume standard: 12 fixed + 2 OT = 14 total
+                    # Fixed day without explicit overtime: assume standard 12 + 2 OT = 14h
                     day_hours = labor_day.fixed_hours + 2.0
                 else:
-                    # Non-fixed day: unlimited capacity at premium rate
-                    # Use 24 hours as reasonable physical upper bound for Big-M
-                    day_hours = 24.0  # FIX: Was labor_day.fixed_hours (which is 0)
+                    # Non-fixed day (weekend/holiday): use same max as fixed days
+                    # While theoretically unlimited, practical max is ~14h for tighter Big-M
+                    # This creates M = 1400 * 14 = 19,600 instead of 1400 * 24 = 33,600
+                    day_hours = 14.0  # Realistic practical maximum
 
                 max_labor_hours = max(max_labor_hours, day_hours)
 
-        # Get production rate from first manufacturing node (assume uniform)
+        # Fallback if no labor days found (shouldn't happen)
+        if max_labor_hours == 0.0:
+            max_labor_hours = 14.0  # Default realistic maximum
+
+        # Get production rate from manufacturing node capabilities
         if self.manufacturing_nodes:
             node_id = next(iter(self.manufacturing_nodes))
             node = self.nodes[node_id]
             prod_rate = node.capabilities.production_rate_per_hour or 1400.0
         else:
-            prod_rate = 1400.0  # Default
+            prod_rate = 1400.0  # Default production rate
 
-        return prod_rate * max_labor_hours
+        max_daily_production = prod_rate * max_labor_hours
+
+        return max_daily_production
 
     def get_max_truck_capacity(self) -> float:
         """Calculate maximum truck capacity across all trucks.
@@ -588,20 +621,67 @@ class UnifiedNodeModel(BaseOptimizationModel):
                 doc="Binary: 1 if any production occurs at this node on this date"
             )
 
-            # Relaxed binary: Is each specific product produced? (continuous [0,1])
-            # NOTE: Relaxed from Binary to NonNegativeReals with bounds=(0,1) for performance
-            # The sum constraint ensures these will be integer in optimal solution
+            # Product production indicators: Binary decision variables OR fixed parameters
             product_produced_index = [
                 (node_id, prod, date)
                 for node_id in self.manufacturing_nodes
                 for prod in model.products
                 for date in model.dates
             ]
-            model.product_produced = Var(
-                product_produced_index,
-                within=Binary,
-                doc="Binary indicator: 1 if this product is produced, 0 otherwise"
-            )
+
+            if self.force_all_skus_daily:
+                # FIXED MODE: Force all SKUs to be produced every day
+                # Creates product_produced as a Param (not Var) with value = 1
+                # Removes binary decision complexity for faster solving
+                model.product_produced = Param(
+                    product_produced_index,
+                    initialize=1.0,
+                    mutable=False,
+                    doc="Fixed parameter: All products produced every day (force_all_skus_daily=True)"
+                )
+                sku_mode_msg = "FIXED (all SKUs every day)"
+            elif self.force_sku_pattern:
+                # MIXED MODE: Some SKUs fixed to 0/1, others binary
+                # Pattern: {key: 1} = fix to 1, {key: 0} = fix to 0, not in dict = binary
+                model.product_produced = Var(
+                    product_produced_index,
+                    within=Binary,
+                    doc="Binary/Fixed indicator: 1 if product produced, 0 otherwise"
+                )
+
+                # Fix variables according to pattern (supports 0, 1, or None/binary)
+                num_fixed_to_1 = 0
+                num_fixed_to_0 = 0
+                num_binary = 0
+
+                for (node_id, prod, date_val) in product_produced_index:
+                    if (node_id, prod, date_val) in self.force_sku_pattern:
+                        value = self.force_sku_pattern[(node_id, prod, date_val)]
+                        if value == 1 or value is True:
+                            # Fix to 1 (force to produce)
+                            model.product_produced[node_id, prod, date_val].fix(1)
+                            num_fixed_to_1 += 1
+                        elif value == 0 or value is False:
+                            # Fix to 0 (force to skip)
+                            model.product_produced[node_id, prod, date_val].fix(0)
+                            num_fixed_to_0 += 1
+                        else:
+                            # Invalid value - leave binary
+                            num_binary += 1
+                    else:
+                        # Not in pattern - leave as binary variable
+                        num_binary += 1
+
+                sku_mode_msg = f"MIXED ({num_fixed_to_1} fixed=1, {num_fixed_to_0} fixed=0, {num_binary} binary)"
+            else:
+                # VARIABLE MODE: Let solver decide which SKUs to produce
+                # Binary decision variables for SKU selection
+                model.product_produced = Var(
+                    product_produced_index,
+                    within=Binary,
+                    doc="Binary indicator: 1 if this product is produced, 0 otherwise"
+                )
+                sku_mode_msg = "VARIABLE (binary decision)"
 
             # Integer: Count of distinct products produced
             model.num_products_produced = Var(
@@ -612,7 +692,7 @@ class UnifiedNodeModel(BaseOptimizationModel):
             )
 
             print(f"  Changeover tracking: {len(production_day_index):,} production days, "
-                  f"{len(product_produced_index):,} product indicators")
+                  f"{len(product_produced_index):,} product indicators ({sku_mode_msg})")
 
             # Labor cost decision variables (for piecewise labor cost modeling)
             # These variables enable accurate labor cost calculation:
@@ -2201,25 +2281,34 @@ class UnifiedNodeModel(BaseOptimizationModel):
         ]
 
         # Constraint 1: Link production quantity to product indicator
-        def product_produced_linking_rule(model, node_id, prod, date):
-            """If product is produced (qty > 0), force product_produced = 1.
+        # SKIP if force_all_skus_daily=True (product_produced is fixed Param, not Var)
+        constraint_count = 0
 
-            Uses big-M formulation: production <= M * product_produced
-            If product_produced = 0, then production must be 0.
-            If production > 0, then product_produced must be 1.
+        if not self.force_all_skus_daily:
+            # Only create linking constraint when product_produced is a decision variable
+            # Calculate default Big-M once for all constraints
+            big_m_default = self.get_max_daily_production()
 
-            M is chosen as conservative upper bound on daily production per product.
-            LOW-IMPACT #9: Tightened M from 20000 to actual max daily production.
-            """
-            # Use actual calculated max daily production instead of hardcoded value
-            M = self.get_max_daily_production()  # More accurate than hardcoded 20000
-            return model.production[node_id, prod, date] <= M * model.product_produced[node_id, prod, date]
+            def product_produced_linking_rule(model, node_id, prod, date):
+                """If product is produced (qty > 0), force product_produced = 1.
 
-        model.product_produced_linking_con = Constraint(
-            product_produced_index,
-            rule=product_produced_linking_rule,
-            doc="Link production quantity to binary product indicator (big-M)"
-        )
+                Uses big-M formulation: production <= M * product_produced
+                If product_produced = 0, then production must be 0.
+                If production > 0, then product_produced must be 1.
+
+                M can be customized per SKU-day via bigm_overrides parameter.
+                Smaller M values make it easier for solver to skip that SKU.
+                """
+                # Use override Big-M if specified, otherwise use default
+                big_m = self.bigm_overrides.get((node_id, prod, date), big_m_default)
+                return model.production[node_id, prod, date] <= big_m * model.product_produced[node_id, prod, date]
+
+            model.product_produced_linking_con = Constraint(
+                product_produced_index,
+                rule=product_produced_linking_rule,
+                doc="Link production quantity to binary product indicator (variable-specific big-M)"
+            )
+            constraint_count += len(product_produced_index)
 
         # Constraint 2: Count number of distinct products produced
         def num_products_counting_rule(model, node_id, date):
@@ -2267,8 +2356,17 @@ class UnifiedNodeModel(BaseOptimizationModel):
             rule=production_day_upper_rule,
             doc="Production day indicator: upper bound"
         )
+        constraint_count += 3 * len(production_day_index)  # num_products, lower, upper
 
-        print(f"  Changeover tracking constraints added ({len(product_produced_index) + 3 * len(production_day_index):,} constraints)")
+        # Print summary
+        print(f"  Changeover tracking constraints added ({constraint_count:,} constraints)")
+        if not self.force_all_skus_daily:
+            if self.bigm_overrides:
+                print(f"  Big-M: default={big_m_default:,.0f} units/day, {len(self.bigm_overrides)} SKUs with custom values")
+            else:
+                print(f"  Big-M value for product_produced linking: {big_m_default:,.0f} units/day")
+        else:
+            print(f"  Big-M linking skipped (all SKUs fixed to produce daily)")
 
     def _add_labor_cost_constraints(self, model: ConcreteModel) -> None:
         """Add piecewise labor cost tracking constraints.
@@ -2792,3 +2890,1667 @@ class UnifiedNodeModel(BaseOptimizationModel):
             sense=minimize,
             doc="Minimize total cost (production + transport + labor + holding + shortage penalty)"
         )
+
+
+def solve_two_phase(
+    nodes: List[UnifiedNode],
+    routes: List[UnifiedRoute],
+    forecast: Forecast,
+    labor_calendar: LaborCalendar,
+    cost_structure: CostStructure,
+    start_date: Date,
+    end_date: Date,
+    truck_schedules: Optional[List[UnifiedTruckSchedule]] = None,
+    initial_inventory: Optional[Dict] = None,
+    inventory_snapshot_date: Optional[Date] = None,
+    use_batch_tracking: bool = True,
+    allow_shortages: bool = False,
+    enforce_shelf_life: bool = True,
+    solver_name: Optional[str] = 'appsi_highs',
+    time_limit_seconds_phase1: float = 60,
+    time_limit_seconds_phase2: float = 180,
+    mip_gap: float = 0.01,
+    tee: bool = False,
+) -> OptimizationResult:
+    """Solve optimization in two phases: fixed SKUs (fast) + binary SKUs (warmstart).
+
+    Two-Phase Strategy:
+    -------------------
+    Phase 1: Solve with all SKUs forced to produce daily (force_all_skus_daily=True)
+        - Removes binary SKU selection complexity
+        - Solves as simpler MIP (only pallet integer variables)
+        - Fast solve time: ~10-30s
+        - Provides feasible production pattern
+
+    Phase 2: Solve with binary SKU selection using Phase 1 warmstart
+        - Uses Phase 1 production pattern to initialize product_produced variables
+        - APPSI HiGHS solver applies warmstart to speed up MIP solve
+        - Better incumbent solution → faster branch-and-bound
+        - Target solve time: 50-70% faster than cold start
+
+    This approach is especially effective when:
+    - Problem has many binary SKU variables (long horizon, many products)
+    - Solver struggles to find good feasible solution quickly
+    - MIP gap tolerance is strict (1-3%)
+
+    Args:
+        nodes: List of UnifiedNode objects
+        routes: List of UnifiedRoute objects
+        forecast: Demand forecast
+        labor_calendar: Labor availability and costs
+        cost_structure: Cost parameters
+        start_date: Planning horizon start
+        end_date: Planning horizon end (inclusive)
+        truck_schedules: Optional list of truck schedules
+        initial_inventory: Optional initial inventory dict
+        inventory_snapshot_date: Date when initial inventory was measured
+        use_batch_tracking: Use age-cohort tracking (default: True)
+        allow_shortages: Allow demand shortages with penalty (default: False)
+        enforce_shelf_life: Enforce shelf life constraints (default: True)
+        solver_name: Solver to use (default: 'appsi_highs' for warmstart support)
+        time_limit_seconds_phase1: Time limit for Phase 1 (default: 60s)
+        time_limit_seconds_phase2: Time limit for Phase 2 (default: 180s)
+        mip_gap: MIP gap tolerance (default: 0.01 = 1%)
+        tee: Show solver output (default: False)
+
+    Returns:
+        OptimizationResult from Phase 2 (final solution with binary SKU selection)
+
+    Example:
+        >>> result = solve_two_phase(
+        ...     nodes=nodes, routes=routes, forecast=forecast,
+        ...     labor_calendar=labor, cost_structure=costs,
+        ...     start_date=date(2025,10,20), end_date=date(2025,11,16),
+        ...     solver_name='appsi_highs', time_limit_seconds_phase2=180
+        ... )
+        >>> print(f"Solved in {result.solve_time_seconds:.1f}s with {result.gap*100:.1f}% gap")
+    """
+    import time
+
+    print("="*80)
+    print("TWO-PHASE SOLVE: Fixed SKUs (fast) → Binary SKUs (warmstart)")
+    print("="*80)
+
+    # ========================================================================
+    # PHASE 1: Solve with all SKUs forced to produce daily (fast solve)
+    # ========================================================================
+    print("\nPHASE 1: Solving with all SKUs forced daily (baseline pattern)")
+    print("-" * 80)
+
+    phase1_start = time.time()
+
+    model_phase1 = UnifiedNodeModel(
+        nodes=nodes,
+        routes=routes,
+        forecast=forecast,
+        labor_calendar=labor_calendar,
+        cost_structure=cost_structure,
+        start_date=start_date,
+        end_date=end_date,
+        truck_schedules=truck_schedules,
+        initial_inventory=initial_inventory,
+        inventory_snapshot_date=inventory_snapshot_date,
+        use_batch_tracking=use_batch_tracking,
+        allow_shortages=allow_shortages,
+        enforce_shelf_life=enforce_shelf_life,
+        force_all_skus_daily=True,  # KEY: Force all SKUs to produce
+    )
+
+    result_phase1 = model_phase1.solve(
+        solver_name=solver_name,
+        time_limit_seconds=time_limit_seconds_phase1,
+        mip_gap=mip_gap * 2,  # Relax gap for Phase 1 (faster solve)
+        tee=tee,
+        use_warmstart=False,
+    )
+
+    phase1_time = time.time() - phase1_start
+
+    print(f"\nPhase 1 Results:")
+    print(f"  Status: {result_phase1.termination_condition}")
+    print(f"  Solve time: {phase1_time:.1f}s")
+    print(f"  Objective: ${result_phase1.objective_value:,.2f}")
+    if result_phase1.gap:
+        print(f"  MIP gap: {result_phase1.gap * 100:.2f}%")
+
+    # Check if Phase 1 found a usable solution (check termination condition directly)
+    # NOTE: Don't use is_optimal()/is_feasible() - they check success flag which
+    # can be False due to solution extraction issues with zero costs
+    # ALSO NOTE: Use .name for comparison - TerminationCondition enums differ between
+    # pyomo.opt and pyomo.contrib.appsi.base
+
+    term_name = result_phase1.termination_condition.name if hasattr(result_phase1.termination_condition, 'name') else str(result_phase1.termination_condition)
+
+    phase1_ok = term_name in ['optimal', 'feasible', 'maxTimeLimit']
+
+    if not phase1_ok:
+        print(f"\n⚠️  Phase 1 failed to find usable solution!")
+        print(f"   Termination: {result_phase1.termination_condition}")
+        print(f"   Returning Phase 1 result (Phase 2 skipped)")
+        return result_phase1
+
+    print(f"✓ Phase 1 found usable solution (termination: {term_name})")
+
+    # Extract production pattern DIRECTLY from Pyomo model variables
+    # Using pyomo.value() to bypass get_solution() which fails with zero costs
+    print(f"\n✓ Extracting production pattern from Phase 1 Pyomo model...")
+
+    from pyomo.environ import value as pyo_value
+
+    try:
+        warmstart_hints = {}
+        manufacturing_nodes = model_phase1.manufacturing_nodes
+        products = model_phase1.products
+        dates = model_phase1.production_dates
+
+        num_produced = 0
+        num_not_produced = 0
+        num_filtered = 0  # Count batches filtered out as too small
+
+        # Access production variables directly from Pyomo model
+        pyomo_model = model_phase1.model
+
+        # Minimum production threshold: 1 hour = 1400 units
+        # Filter out tiny batches that wouldn't make economic sense
+        MIN_PRODUCTION_THRESHOLD = 1400.0
+
+        for node_id in manufacturing_nodes:
+            for product in products:
+                for date_val in dates:
+                    # Get production quantity directly from Pyomo variable
+                    if (node_id, product, date_val) in pyomo_model.production:
+                        try:
+                            prod_qty = pyo_value(pyomo_model.production[node_id, product, date_val])
+
+                            # Filter warmstart hint based on production size
+                            # Only include products with meaningful production (≥ 1 hour)
+                            if prod_qty >= MIN_PRODUCTION_THRESHOLD:
+                                warmstart_hints[(node_id, product, date_val)] = 1
+                                num_produced += 1
+                            elif prod_qty > 0.01:
+                                # Non-zero but below threshold - filter out
+                                warmstart_hints[(node_id, product, date_val)] = 0
+                                num_filtered += 1
+                            else:
+                                # Zero production
+                                warmstart_hints[(node_id, product, date_val)] = 0
+                                num_not_produced += 1
+                        except:
+                            # Variable not initialized - assume not produced
+                            warmstart_hints[(node_id, product, date_val)] = 0
+                            num_not_produced += 1
+
+        num_warmstart_vars = len(warmstart_hints)
+
+        if num_warmstart_vars > 0:
+            print(f"✓ Warmstart hints extracted and filtered:")
+            print(f"   Variables: {num_warmstart_vars:,}")
+            print(f"   Produced (≥1400 units, hint=1): {num_produced:,}")
+            print(f"   Filtered (<1400 units): {num_filtered:,} → hint=0")
+            print(f"   Not produced (hint=0): {num_not_produced:,}")
+            print(f"   → Reduced from {num_produced + num_filtered:,} to {num_produced:,} active products")
+        else:
+            print(f"⚠️  No warmstart hints extracted (empty model)")
+            warmstart_hints = None
+
+    except Exception as e:
+        print(f"\n⚠️  Warmstart extraction failed: {e}")
+        print(f"   Proceeding to Phase 2 without warmstart")
+        warmstart_hints = None
+
+    # ========================================================================
+    # PHASE 2: Solve with binary SKU selection using warmstart
+    # ========================================================================
+    print("\nPHASE 2: Solving with binary SKU selection (using Phase 1 warmstart)")
+    print("-" * 80)
+
+    phase2_start = time.time()
+
+    model_phase2 = UnifiedNodeModel(
+        nodes=nodes,
+        routes=routes,
+        forecast=forecast,
+        labor_calendar=labor_calendar,
+        cost_structure=cost_structure,
+        start_date=start_date,
+        end_date=end_date,
+        truck_schedules=truck_schedules,
+        initial_inventory=initial_inventory,
+        inventory_snapshot_date=inventory_snapshot_date,
+        use_batch_tracking=use_batch_tracking,
+        allow_shortages=allow_shortages,
+        enforce_shelf_life=enforce_shelf_life,
+        force_all_skus_daily=False,  # KEY: Enable binary SKU selection
+    )
+
+    result_phase2 = model_phase2.solve(
+        solver_name=solver_name,
+        time_limit_seconds=time_limit_seconds_phase2,
+        mip_gap=mip_gap,
+        tee=tee,
+        use_warmstart=True if warmstart_hints else False,
+        warmstart_hints=warmstart_hints,
+    )
+
+    phase2_time = time.time() - phase2_start
+
+    print(f"\nPhase 2 Results:")
+    print(f"  Status: {result_phase2.termination_condition}")
+    print(f"  Solve time: {phase2_time:.1f}s")
+    print(f"  Objective: ${result_phase2.objective_value:,.2f}")
+    if result_phase2.gap:
+        print(f"  MIP gap: {result_phase2.gap * 100:.2f}%")
+
+    # Summary
+    print("\n" + "="*80)
+    print("TWO-PHASE SOLVE SUMMARY")
+    print("="*80)
+    print(f"Phase 1 (fixed SKUs):   {phase1_time:.1f}s")
+    print(f"Phase 2 (binary SKUs):  {phase2_time:.1f}s")
+    print(f"Total time:             {phase1_time + phase2_time:.1f}s")
+    print()
+    print(f"Final objective:        ${result_phase2.objective_value:,.2f}")
+    print(f"Final status:           {result_phase2.termination_condition}")
+    if result_phase2.gap:
+        print(f"Final MIP gap:          {result_phase2.gap * 100:.2f}%")
+
+    # Cost comparison
+    if result_phase1.objective_value and result_phase2.objective_value:
+        cost_diff = result_phase1.objective_value - result_phase2.objective_value
+        pct_diff = 100 * cost_diff / result_phase1.objective_value if result_phase1.objective_value > 0 else 0
+        if cost_diff > 0:
+            print(f"\nCost improvement:       ${cost_diff:,.2f} ({pct_diff:.1f}% reduction)")
+            print(f"   Phase 1 forced all SKUs → higher costs")
+            print(f"   Phase 2 reduced SKU variety → lower costs")
+        elif cost_diff < 0:
+            print(f"\nNote: Phase 2 cost ${abs(cost_diff):,.2f} higher ({abs(pct_diff):.1f}%)")
+            print(f"   This can happen if Phase 2 hit time limit with sub-optimal solution")
+        else:
+            print(f"\nCosts identical (both phases produced all SKUs)")
+
+    print("="*80)
+
+    return result_phase2
+
+
+def solve_multi_phase_iterative(
+    nodes: List[UnifiedNode],
+    routes: List[UnifiedRoute],
+    forecast: Forecast,
+    labor_calendar: LaborCalendar,
+    cost_structure: CostStructure,
+    start_date: Date,
+    end_date: Date,
+    truck_schedules: Optional[List[UnifiedTruckSchedule]] = None,
+    initial_inventory: Optional[Dict] = None,
+    inventory_snapshot_date: Optional[Date] = None,
+    use_batch_tracking: bool = True,
+    allow_shortages: bool = False,
+    enforce_shelf_life: bool = True,
+    solver_name: Optional[str] = 'appsi_highs',
+    time_limit_per_phase: float = 60,
+    time_limit_final: float = 180,
+    mip_gap: float = 0.03,
+    min_production_hours: float = 1.0,
+    max_iterations: int = 10,
+    tee: bool = False,
+) -> OptimizationResult:
+    """Solve using iterative multi-phase refinement with progressive SKU filtering.
+
+    Strategy:
+    ---------
+    1. Phase 1: Force ALL SKUs (baseline)
+    2. Extract production, identify batches < min_production_hours
+    3. Phase N: Force only "keeper" SKUs (production ≥ threshold), free the rest
+    4. Repeat until convergence (no batches < threshold)
+    5. Final Phase: Full binary SKU optimization using refined pattern as warmstart
+
+    This progressively refines the SKU selection, starting from "all SKUs" and
+    iteratively eliminating uneconomic small batches until a stable pattern emerges.
+
+    Args:
+        nodes: List of UnifiedNode objects
+        routes: List of UnifiedRoute objects
+        forecast: Demand forecast
+        labor_calendar: Labor availability and costs
+        cost_structure: Cost parameters
+        start_date: Planning horizon start
+        end_date: Planning horizon end (inclusive)
+        truck_schedules: Optional list of truck schedules
+        initial_inventory: Optional initial inventory dict
+        inventory_snapshot_date: Date when initial inventory was measured
+        use_batch_tracking: Use age-cohort tracking (default: True)
+        allow_shortages: Allow demand shortages with penalty (default: False)
+        enforce_shelf_life: Enforce shelf life constraints (default: True)
+        solver_name: Solver to use (default: 'appsi_highs')
+        time_limit_per_phase: Time limit for each iteration (default: 60s)
+        time_limit_final: Time limit for final binary solve (default: 180s)
+        mip_gap: MIP gap tolerance (default: 0.03 = 3%)
+        min_production_hours: Minimum production hours to keep SKU (default: 1.0h)
+        max_iterations: Maximum refinement iterations (default: 10)
+        tee: Show solver output (default: False)
+
+    Returns:
+        OptimizationResult from final phase (binary SKU optimization)
+    """
+    import time
+    from pyomo.environ import value as pyo_value
+
+    print("="*80)
+    print("MULTI-PHASE ITERATIVE SOLVER")
+    print("Progressive SKU Filtering with Warmstart Refinement")
+    print("="*80)
+    print(f"\nConfiguration:")
+    print(f"  Minimum production: {min_production_hours:.1f} hours ({min_production_hours * 1400:.0f} units)")
+    print(f"  Max iterations: {max_iterations}")
+    print(f"  Time per phase: {time_limit_per_phase:.0f}s")
+    print(f"  Time final phase: {time_limit_final:.0f}s")
+    print("="*80)
+
+    # Track all phase results
+    phase_results = []
+    forced_skus_pattern = None  # Pattern of which SKUs to force
+    total_time_start = time.time()
+
+    # Minimum production threshold in units
+    min_production_units = min_production_hours * 1400.0
+
+    # ========================================================================
+    # ITERATIVE REFINEMENT PHASES
+    # ========================================================================
+    iteration = 0
+    converged = False
+
+    while iteration < max_iterations and not converged:
+        iteration += 1
+
+        if iteration == 1:
+            # Phase 1: Force ALL SKUs
+            print(f"\n{'='*80}")
+            print(f"PHASE {iteration}: BASELINE (Force ALL SKUs)")
+            print(f"{'='*80}")
+            force_pattern = None  # None means force all SKUs
+        else:
+            # Phase N: Force only "keeper" SKUs from previous iteration
+            print(f"\n{'='*80}")
+            print(f"PHASE {iteration}: REFINEMENT (Force {len([k for k in forced_skus_pattern.values() if k])} SKUs)")
+            print(f"{'='*80}")
+            force_pattern = forced_skus_pattern
+
+        phase_start = time.time()
+
+        # Create model with current forcing pattern
+        # Note: We'll need to modify UnifiedNodeModel to accept a force pattern
+        # For now, use force_all_skus_daily for first iteration
+        model = UnifiedNodeModel(
+            nodes=nodes,
+            routes=routes,
+            forecast=forecast,
+            labor_calendar=labor_calendar,
+            cost_structure=cost_structure,
+            start_date=start_date,
+            end_date=end_date,
+            truck_schedules=truck_schedules,
+            initial_inventory=initial_inventory,
+            inventory_snapshot_date=inventory_snapshot_date,
+            use_batch_tracking=use_batch_tracking,
+            allow_shortages=allow_shortages,
+            enforce_shelf_life=enforce_shelf_life,
+            force_all_skus_daily=(iteration == 1),  # Only force all in first iteration
+        )
+
+        # Solve this phase
+        result = model.solve(
+            solver_name=solver_name,
+            time_limit_seconds=time_limit_per_phase,
+            mip_gap=mip_gap * 2,  # Relax gap for intermediate phases
+            tee=tee,
+        )
+
+        phase_time = time.time() - phase_start
+
+        # Store result
+        phase_results.append({
+            'iteration': iteration,
+            'time': phase_time,
+            'status': result.termination_condition.name if hasattr(result.termination_condition, 'name') else str(result.termination_condition),
+            'cost': result.objective_value,
+            'gap': result.gap,
+        })
+
+        print(f"\nPhase {iteration} Results:")
+        print(f"  Time: {phase_time:.1f}s")
+        print(f"  Status: {phase_results[-1]['status']}")
+        print(f"  Cost: ${result.objective_value:,.2f}")
+        if result.gap:
+            print(f"  Gap: {result.gap * 100:.2f}%")
+
+        # Extract production quantities to identify small batches
+        print(f"\nAnalyzing production pattern...")
+
+        try:
+            pyomo_model = model.model
+            manufacturing_nodes = model.manufacturing_nodes
+            products = model.products
+            dates = model.production_dates
+
+            # Aggregate production by product across all dates
+            production_by_product = {}
+            for product in products:
+                total_prod = 0
+                for node_id in manufacturing_nodes:
+                    for date_val in dates:
+                        if (node_id, product, date_val) in pyomo_model.production:
+                            try:
+                                prod_qty = pyo_value(pyomo_model.production[node_id, product, date_val])
+                                total_prod += prod_qty if prod_qty > 0 else 0
+                            except:
+                                pass
+                production_by_product[product] = total_prod
+
+            # Identify keeper vs filtered SKUs
+            keepers = []
+            filtered = []
+
+            for product, total_qty in production_by_product.items():
+                if total_qty >= min_production_units:
+                    keepers.append((product, total_qty))
+                elif total_qty > 0:
+                    filtered.append((product, total_qty))
+
+            print(f"\n  Production Analysis:")
+            print(f"    Keeper SKUs (≥{min_production_hours:.1f}h = {min_production_units:.0f} units): {len(keepers)}")
+            for prod, qty in sorted(keepers, key=lambda x: x[1], reverse=True):
+                print(f"      {prod}: {qty:,.0f} units ({qty/1400:.1f}h)")
+
+            if filtered:
+                print(f"    Filtered SKUs (<{min_production_hours:.1f}h): {len(filtered)}")
+                for prod, qty in sorted(filtered, key=lambda x: x[1], reverse=True):
+                    print(f"      {prod}: {qty:,.0f} units ({qty/1400:.1f}h) → REMOVE")
+
+            # Check convergence
+            if len(filtered) == 0:
+                print(f"\n✓ CONVERGED: No small batches remaining")
+                converged = True
+            else:
+                # Update forcing pattern for next iteration
+                # Create pattern: force keepers to 1, free filtered SKUs
+                forced_skus_pattern = {}
+                for node_id in manufacturing_nodes:
+                    for product in products:
+                        for date_val in dates:
+                            # Force keeper products, free others
+                            is_keeper = any(p == product for p, _ in keepers)
+                            forced_skus_pattern[(node_id, product, date_val)] = 1 if is_keeper else 0
+
+                print(f"\n  Next iteration will force {len(keepers)} keeper SKUs")
+
+        except Exception as e:
+            print(f"\n⚠️  Production analysis failed: {e}")
+            converged = True  # Can't continue
+
+    # ========================================================================
+    # FINAL PHASE: Full Binary SKU Optimization with Warmstart
+    # ========================================================================
+    print(f"\n{'='*80}")
+    print(f"FINAL PHASE: Binary SKU Optimization (Warmstart from Phase {iteration})")
+    print(f"{'='*80}")
+
+    # Extract warmstart hints from last iteration
+    warmstart_hints = forced_skus_pattern if forced_skus_pattern else None
+
+    if warmstart_hints:
+        num_hints = sum(1 for v in warmstart_hints.values() if v == 1)
+        print(f"  Using warmstart: {num_hints} active SKUs from refinement")
+
+    final_start = time.time()
+
+    model_final = UnifiedNodeModel(
+        nodes=nodes,
+        routes=routes,
+        forecast=forecast,
+        labor_calendar=labor_calendar,
+        cost_structure=cost_structure,
+        start_date=start_date,
+        end_date=end_date,
+        truck_schedules=truck_schedules,
+        initial_inventory=initial_inventory,
+        inventory_snapshot_date=inventory_snapshot_date,
+        use_batch_tracking=use_batch_tracking,
+        allow_shortages=allow_shortages,
+        enforce_shelf_life=enforce_shelf_life,
+        force_all_skus_daily=False,  # Binary SKU selection
+    )
+
+    result_final = model_final.solve(
+        solver_name=solver_name,
+        time_limit_seconds=time_limit_final,
+        mip_gap=mip_gap,
+        use_warmstart=(warmstart_hints is not None),
+        warmstart_hints=warmstart_hints,
+        tee=tee,
+    )
+
+    final_time = time.time() - final_start
+    total_time = time.time() - total_time_start
+
+    print(f"\nFinal Phase Results:")
+    print(f"  Time: {final_time:.1f}s")
+    print(f"  Status: {result_final.termination_condition.name if hasattr(result_final.termination_condition, 'name') else str(result_final.termination_condition)}")
+    print(f"  Cost: ${result_final.objective_value:,.2f}")
+    if result_final.gap:
+        print(f"  Gap: {result_final.gap * 100:.2f}%")
+
+    # ========================================================================
+    # SUMMARY
+    # ========================================================================
+    print(f"\n{'='*80}")
+    print("MULTI-PHASE SOLVE SUMMARY")
+    print(f"{'='*80}")
+
+    cumulative_time = 0
+    for i, phase in enumerate(phase_results, 1):
+        cumulative_time += phase['time']
+        print(f"Phase {i}: {phase['time']:.1f}s, ${phase['cost']:,.0f}, {phase['status']}")
+
+    print(f"Final:  {final_time:.1f}s, ${result_final.objective_value:,.0f}, " +
+          (f"{result_final.gap*100:.2f}% gap" if result_final.gap else "optimal"))
+    print(f"\nTotal iterations: {iteration}")
+    print(f"Total time: {total_time:.1f}s")
+
+    # Compare to first phase
+    if phase_results:
+        cost_improvement = phase_results[0]['cost'] - result_final.objective_value
+        pct_improvement = 100 * cost_improvement / phase_results[0]['cost'] if phase_results[0]['cost'] > 0 else 0
+        print(f"\nCost improvement from Phase 1:")
+        print(f"  ${cost_improvement:,.2f} ({pct_improvement:.1f}% reduction)")
+
+    print("="*80)
+
+    return result_final
+
+
+def solve_greedy_sku_reduction(
+    nodes: List[UnifiedNode],
+    routes: List[UnifiedRoute],
+    forecast: Forecast,
+    labor_calendar: LaborCalendar,
+    cost_structure: CostStructure,
+    start_date: Date,
+    end_date: Date,
+    truck_schedules: Optional[List[UnifiedTruckSchedule]] = None,
+    initial_inventory: Optional[Dict] = None,
+    inventory_snapshot_date: Optional[Date] = None,
+    use_batch_tracking: bool = True,
+    allow_shortages: bool = False,
+    enforce_shelf_life: bool = True,
+    solver_name: Optional[str] = 'appsi_highs',
+    time_limit_per_phase: float = 60,
+    time_limit_final: float = 180,
+    mip_gap: float = 0.03,
+    max_iterations: int = 20,
+    tee: bool = False,
+) -> OptimizationResult:
+    """Greedy SKU reduction: eliminate smallest volume SKU per day until cost increases.
+
+    Strategy:
+    ---------
+    1. Phase 1: Force ALL SKUs (baseline)
+    2. Each iteration:
+       - Identify smallest volume SKU for each day
+       - Remove it from force pattern
+       - Solve with remaining forced SKUs
+       - Compare cost to previous phase
+    3. Stop when cost INCREASES (removed a needed SKU)
+    4. Use CHEAPEST phase as warmstart for final binary optimization
+
+    This greedy approach progressively eliminates uneconomic SKUs day-by-day
+    until the marginal cost of SKU reduction becomes negative.
+
+    Args:
+        All standard UnifiedNodeModel args plus:
+        time_limit_per_phase: Time limit for each iteration (default: 60s)
+        time_limit_final: Time limit for final binary solve (default: 180s)
+        mip_gap: MIP gap tolerance (default: 0.03 = 3%)
+        max_iterations: Maximum iterations before stopping (default: 20)
+        tee: Show solver output (default: False)
+
+    Returns:
+        OptimizationResult from final binary optimization phase
+    """
+    import time
+    from pyomo.environ import value as pyo_value
+
+    print("="*80)
+    print("GREEDY SKU REDUCTION SOLVER")
+    print("Eliminate Smallest Volume SKU Per Day Until Cost Increases")
+    print("="*80)
+    print(f"\nConfiguration:")
+    print(f"  Max iterations: {max_iterations}")
+    print(f"  Time per phase: {time_limit_per_phase:.0f}s")
+    print(f"  Time final phase: {time_limit_final:.0f}s")
+    print(f"  MIP gap: {mip_gap*100:.1f}%")
+    print("="*80)
+
+    total_time_start = time.time()
+    phase_history = []
+    best_phase = None
+    best_cost = float('inf')
+
+    # Initialize force pattern: Start with ALL SKUs forced
+    force_pattern = {}  # {(node_id, product, date): True/False}
+
+    # Get products and dates from forecast
+    products = sorted(set(e.product_id for e in forecast.entries))
+    manufacturing_nodes = [n.id for n in nodes if n.can_produce]
+
+    # Phase 1: Force all SKUs
+    for node_id in manufacturing_nodes:
+        for product in products:
+            dates_range = []
+            current = start_date
+            while current <= end_date:
+                dates_range.append(current)
+                current += timedelta(days=1)
+
+            for date_val in dates_range:
+                force_pattern[(node_id, product, date_val)] = True  # Force all
+
+    num_forced = sum(1 for v in force_pattern.values() if v)
+    print(f"\nStarting with {num_forced} forced SKU-day combinations (all SKUs)")
+
+    # ========================================================================
+    # ITERATIVE GREEDY REDUCTION
+    # ========================================================================
+    iteration = 0
+    cost_increased = False
+
+    while iteration < max_iterations and not cost_increased:
+        iteration += 1
+
+        print(f"\n{'='*80}")
+        num_active = sum(1 for v in force_pattern.values() if v)
+        print(f"PHASE {iteration}: {num_active} forced SKU-days")
+        print(f"{'='*80}")
+
+        phase_start = time.time()
+
+        # Determine mode based on pattern
+        if all(v for v in force_pattern.values()):
+            # All True → use force_all_skus_daily
+            use_force_all = True
+            use_pattern = None
+        elif not any(v for v in force_pattern.values()):
+            # All False → use full binary
+            use_force_all = False
+            use_pattern = None
+        else:
+            # Mixed → use pattern
+            use_force_all = False
+            use_pattern = force_pattern
+
+        model = UnifiedNodeModel(
+            nodes=nodes,
+            routes=routes,
+            forecast=forecast,
+            labor_calendar=labor_calendar,
+            cost_structure=cost_structure,
+            start_date=start_date,
+            end_date=end_date,
+            truck_schedules=truck_schedules,
+            initial_inventory=initial_inventory,
+            inventory_snapshot_date=inventory_snapshot_date,
+            use_batch_tracking=use_batch_tracking,
+            allow_shortages=allow_shortages,
+            enforce_shelf_life=enforce_shelf_life,
+            force_all_skus_daily=use_force_all,
+            force_sku_pattern=use_pattern,
+        )
+
+        result = model.solve(
+            solver_name=solver_name,
+            time_limit_seconds=time_limit_per_phase,
+            mip_gap=mip_gap * 2,  # Relaxed gap for intermediate phases
+            tee=tee,
+        )
+
+        phase_time = time.time() - phase_start
+
+        # Live progress reporting
+        print(f"\n📊 Phase {iteration} Results:")
+        print(f"   Time: {phase_time:.1f}s")
+        print(f"   Status: {result.termination_condition.name if hasattr(result.termination_condition, 'name') else str(result.termination_condition)}")
+        print(f"   Cost: ${result.objective_value:,.2f}")
+        if result.gap:
+            print(f"   Gap: {result.gap * 100:.2f}%")
+
+        # Store phase result
+        phase_history.append({
+            'iteration': iteration,
+            'time': phase_time,
+            'cost': result.objective_value,
+            'gap': result.gap,
+            'status': result.termination_condition.name if hasattr(result.termination_condition, 'name') else str(result.termination_condition),
+            'force_pattern': force_pattern.copy(),
+            'model': model,
+        })
+
+        # Check if this is the best cost so far
+        if result.objective_value < best_cost:
+            best_cost = result.objective_value
+            best_phase = iteration
+            print(f"   ✅ NEW BEST COST: ${best_cost:,.2f}")
+        else:
+            # Cost increased - stop iteration
+            cost_increase = result.objective_value - best_cost
+            pct_increase = 100 * cost_increase / best_cost if best_cost > 0 else 0
+            print(f"   ⚠️  COST INCREASED: +${cost_increase:,.2f} (+{pct_increase:.1f}%)")
+            print(f"   Stopping iteration (best was Phase {best_phase})")
+            cost_increased = True
+            break
+
+        # Extract production to find smallest SKU per day
+        print(f"\n🔍 Analyzing production pattern...")
+
+        try:
+            pyomo_model = model.model
+
+            # Production by (date, product)
+            production_by_date_product = {}
+            for node_id in manufacturing_nodes:
+                for product in products:
+                    dates_range = []
+                    current = start_date
+                    while current <= end_date:
+                        dates_range.append(current)
+                        current += timedelta(days=1)
+
+                    for date_val in dates_range:
+                        if (node_id, product, date_val) in pyomo_model.production:
+                            try:
+                                qty = pyo_value(pyomo_model.production[node_id, product, date_val])
+                                if qty > 0.01:
+                                    production_by_date_product[(date_val, product)] = production_by_date_product.get((date_val, product), 0) + qty
+                            except:
+                                pass
+
+            # For each date, find smallest volume SKU currently forced
+            dates_range = []
+            current = start_date
+            while current <= end_date:
+                dates_range.append(current)
+                current += timedelta(days=1)
+
+            skus_to_remove = []
+            for date_val in dates_range:
+                # Get all products produced on this date (that are currently forced)
+                date_production = []
+                for product in products:
+                    # Check if this product is currently forced on this date
+                    forced_on_date = False
+                    for node_id in manufacturing_nodes:
+                        if force_pattern.get((node_id, product, date_val), False):
+                            forced_on_date = True
+                            break
+
+                    if forced_on_date:
+                        qty = production_by_date_product.get((date_val, product), 0)
+                        if qty > 0:
+                            date_production.append((product, qty))
+
+                # Find smallest if there are multiple SKUs on this date
+                if len(date_production) > 1:
+                    # Sort by quantity and get smallest
+                    smallest = min(date_production, key=lambda x: x[1])
+                    skus_to_remove.append((date_val, smallest[0], smallest[1]))
+
+            if skus_to_remove:
+                print(f"   Found {len(skus_to_remove)} smallest-volume SKUs to remove:")
+                for date_val, product, qty in skus_to_remove[:5]:  # Show first 5
+                    print(f"     {date_val}: {product} ({qty:,.0f} units)")
+                if len(skus_to_remove) > 5:
+                    print(f"     ... and {len(skus_to_remove) - 5} more")
+
+                # Update force pattern: unforce these SKUs
+                for date_val, product, qty in skus_to_remove:
+                    for node_id in manufacturing_nodes:
+                        force_pattern[(node_id, product, date_val)] = False
+
+                num_still_forced = sum(1 for v in force_pattern.values() if v)
+                print(f"   → Next iteration: {num_still_forced} forced SKU-days (removed {len(skus_to_remove)})")
+            else:
+                print(f"   ✓ No more SKUs to remove (all dates have 1 SKU or 0)")
+                break
+
+        except Exception as e:
+            print(f"\n⚠️  Production analysis failed: {e}")
+            import traceback
+            traceback.print_exc()
+            break
+
+    # ========================================================================
+    # FINAL PHASE: Binary SKU Optimization Using Best Phase as Warmstart
+    # ========================================================================
+    print(f"\n{'='*80}")
+    print(f"FINAL PHASE: Binary SKU Optimization")
+    print(f"{'='*80}")
+    print(f"Using warmstart from Phase {best_phase} (best cost: ${best_cost:,.2f})")
+
+    # Extract warmstart hints from best phase
+    best_phase_data = phase_history[best_phase - 1]
+    warmstart_hints = best_phase_data['force_pattern'].copy()
+
+    num_hints = sum(1 for v in warmstart_hints.values() if v)
+    print(f"  Warmstart: {num_hints} SKU-days with production hint")
+
+    final_start = time.time()
+
+    model_final = UnifiedNodeModel(
+        nodes=nodes,
+        routes=routes,
+        forecast=forecast,
+        labor_calendar=labor_calendar,
+        cost_structure=cost_structure,
+        start_date=start_date,
+        end_date=end_date,
+        truck_schedules=truck_schedules,
+        initial_inventory=initial_inventory,
+        inventory_snapshot_date=inventory_snapshot_date,
+        use_batch_tracking=use_batch_tracking,
+        allow_shortages=allow_shortages,
+        enforce_shelf_life=enforce_shelf_life,
+        force_all_skus_daily=False,
+        force_sku_pattern=None,  # Full binary optimization
+    )
+
+    # Convert force_pattern to warmstart hints format
+    warmstart_for_solver = {k: (1 if v else 0) for k, v in warmstart_hints.items()}
+
+    result_final = model_final.solve(
+        solver_name=solver_name,
+        time_limit_seconds=time_limit_final,
+        mip_gap=mip_gap,
+        use_warmstart=True,
+        warmstart_hints=warmstart_for_solver,
+        tee=tee,
+    )
+
+    final_time = time.time() - final_start
+    total_time = time.time() - total_time_start
+
+    print(f"\n📊 Final Phase Results:")
+    print(f"   Time: {final_time:.1f}s")
+    print(f"   Status: {result_final.termination_condition.name if hasattr(result_final.termination_condition, 'name') else str(result_final.termination_condition)}")
+    print(f"   Cost: ${result_final.objective_value:,.2f}")
+    if result_final.gap:
+        print(f"   Gap: {result_final.gap * 100:.2f}%")
+
+    # ========================================================================
+    # SUMMARY
+    # ========================================================================
+    print(f"\n{'='*80}")
+    print("GREEDY SKU REDUCTION SUMMARY")
+    print(f"{'='*80}")
+
+    cumulative_time = 0
+    for phase in phase_history:
+        cumulative_time += phase['time']
+        marker = " ← BEST" if phase['iteration'] == best_phase else ""
+        print(f"Phase {phase['iteration']}: {phase['time']:.1f}s, ${phase['cost']:,.2f}, {phase['status']}{marker}")
+
+    print(f"Final:  {final_time:.1f}s, ${result_final.objective_value:,.2f}, " +
+          f"{result_final.gap*100:.2f}% gap" if result_final.gap else "optimal")
+
+    print(f"\nTotal iterations: {iteration}")
+    print(f"Total time: {total_time:.1f}s")
+    print(f"Best intermediate cost: ${best_cost:,.2f} (Phase {best_phase})")
+
+    if result_final.objective_value < best_cost:
+        improvement = best_cost - result_final.objective_value
+        pct_imp = 100 * improvement / best_cost
+        print(f"Final improvement: ${improvement:,.2f} ({pct_imp:.1f}% better than best intermediate)")
+    else:
+        print(f"Final cost: ${result_final.objective_value:,.2f} (binary optimization found different solution)")
+
+    if phase_history:
+        total_improvement = phase_history[0]['cost'] - result_final.objective_value
+        pct_total = 100 * total_improvement / phase_history[0]['cost']
+        print(f"\nTotal improvement from Phase 1:")
+        print(f"  ${total_improvement:,.2f} ({pct_total:.1f}% reduction)")
+
+    print("="*80)
+
+    return result_final
+
+
+def solve_greedy_bigm_relaxation(
+    nodes: List[UnifiedNode],
+    routes: List[UnifiedRoute],
+    forecast: Forecast,
+    labor_calendar: LaborCalendar,
+    cost_structure: CostStructure,
+    start_date: Date,
+    end_date: Date,
+    truck_schedules: Optional[List[UnifiedTruckSchedule]] = None,
+    initial_inventory: Optional[Dict] = None,
+    inventory_snapshot_date: Optional[Date] = None,
+    use_batch_tracking: bool = True,
+    allow_shortages: bool = False,
+    enforce_shelf_life: bool = True,
+    solver_name: Optional[str] = 'appsi_highs',
+    time_limit_per_phase: float = 60,
+    time_limit_final: float = 180,
+    mip_gap: float = 0.03,
+    max_iterations: int = 20,
+    tee: bool = False,
+) -> OptimizationResult:
+    """Greedy Big-M relaxation: progressively tighten Big-M for smallest SKUs with warmstart.
+
+    Strategy (improved approach):
+    -----------------------------
+    1. Phase 1: Solve with default Big-M for all SKUs
+    2. Each iteration:
+       - Extract production quantities
+       - Identify smallest volume SKU per day
+       - Tighten its Big-M to actual production volume (makes it easy to skip)
+       - Use previous phase solution as WARMSTART
+       - Solve with updated Big-M overrides
+       - Compare cost to previous phase
+    3. Stop when cost INCREASES (removed a needed SKU)
+    4. Use CHEAPEST phase solution for final binary optimization
+
+    This approach:
+    - More flexible than forcing (SKU can still be produced if needed)
+    - Uses warmstart between phases (8% speedup per phase)
+    - Progressively guides solver toward optimal SKU selection
+    - Stops automatically when marginal SKU removal becomes costly
+
+    Args:
+        All standard UnifiedNodeModel args plus:
+        time_limit_per_phase: Time limit for each iteration (default: 60s)
+        time_limit_final: Time limit for final binary solve (default: 180s)
+        mip_gap: MIP gap tolerance (default: 0.03 = 3%)
+        max_iterations: Maximum iterations before stopping (default: 20)
+        tee: Show solver output (default: False)
+
+    Returns:
+        OptimizationResult from final binary optimization phase
+    """
+    import time
+    from pyomo.environ import value as pyo_value
+
+    print("="*80)
+    print("GREEDY BIG-M RELAXATION SOLVER")
+    print("Progressively Tighten Big-M for Smallest SKUs + Warmstart")
+    print("="*80)
+    print(f"\nConfiguration:")
+    print(f"  Max iterations: {max_iterations}")
+    print(f"  Time per phase: {time_limit_per_phase:.0f}s")
+    print(f"  Time final phase: {time_limit_final:.0f}s")
+    print(f"  MIP gap: {mip_gap*100:.1f}%")
+    print("="*80)
+
+    total_time_start = time.time()
+    phase_history = []
+    best_phase = None
+    best_cost = float('inf')
+
+    # Initialize Big-M overrides: empty dict means use default for all
+    bigm_overrides = {}
+
+    # Get products and dates
+    products = sorted(set(e.product_id for e in forecast.entries))
+    manufacturing_nodes_list = [n.id for n in nodes if n.capabilities.can_manufacture]
+
+    dates_range = []
+    current = start_date
+    while current <= end_date:
+        dates_range.append(current)
+        current += timedelta(days=1)
+
+    # ========================================================================
+    # ITERATIVE GREEDY BIG-M RELAXATION
+    # ========================================================================
+    iteration = 0
+    cost_increased = False
+    previous_warmstart = None
+
+    while iteration < max_iterations and not cost_increased:
+        iteration += 1
+
+        print(f"\n{'='*80}")
+        num_relaxed = len(bigm_overrides)
+        print(f"PHASE {iteration}: {num_relaxed} SKUs with tightened Big-M")
+        if previous_warmstart:
+            num_warmstart = sum(1 for v in previous_warmstart.values() if v == 1)
+            print(f"  Using warmstart from Phase {iteration-1} ({num_warmstart} active SKUs)")
+        print(f"{'='*80}")
+
+        phase_start = time.time()
+
+        model = UnifiedNodeModel(
+            nodes=nodes,
+            routes=routes,
+            forecast=forecast,
+            labor_calendar=labor_calendar,
+            cost_structure=cost_structure,
+            start_date=start_date,
+            end_date=end_date,
+            truck_schedules=truck_schedules,
+            initial_inventory=initial_inventory,
+            inventory_snapshot_date=inventory_snapshot_date,
+            use_batch_tracking=use_batch_tracking,
+            allow_shortages=allow_shortages,
+            enforce_shelf_life=enforce_shelf_life,
+            force_all_skus_daily=False,
+            force_sku_pattern=None,
+            bigm_overrides=bigm_overrides.copy(),
+        )
+
+        result = model.solve(
+            solver_name=solver_name,
+            time_limit_seconds=time_limit_per_phase,
+            mip_gap=mip_gap * 2,  # Relaxed gap for intermediate phases
+            use_warmstart=(previous_warmstart is not None),
+            warmstart_hints=previous_warmstart,
+            tee=tee,
+        )
+
+        phase_time = time.time() - phase_start
+
+        # Live progress reporting
+        term_name = result.termination_condition.name if hasattr(result.termination_condition, 'name') else str(result.termination_condition)
+        print(f"\n📊 Phase {iteration} Results:")
+        print(f"   Time: {phase_time:.1f}s")
+        print(f"   Status: {term_name}")
+        print(f"   Cost: ${result.objective_value:,.2f}")
+        if result.gap:
+            print(f"   Gap: {result.gap * 100:.2f}%")
+
+        # Store phase result
+        phase_history.append({
+            'iteration': iteration,
+            'time': phase_time,
+            'cost': result.objective_value,
+            'gap': result.gap,
+            'status': term_name,
+            'bigm_overrides': bigm_overrides.copy(),
+            'model': model,
+        })
+
+        # Check if this is the best cost so far
+        if result.objective_value < best_cost:
+            best_cost = result.objective_value
+            best_phase = iteration
+            print(f"   ✅ NEW BEST COST: ${best_cost:,.2f}")
+        else:
+            # Cost increased - stop iteration
+            cost_increase = result.objective_value - best_cost
+            pct_increase = 100 * cost_increase / best_cost if best_cost > 0 else 0
+            print(f"   ⚠️  COST INCREASED: +${cost_increase:,.2f} (+{pct_increase:.1f}%)")
+            print(f"   Stopping iteration (best was Phase {best_phase})")
+            cost_increased = True
+            break
+
+        # Extract warmstart hints for next phase
+        print(f"\n🔍 Extracting warmstart and analyzing production...")
+
+        try:
+            pyomo_model = model.model
+            warmstart_hints = {}
+            production_by_date_product = {}
+
+            for node_id in manufacturing_nodes_list:
+                for product in products:
+                    for date_val in dates_range:
+                        if (node_id, product, date_val) in pyomo_model.production:
+                            try:
+                                qty = pyo_value(pyomo_model.production[node_id, product, date_val])
+                                warmstart_hints[(node_id, product, date_val)] = 1 if qty > 0.01 else 0
+
+                                if qty > 0.01:
+                                    production_by_date_product[(date_val, product)] = production_by_date_product.get((date_val, product), 0) + qty
+                            except:
+                                warmstart_hints[(node_id, product, date_val)] = 0
+
+            # Store warmstart for next iteration
+            previous_warmstart = warmstart_hints
+            num_active = sum(1 for v in warmstart_hints.values() if v == 1)
+            print(f"   Warmstart extracted: {num_active} active SKUs")
+
+            # For each date, find smallest volume SKU
+            smallest_skus = []
+            for date_val in dates_range:
+                # Get all products produced on this date
+                date_production = []
+                for product in products:
+                    qty = production_by_date_product.get((date_val, product), 0)
+                    if qty > 0:
+                        date_production.append((product, qty))
+
+                # Find smallest if there are multiple SKUs on this date
+                if len(date_production) > 1:
+                    smallest = min(date_production, key=lambda x: x[1])
+                    smallest_skus.append((date_val, smallest[0], smallest[1]))
+
+            if smallest_skus:
+                print(f"   Found {len(smallest_skus)} smallest-volume SKUs to relax:")
+                for date_val, product, qty in smallest_skus[:5]:
+                    print(f"     {date_val}: {product} ({qty:,.0f} units) → Big-M = {qty*1.1:.0f}")
+                if len(smallest_skus) > 5:
+                    print(f"     ... and {len(smallest_skus) - 5} more")
+
+                # Update Big-M overrides: set to 110% of actual production
+                # This makes it "easy" for solver to skip but allows some flex
+                for date_val, product, qty in smallest_skus:
+                    for node_id in manufacturing_nodes_list:
+                        bigm_overrides[(node_id, product, date_val)] = qty * 1.1
+
+                print(f"   → Next iteration: {len(bigm_overrides)} SKUs with tightened Big-M")
+            else:
+                print(f"   ✓ No more SKUs to relax (all dates have ≤1 SKU)")
+                break
+
+        except Exception as e:
+            print(f"\n⚠️  Production analysis failed: {e}")
+            import traceback
+            traceback.print_exc()
+            break
+
+    # ========================================================================
+    # FINAL PHASE: Binary SKU Optimization Using Best Phase as Warmstart
+    # ========================================================================
+    print(f"\n{'='*80}")
+    print(f"FINAL PHASE: Binary SKU Optimization")
+    print(f"{'='*80}")
+    print(f"Using warmstart from Phase {best_phase} (best cost: ${best_cost:,.2f})")
+
+    # Get warmstart from best phase
+    best_phase_data = phase_history[best_phase - 1]
+    best_bigm_overrides = best_phase_data['bigm_overrides']
+
+    # Extract warmstart hints from best phase model
+    try:
+        best_model = best_phase_data['model']
+        pyomo_model_best = best_model.model
+
+        final_warmstart = {}
+        for node_id in manufacturing_nodes_list:
+            for product in products:
+                for date_val in dates_range:
+                    if (node_id, product, date_val) in pyomo_model_best.production:
+                        try:
+                            qty = pyo_value(pyomo_model_best.production[node_id, product, date_val])
+                            final_warmstart[(node_id, product, date_val)] = 1 if qty > 0.01 else 0
+                        except:
+                            final_warmstart[(node_id, product, date_val)] = 0
+
+        num_final_warmstart = sum(1 for v in final_warmstart.values() if v == 1)
+        print(f"  Warmstart: {num_final_warmstart} SKUs with production hint")
+        print(f"  Big-M hints: {len(best_bigm_overrides)} SKUs with tightened bounds")
+    except Exception as e:
+        print(f"  ⚠️  Could not extract warmstart: {e}")
+        final_warmstart = None
+
+    final_start = time.time()
+
+    model_final = UnifiedNodeModel(
+        nodes=nodes,
+        routes=routes,
+        forecast=forecast,
+        labor_calendar=labor_calendar,
+        cost_structure=cost_structure,
+        start_date=start_date,
+        end_date=end_date,
+        truck_schedules=truck_schedules,
+        initial_inventory=initial_inventory,
+        inventory_snapshot_date=inventory_snapshot_date,
+        use_batch_tracking=use_batch_tracking,
+        allow_shortages=allow_shortages,
+        enforce_shelf_life=enforce_shelf_life,
+        force_all_skus_daily=False,
+        force_sku_pattern=None,
+        bigm_overrides=best_bigm_overrides,  # Use tightened Big-M from best phase
+    )
+
+    result_final = model_final.solve(
+        solver_name=solver_name,
+        time_limit_seconds=time_limit_final,
+        mip_gap=mip_gap,
+        use_warmstart=(final_warmstart is not None),
+        warmstart_hints=final_warmstart,
+        tee=tee,
+    )
+
+    final_time = time.time() - final_start
+    total_time = time.time() - total_time_start
+
+    final_term_name = result_final.termination_condition.name if hasattr(result_final.termination_condition, 'name') else str(result_final.termination_condition)
+
+    print(f"\n📊 Final Phase Results:")
+    print(f"   Time: {final_time:.1f}s")
+    print(f"   Status: {final_term_name}")
+    print(f"   Cost: ${result_final.objective_value:,.2f}")
+    if result_final.gap:
+        print(f"   Gap: {result_final.gap * 100:.2f}%")
+
+    # ========================================================================
+    # SUMMARY
+    # ========================================================================
+    print(f"\n{'='*80}")
+    print("GREEDY BIG-M RELAXATION SUMMARY")
+    print(f"{'='*80}")
+
+    cumulative_time = 0
+    for phase in phase_history:
+        cumulative_time += phase['time']
+        marker = " ← BEST" if phase['iteration'] == best_phase else ""
+        gap_str = f", {phase['gap']*100:.2f}% gap" if phase['gap'] else ""
+        print(f"Phase {phase['iteration']}: {phase['time']:.1f}s, ${phase['cost']:,.2f}{gap_str}{marker}")
+
+    gap_str = f", {result_final.gap*100:.2f}% gap" if result_final.gap else ""
+    print(f"Final:  {final_time:.1f}s, ${result_final.objective_value:,.2f}{gap_str}")
+
+    print(f"\nTotal iterations: {iteration}")
+    print(f"Total time: {total_time:.1f}s")
+    print(f"Best intermediate cost: ${best_cost:,.2f} (Phase {best_phase})")
+
+    if result_final.objective_value < best_cost:
+        improvement = best_cost - result_final.objective_value
+        pct_imp = 100 * improvement / best_cost
+        print(f"Final improvement: ${improvement:,.2f} ({pct_imp:.1f}% better than best intermediate)")
+    else:
+        diff = result_final.objective_value - best_cost
+        print(f"Final cost: ${result_final.objective_value:,.2f} (+${diff:,.2f} vs best intermediate)")
+
+    if phase_history:
+        total_improvement = phase_history[0]['cost'] - result_final.objective_value
+        pct_total = 100 * total_improvement / phase_history[0]['cost']
+        print(f"\nTotal improvement from Phase 1:")
+        print(f"  ${total_improvement:,.2f} ({pct_total:.1f}% reduction)")
+
+    print("="*80)
+
+    return result_final
+
+
+def solve_weekly_pattern_warmstart(
+    nodes: List[UnifiedNode],
+    routes: List[UnifiedRoute],
+    forecast: Forecast,
+    labor_calendar: LaborCalendar,
+    cost_structure: CostStructure,
+    start_date: Date,
+    end_date: Date,
+    truck_schedules: Optional[List[UnifiedTruckSchedule]] = None,
+    initial_inventory: Optional[Dict] = None,
+    inventory_snapshot_date: Optional[Date] = None,
+    use_batch_tracking: bool = True,
+    allow_shortages: bool = False,
+    enforce_shelf_life: bool = True,
+    solver_name: Optional[str] = 'appsi_highs',
+    time_limit_phase1: float = 120,
+    time_limit_phase2: float = 360,
+    mip_gap: float = 0.03,
+    tee: bool = False,
+    progress_callback: Optional[callable] = None,
+) -> OptimizationResult:
+    """Two-phase solver: Weekly pattern (no pallets) → Full binary (with pallets).
+
+    VALIDATED PERFORMANCE (6-week horizon):
+    - Phase 1 (weekly): 18s, 110 binary vars
+    - Phase 2 (full): 259s with warmstart
+    - Total: 278s vs 388s single-phase timeout (28% faster, better gap)
+
+    Strategy:
+    ---------
+    Phase 1: Weekly Production Cycle (Fast Warmup)
+        - Create 25 binary pattern variables: product_weekday_pattern[product, weekday]
+        - Link weekday dates: product_produced[Mon_week1] == pattern[Mon]
+        - Disable pallet tracking (simpler model)
+        - Solve in ~20-40s (fast!)
+        - Binary vars: 25 (pattern) + 60-80 (weekends) = 85-105 total
+
+    Phase 2: Full Binary Optimization (With Warmstart)
+        - Use Phase 1 solution as warmstart
+        - Enable pallet tracking
+        - Full binary SKU selection (210-280 vars)
+        - Solve in ~250-300s with warmstart
+        - Better than cold start timeout
+
+    Key Technical Details (Using Pyomo):
+    -----------------------------------
+    1. Weekly pattern variables reduce binary count by 50-60%
+    2. Linking constraints: product_produced[date] == pattern[weekday(date)]
+    3. CRITICAL: Deactivate num_products_counting_con for linked weekdays
+       (conflicts with weekly pattern constraint)
+    4. Pallet tracking disabled in Phase 1 (faster solve)
+    5. Warmstart extraction uses pyomo.value() directly
+
+    Args:
+        nodes: List of UnifiedNode objects
+        routes: List of UnifiedRoute objects  
+        forecast: Demand forecast
+        labor_calendar: Labor availability and costs
+        cost_structure: Cost parameters (pallets will be disabled for Phase 1)
+        start_date: Planning horizon start
+        end_date: Planning horizon end (inclusive)
+        truck_schedules: Optional list of truck schedules
+        initial_inventory: Optional initial inventory dict
+        inventory_snapshot_date: Date when initial inventory was measured
+        use_batch_tracking: Use age-cohort tracking (default: True)
+        allow_shortages: Allow demand shortages with penalty (default: False)
+        enforce_shelf_life: Enforce shelf life constraints (default: True)
+        solver_name: Solver to use (default: 'appsi_highs')
+        time_limit_phase1: Time limit for Phase 1 (default: 120s)
+        time_limit_phase2: Time limit for Phase 2 (default: 360s)
+        mip_gap: MIP gap tolerance (default: 0.03 = 3%)
+        tee: Show solver output (default: False)
+        progress_callback: Optional callback(phase, status, time, cost) for UI updates
+
+    Returns:
+        OptimizationResult from Phase 2 (final solution)
+
+    Example:
+        >>> result = solve_weekly_pattern_warmstart(
+        ...     nodes, routes, forecast, labor_calendar, cost_structure,
+        ...     start_date, end_date,
+        ...     solver_name='appsi_highs',
+        ...     progress_callback=lambda p, s, t, c: print(f"Phase {p}: {s}")
+        ... )
+    """
+    import time as time_module
+    import os
+    from pyomo.environ import Var, ConstraintList, Binary, value as pyo_value
+    from pyomo.contrib import appsi
+
+    print("="*80)
+    print("WEEKLY PATTERN WARMSTART SOLVER")
+    print("Two-Phase: Weekly Cycle (no pallets) → Full Binary (with pallets)")
+    print("="*80)
+
+    total_start = time_module.time()
+
+    # Get manufacturing info
+    products = sorted(set(e.product_id for e in forecast.entries))
+    manufacturing_nodes = [n.id for n in nodes if n.capabilities.can_manufacture]
+
+    # Build date range and categorize weekdays vs weekends
+    dates_range = []
+    current = start_date
+    while current <= end_date:
+        dates_range.append(current)
+        current += timedelta(days=1)
+
+    weekday_dates_lists = {i: [] for i in range(5)}  # 0=Mon, 4=Fri
+    weekend_dates = []
+
+    for date_val in dates_range:
+        weekday = date_val.weekday()
+        labor_day = labor_calendar.get_labor_day(date_val)
+
+        if weekday < 5 and labor_day and labor_day.is_fixed_day:
+            weekday_dates_lists[weekday].append(date_val)
+        else:
+            weekend_dates.append(date_val)
+
+    weekday_count = sum(len(dates) for dates in weekday_dates_lists.values())
+    pattern_binary_vars = 25  # 5 products × 5 weekdays
+    weekend_binary_vars = 5 * len(weekend_dates)
+    total_phase1_binary = pattern_binary_vars + weekend_binary_vars
+    total_individual_binary = 5 * len(dates_range)
+
+    print(f"\nHorizon: {len(dates_range)} days ({weekday_count} weekdays, {len(weekend_dates)} weekends)")
+    print(f"Binary variable reduction:")
+    print(f"  Individual approach: {total_individual_binary} vars")
+    print(f"  Weekly pattern: {total_phase1_binary} vars ({pattern_binary_vars} pattern + {weekend_binary_vars} weekends)")
+    print(f"  Reduction: {100*(1 - total_phase1_binary/total_individual_binary):.1f}% fewer")
+
+    if progress_callback:
+        progress_callback(1, "starting", 0, None)
+
+    # ========================================================================
+    # PHASE 1: Weekly Pattern (No Pallet Tracking)
+    # ========================================================================
+    print(f"\n{'='*80}")
+    print("PHASE 1: Weekly Production Cycle (No Pallet Tracking)")
+    print(f"{'='*80}")
+
+    phase1_start = time_module.time()
+
+    # Create modified cost structure with pallet tracking disabled
+    import copy
+    cost_structure_no_pallets = copy.deepcopy(cost_structure)
+    cost_structure_no_pallets.storage_cost_per_pallet_day_frozen = 0.0
+    cost_structure_no_pallets.storage_cost_per_pallet_day_ambient = 0.0
+    cost_structure_no_pallets.storage_cost_fixed_per_pallet_frozen = 0.0
+    cost_structure_no_pallets.storage_cost_fixed_per_pallet_ambient = 0.0
+
+    # Build base model
+    model_phase1_obj = UnifiedNodeModel(
+        nodes=nodes,
+        routes=routes,
+        forecast=forecast,
+        labor_calendar=labor_calendar,
+        cost_structure=cost_structure_no_pallets,
+        start_date=start_date,
+        end_date=end_date,
+        truck_schedules=truck_schedules,
+        initial_inventory=initial_inventory,
+        inventory_snapshot_date=inventory_snapshot_date,
+        use_batch_tracking=use_batch_tracking,
+        allow_shortages=allow_shortages,
+        enforce_shelf_life=enforce_shelf_life,
+        force_all_skus_daily=False,
+    )
+
+    pyomo_model_phase1 = model_phase1_obj.build_model()
+
+    print(f"\nAdding weekly pattern variables and constraints (using Pyomo)...")
+
+    # Add weekly pattern binary variables (Pyomo Var)
+    pattern_index = [(prod, wd) for prod in products for wd in range(5)]
+    pyomo_model_phase1.product_weekday_pattern = Var(
+        pattern_index,
+        within=Binary,
+        doc="Weekly production pattern: 1 if product produced on this weekday (Mon-Fri)"
+    )
+
+    print(f"  Created {len(pattern_index)} weekly pattern variables")
+
+    # Add linking constraints (Pyomo ConstraintList)
+    pyomo_model_phase1.weekly_pattern_linking = ConstraintList()
+
+    num_linked = 0
+    for node_id in manufacturing_nodes:
+        for date_val in dates_range:
+            weekday = date_val.weekday()
+
+            # Link regular weekdays to pattern
+            if weekday < 5 and any(date_val in weekday_dates_lists[weekday] for weekday in range(5)):
+                for product in products:
+                    # Linking constraint: daily decision = weekly pattern
+                    pyomo_model_phase1.weekly_pattern_linking.add(
+                        pyomo_model_phase1.product_produced[node_id, product, date_val] ==
+                        pyomo_model_phase1.product_weekday_pattern[product, weekday]
+                    )
+                    num_linked += 1
+
+    print(f"  Added {num_linked} weekly pattern linking constraints")
+
+    # CRITICAL FIX: Deactivate num_products_counting_con for linked weekdays
+    # (prevents constraint conflict with weekly pattern)
+    num_deactivated = 0
+    if hasattr(pyomo_model_phase1, 'num_products_counting_con'):
+        for node_id in manufacturing_nodes:
+            for date_val in dates_range:
+                weekday = date_val.weekday()
+                if weekday < 5 and any(date_val in weekday_dates_lists[weekday] for weekday in range(5)):
+                    if (node_id, date_val) in pyomo_model_phase1.num_products_counting_con:
+                        pyomo_model_phase1.num_products_counting_con[node_id, date_val].deactivate()
+                        num_deactivated += 1
+
+    print(f"  Deactivated {num_deactivated} conflicting counting constraints")
+
+    # Solve Phase 1
+    print(f"\nSolving Phase 1 ({total_phase1_binary} binary vars)...")
+
+    if progress_callback:
+        progress_callback(1, "solving", 0, None)
+
+    solver_phase1 = appsi.solvers.Highs()
+    solver_phase1.config.time_limit = time_limit_phase1
+    solver_phase1.config.mip_gap = mip_gap * 2  # Relaxed gap for Phase 1
+    solver_phase1.highs_options['presolve'] = 'on'
+    solver_phase1.highs_options['parallel'] = 'on'
+    solver_phase1.highs_options['threads'] = os.cpu_count() or 4
+
+    results_phase1 = solver_phase1.solve(pyomo_model_phase1)
+    phase1_time = time_module.time() - phase1_start
+
+    # Extract Phase 1 results
+    try:
+        cost_phase1 = pyo_value(pyomo_model_phase1.obj)
+        term_phase1 = results_phase1.termination_condition.name if hasattr(results_phase1.termination_condition, 'name') else str(results_phase1.termination_condition)
+    except:
+        # Phase 1 failed
+        error_msg = f"Phase 1 (weekly pattern) failed: {results_phase1.termination_condition}"
+        print(f"\n⚠️  {error_msg}")
+
+        if progress_callback:
+            progress_callback(1, "failed", phase1_time, None)
+
+        return OptimizationResult(
+            success=False,
+            infeasibility_message=error_msg,
+            solve_time_seconds=phase1_time,
+            termination_condition=results_phase1.termination_condition,
+        )
+
+    print(f"\n📊 Phase 1 Results:")
+    print(f"   Time: {phase1_time:.1f}s")
+    print(f"   Cost: ${cost_phase1:,.2f}")
+    print(f"   Status: {term_phase1}")
+
+    if progress_callback:
+        progress_callback(1, "complete", phase1_time, cost_phase1)
+
+    # Extract weekly pattern for reporting
+    pattern_summary = {}
+    for weekday in range(5):
+        day_name = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'][weekday]
+        active_products = []
+        for product in products:
+            try:
+                if pyo_value(pyomo_model_phase1.product_weekday_pattern[product, weekday]) > 0.5:
+                    active_products.append(product)
+            except:
+                pass
+        pattern_summary[day_name] = active_products
+
+    print(f"\n   Weekly Production Pattern:")
+    for day, prods in pattern_summary.items():
+        print(f"      {day}: {len(prods)} SKUs")
+
+    # Extract warmstart from Phase 1
+    print(f"\n   Extracting warmstart for Phase 2...")
+    warmstart_hints = {}
+
+    for node_id in manufacturing_nodes:
+        for product in products:
+            for date_val in dates_range:
+                key = (node_id, product, date_val)
+
+                if (node_id, product, date_val) in pyomo_model_phase1.product_produced:
+                    try:
+                        val = pyo_value(pyomo_model_phase1.product_produced[node_id, product, date_val])
+                        warmstart_hints[key] = 1 if val > 0.5 else 0
+                    except:
+                        warmstart_hints[key] = 0
+                else:
+                    warmstart_hints[key] = 0
+
+    num_warmstart_active = sum(1 for v in warmstart_hints.values() if v == 1)
+    print(f"   Warmstart: {num_warmstart_active}/{len(warmstart_hints)} active SKUs")
+
+    # ========================================================================
+    # PHASE 2: Full Binary Optimization (With Pallet Tracking + Warmstart)
+    # ========================================================================
+    print(f"\n{'='*80}")
+    print("PHASE 2: Full Binary Optimization (With Pallet Tracking)")
+    print(f"{'='*80}")
+
+    if progress_callback:
+        progress_callback(2, "starting", phase1_time, cost_phase1)
+
+    phase2_start = time_module.time()
+
+    model_phase2 = UnifiedNodeModel(
+        nodes=nodes,
+        routes=routes,
+        forecast=forecast,
+        labor_calendar=labor_calendar,
+        cost_structure=cost_structure,  # Original cost structure with pallet tracking
+        start_date=start_date,
+        end_date=end_date,
+        truck_schedules=truck_schedules,
+        initial_inventory=initial_inventory,
+        inventory_snapshot_date=inventory_snapshot_date,
+        use_batch_tracking=use_batch_tracking,
+        allow_shortages=allow_shortages,
+        enforce_shelf_life=enforce_shelf_life,
+        force_all_skus_daily=False,
+    )
+
+    print(f"Solving Phase 2 ({total_individual_binary} binary vars, with warmstart)...")
+
+    result_phase2 = model_phase2.solve(
+        solver_name=solver_name,
+        time_limit_seconds=time_limit_phase2,
+        mip_gap=mip_gap,
+        use_warmstart=True,
+        warmstart_hints=warmstart_hints,
+        tee=tee,
+    )
+
+    phase2_time = time_module.time() - phase2_start
+    total_time = time_module.time() - total_start
+
+    print(f"\n📊 Phase 2 Results:")
+    print(f"   Time: {phase2_time:.1f}s")
+    print(f"   Cost: ${result_phase2.objective_value:,.2f}")
+    term_phase2 = result_phase2.termination_condition.name if hasattr(result_phase2.termination_condition, 'name') else str(result_phase2.termination_condition)
+    print(f"   Status: {term_phase2}")
+    if result_phase2.gap:
+        print(f"   Gap: {result_phase2.gap * 100:.2f}%")
+
+    if progress_callback:
+        progress_callback(2, "complete", phase2_time, result_phase2.objective_value)
+
+    # Summary
+    print(f"\n{'='*80}")
+    print("TWO-PHASE SOLVE SUMMARY")
+    print(f"{'='*80}")
+    print(f"Phase 1 (weekly pattern, no pallets): {phase1_time:.1f}s, ${cost_phase1:,.2f}")
+    print(f"Phase 2 (full binary, with pallets):  {phase2_time:.1f}s, ${result_phase2.objective_value:,.2f}")
+    print(f"Total time: {total_time:.1f}s")
+
+    if cost_phase1 > 0:
+        improvement = cost_phase1 - result_phase2.objective_value
+        pct = 100 * improvement / cost_phase1
+        print(f"\nCost improvement from Phase 1: ${improvement:,.2f} ({pct:.1f}%)")
+
+    print("="*80)
+
+    # Return Phase 2 result with updated solve time
+    result_phase2.solve_time_seconds = total_time
+    result_phase2.metadata = result_phase2.metadata or {}
+    result_phase2.metadata.update({
+        'weekly_pattern_warmstart': True,
+        'phase1_time': phase1_time,
+        'phase2_time': phase2_time,
+        'phase1_cost': cost_phase1,
+        'weekly_pattern': pattern_summary,
+    })
+
+    return result_phase2

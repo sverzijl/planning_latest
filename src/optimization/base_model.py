@@ -59,15 +59,36 @@ class OptimizationResult:
         )
 
     def is_feasible(self) -> bool:
-        """Check if solution is feasible (optimal or sub-optimal but valid)."""
-        return (
-            self.success
-            and self.termination_condition in [
-                TerminationCondition.optimal,
-                TerminationCondition.feasible,
-                TerminationCondition.maxTimeLimit,  # Hit time limit but has solution
-            ]
-        )
+        """Check if solution is feasible (optimal or sub-optimal but valid).
+
+        This includes:
+        - optimal: Proven optimal solution
+        - feasible: Valid but not proven optimal
+        - maxTimeLimit: Hit time limit but has valid solution
+        - intermediateNonInteger: MIP solver has valid solution but not integer-optimal
+        - other: Check string representation for solver-specific feasible statuses
+        """
+        if not self.success:
+            return False
+
+        # Check for known feasible termination conditions
+        if self.termination_condition in [
+            TerminationCondition.optimal,
+            TerminationCondition.feasible,
+            TerminationCondition.maxTimeLimit,  # Hit time limit but has solution
+        ]:
+            return True
+
+        # Check string representation for solver-specific statuses
+        # Some solvers return custom termination conditions not in the enum
+        if self.termination_condition is not None:
+            tc_str = str(self.termination_condition).lower()
+            # Accept any status containing these keywords
+            feasible_keywords = ['optimal', 'feasible', 'intermediate']
+            if any(keyword in tc_str for keyword in feasible_keywords):
+                return True
+
+        return False
 
     def is_infeasible(self) -> bool:
         """Check if model is infeasible."""
@@ -150,39 +171,41 @@ class BaseOptimizationModel(ABC):
         This method must be implemented by subclasses.
 
         Returns:
-            ConcreteModel with variables, constraints, and objective
+            ConcreteModel: Pyomo model with variables, constraints, and objective
 
         Example:
             def build_model(self):
                 model = ConcreteModel()
                 model.x = Var(within=NonNegativeReals)
-                model.obj = Objective(expr=model.x)
-                model.con = Constraint(expr=model.x >= 1)
+                model.y = Var(within=NonNegativeReals)
+                model.obj = Objective(expr=model.x + model.y, sense=minimize)
+                model.con = Constraint(expr=model.x + 2*model.y >= 10)
                 return model
         """
-        pass
+        raise NotImplementedError("Subclass must implement build_model()")
 
     @abstractmethod
     def extract_solution(self, model: ConcreteModel) -> Dict[str, Any]:
         """
-        Extract solution from solved model.
+        Extract solution values from the solved model.
 
         This method must be implemented by subclasses.
 
         Args:
-            model: Solved Pyomo model
+            model: Solved Pyomo ConcreteModel
 
         Returns:
-            Dictionary containing extracted solution values
+            dict: Solution data (variable values, costs, etc.)
 
         Example:
             def extract_solution(self, model):
                 return {
-                    "x_value": value(model.x),
-                    "objective": value(model.obj)
+                    'x_value': value(model.x),
+                    'y_value': value(model.y),
+                    'total_cost': value(model.obj)
                 }
         """
-        pass
+        raise NotImplementedError("Subclass must implement extract_solution()")
 
     def _solve_with_appsi_highs(
         self,
@@ -192,10 +215,14 @@ class BaseOptimizationModel(ABC):
         use_aggressive_heuristics: bool = False,
         tee: bool = False,
     ) -> OptimizationResult:
-        """Solve using APPSI HiGHS interface (supports warmstart!).
+        """
+        Solve model using APPSI HiGHS solver (modern Pyomo interface).
+
+        APPSI (Advanced Persistent Solver Interface) provides better performance
+        for repeated solves and warmstarting.
 
         Args:
-            time_limit_seconds: Time limit
+            time_limit_seconds: Maximum solve time
             mip_gap: MIP gap tolerance
             use_warmstart: Enable warmstart from variable initial values
             use_aggressive_heuristics: Enable aggressive MIP heuristics
@@ -377,8 +404,16 @@ class BaseOptimizationModel(ABC):
                     'tune': 2,            # Maximum auto-tune
                 }
                 options.update(aggressive_options)
-            # For CBC without aggressive heuristics, let it run with defaults
-            # Time limit and gap can still be passed via solver_options
+            else:
+                # Standard CBC options (without aggressive heuristics)
+                # CRITICAL: MUST set timeout and gap for normal mode too!
+                standard_options = {}
+                if time_limit_seconds is not None:
+                    standard_options['seconds'] = time_limit_seconds
+                if mip_gap is not None:
+                    standard_options['ratio'] = mip_gap
+                if standard_options:
+                    options.update(standard_options)
         elif solver_name == 'gurobi':
             if time_limit_seconds is not None:
                 options['TimeLimit'] = time_limit_seconds
@@ -498,11 +533,11 @@ class BaseOptimizationModel(ABC):
     def _process_results(
         self,
         results,
-        solver_name: str,
+        solver_name: Optional[str],
         solve_time: float
     ) -> OptimizationResult:
         """
-        Process Pyomo solver results into OptimizationResult.
+        Process solver results into OptimizationResult.
 
         Args:
             results: Pyomo solver results
@@ -512,41 +547,30 @@ class BaseOptimizationModel(ABC):
         Returns:
             OptimizationResult
         """
-        solver_status = results.solver.status
-        termination_condition = results.solver.termination_condition
+        # Extract solver status and termination condition
+        solver_status = results.solver.status if hasattr(results, 'solver') else None
+        termination_condition = results.solver.termination_condition if hasattr(results, 'solver') else None
 
-        # Check if successful
+        # Determine success (optimal or feasible solution found)
         success = (
             solver_status == SolverStatus.ok
             and termination_condition in [
                 TerminationCondition.optimal,
                 TerminationCondition.feasible,
-                TerminationCondition.maxTimeLimit,
+                TerminationCondition.maxTimeLimit,  # Hit time limit but has solution
             ]
         )
 
-        # Get objective value from results (not model, since solutions not loaded yet)
+        # Get objective value
         objective_value = None
-        if success:
-            try:
-                # Try to get from solution first (more reliable than upper_bound)
-                if hasattr(results, 'solution') and len(results.solution) > 0:
-                    sol = results.solution(0)
-                    if hasattr(sol, 'objective'):
-                        obj_val = sol.objective.values()[0].value if sol.objective else None
-                        if obj_val is not None and math.isfinite(obj_val):
-                            objective_value = obj_val
-
-                # Fallback: try upper_bound only if it's finite (not infinity)
-                if objective_value is None and hasattr(results, 'problem') and hasattr(results.problem, 'upper_bound'):
-                    ub = results.problem.upper_bound
-                    if ub is not None and math.isfinite(ub):
-                        objective_value = ub
-            except Exception as e:
-                # If we can't get objective from results, we'll get it after loading
+        if hasattr(results.problem, 'upper_bound'):
+            # For minimization, upper_bound is the objective value
+            objective_value = results.problem.upper_bound
+            # Check if it's infinity (no solution found)
+            if objective_value is not None and math.isinf(objective_value):
                 objective_value = None
 
-        # Get gap if available (only if bounds are finite)
+        # Extract MIP gap if available
         gap = None
         if hasattr(results.problem, 'upper_bound') and hasattr(results.problem, 'lower_bound'):
             ub = results.problem.upper_bound
@@ -649,81 +673,25 @@ class BaseOptimizationModel(ABC):
             'num_variables': self.model.nvariables(),
             'num_constraints': self.model.nconstraints(),
             'num_integer_vars': num_integer,
-            'num_continuous_vars': self.model.nvariables() - num_integer,
         }
 
-    def print_model_summary(self) -> None:
+    def get_build_time(self) -> Optional[float]:
         """
-        Print summary of model structure.
+        Get model build time in seconds.
 
-        Example:
-            model = MyModel(data)
-            model.solve()
-            model.print_model_summary()
+        Returns:
+            Build time in seconds, or None if model not built
         """
-        print("=" * 60)
-        print("Optimization Model Summary")
-        print("=" * 60)
+        return self._build_time
 
-        stats = self.get_model_statistics()
-        if not stats['built']:
-            print("Model not yet built")
-            return
-
-        print(f"Variables:       {stats['num_variables']:,}")
-        print(f"  Continuous:    {stats['num_continuous_vars']:,}")
-        print(f"  Integer/Binary: {stats['num_integer_vars']:,}")
-        print(f"Constraints:     {stats['num_constraints']:,}")
-        if stats['build_time_seconds']:
-            print(f"Build time:      {stats['build_time_seconds']:.2f} seconds")
-
-        if self.result:
-            print()
-            print(f"Solve status:    {self.result.termination_condition}")
-            if self.result.objective_value is not None:
-                print(f"Objective value: {self.result.objective_value:,.2f}")
-            if self.result.solve_time_seconds is not None:
-                print(f"Solve time:      {self.result.solve_time_seconds:.2f} seconds")
-            if self.result.gap is not None:
-                print(f"MIP gap:         {self.result.gap*100:.2f}%")
-
-        print("=" * 60)
-
-    def write_model(self, filename: str) -> None:
+    def reset(self):
         """
-        Write model to file in LP or MPS format.
+        Reset the model state.
 
-        Args:
-            filename: Output filename (.lp or .mps extension)
-
-        Example:
-            model = MyModel(data)
-            model.solve()
-            model.write_model("model.lp")  # For debugging
+        Clears the built model, results, and solution.
+        Useful for rebuilding the model with different parameters.
         """
-        if self.model is None:
-            raise RuntimeError("Model not yet built. Call solve() first.")
-
-        self.model.write(filename)
-
-    def __str__(self) -> str:
-        """String representation."""
-        stats = self.get_model_statistics()
-        if not stats['built']:
-            return f"{self.__class__.__name__} (not built)"
-
-        status = "built"
-        if self.result:
-            if self.result.is_optimal():
-                status = "optimal"
-            elif self.result.is_feasible():
-                status = "feasible"
-            elif self.result.is_infeasible():
-                status = "infeasible"
-            else:
-                status = str(self.result.termination_condition)
-
-        return (
-            f"{self.__class__.__name__} "
-            f"({stats['num_variables']} vars, {stats['num_constraints']} cons, {status})"
-        )
+        self.model = None
+        self.result = None
+        self.solution = None
+        self._build_time = None

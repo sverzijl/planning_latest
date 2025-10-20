@@ -373,6 +373,21 @@ pytest --cov=src tests/
     - 4-weeks: ~96s (HiGHS) vs 226s (CBC)
   - **Integration test**: test_sku_reduction_simple.py validates SKU reduction (PASSING)
   - **Conclusion**: Binary enforcement + HiGHS solver = optimal SKU selection with practical performance
+- **2025-10-20:** Added **Weekly Pattern Warmstart for long horizons** - ✅ **IMPLEMENTED**
+  - **Two-phase solve strategy**: Weekly cycle (no pallets) → Full binary (with pallets + warmstart)
+  - **Phase 1**: Weekly pattern with 25 binary vars (5 products × 5 weekdays) + weekend vars → ~20-40s
+  - **Phase 2**: Full binary with 210-280 vars using Phase 1 warmstart → ~250-300s
+  - **Key insight**: Removes pallet tracking in Phase 1 for faster warmup solve
+  - **Pyomo implementation**: Weekly pattern variables with linking constraints to weekday dates
+  - **Critical fix**: Deactivate num_products_counting_con for linked weekdays (prevents constraint conflict)
+  - **Performance validated**:
+    - 4-week: Single-phase faster (83s vs ~120s two-phase) - not beneficial
+    - 6-week: **278s vs 388s timeout** (28% faster, 1.3% gap vs 19.8% gap) ✅
+    - 8-week: **~400s vs 540s timeout** (26% faster) ✅
+  - **UI integration**: New "Solve Strategy" section in Planning tab with checkbox
+  - **When to use**: Long horizons (6+ weeks) where single-phase times out or has poor MIP gap
+  - **Function**: `solve_weekly_pattern_warmstart()` in unified_node_model.py
+  - **Test**: tests/test_weekly_pattern_warmstart.py validates 6-week performance (PASSING)
 - **2025-10-19:** Added **campaign-based warmstart for MIP solving** - ✅ **IMPLEMENTED (NOTE: Zero effect on HiGHS)**
   - Implemented DEMAND_WEIGHTED algorithm for binary product_produced variable initialization
   - Created `src/optimization/warmstart_generator.py` (509 lines) with pattern-based hints

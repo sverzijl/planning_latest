@@ -1,0 +1,1139 @@
+================================================================================
+COMPREHENSIVE TEST VALIDATION - NON-FIXED DAY FIX
+================================================================================
+
+Fix: Changed day_hours = labor_day.fixed_hours (was 0)
+     to day_hours = 24.0 for non-fixed days
+
+Date: 2025-10-19 05:31:26
+================================================================================
+
+================================================================================
+PHASE 1: NON-FIXED DAY UNIT TESTS
+================================================================================
+
+================================================================================
+Running: Weekend Production Below Minimum
+================================================================================
+============================= test session starts ==============================
+platform linux -- Python 3.11.2, pytest-8.4.2, pluggy-1.6.0 -- /home/sverzijl/planning_latest/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/sverzijl/planning_latest
+plugins: cov-7.0.0, mock-3.15.1
+collecting ... collected 1 item
+
+tests/test_labor_cost_piecewise.py::test_piecewise_non_fixed_day_below_minimum PASSED [100%]
+
+=============================== warnings summary ===============================
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+  /home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 1 passed, 8 warnings in 1.40s =========================
+
+
+================================================================================
+Running: Public Holiday Overhead (Above Minimum)
+================================================================================
+============================= test session starts ==============================
+platform linux -- Python 3.11.2, pytest-8.4.2, pluggy-1.6.0 -- /home/sverzijl/planning_latest/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/sverzijl/planning_latest
+plugins: cov-7.0.0, mock-3.15.1
+collecting ... collected 1 item
+
+tests/test_labor_overhead_holiday.py::test_public_holiday_overhead_included PASSED [100%]
+
+=============================== warnings summary ===============================
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+  /home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 1 passed, 8 warnings in 0.98s =========================
+
+
+================================================================================
+Running: Public Holiday Overhead (Below Minimum)
+================================================================================
+============================= test session starts ==============================
+platform linux -- Python 3.11.2, pytest-8.4.2, pluggy-1.6.0 -- /home/sverzijl/planning_latest/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/sverzijl/planning_latest
+plugins: cov-7.0.0, mock-3.15.1
+collecting ... collected 1 item
+
+tests/test_labor_overhead_holiday.py::test_public_holiday_overhead_below_minimum PASSED [100%]
+
+=============================== warnings summary ===============================
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+  /home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 1 passed, 8 warnings in 0.98s =========================
+
+
+================================================================================
+PHASE 2: REGRESSION TEST SUITE
+================================================================================
+
+================================================================================
+Running: Weekday Labor Costs
+================================================================================
+============================= test session starts ==============================
+platform linux -- Python 3.11.2, pytest-8.4.2, pluggy-1.6.0 -- /home/sverzijl/planning_latest/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/sverzijl/planning_latest
+plugins: cov-7.0.0, mock-3.15.1
+collecting ... collected 4 items
+
+tests/test_labor_cost_piecewise.py::test_piecewise_fixed_day_no_overtime PASSED [ 25%]
+tests/test_labor_cost_piecewise.py::test_piecewise_fixed_day_with_overtime SKIPPED [ 50%]
+tests/test_labor_cost_piecewise.py::test_piecewise_non_fixed_day_below_minimum PASSED [ 75%]
+tests/test_labor_cost_piecewise.py::test_piecewise_overhead_included PASSED [100%]
+
+=============================== warnings summary ===============================
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+  /home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=================== 3 passed, 1 skipped, 8 warnings in 1.10s ===================
+
+
+================================================================================
+Running: Multi-Day Consistency
+================================================================================
+============================= test session starts ==============================
+platform linux -- Python 3.11.2, pytest-8.4.2, pluggy-1.6.0 -- /home/sverzijl/planning_latest/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/sverzijl/planning_latest
+plugins: cov-7.0.0, mock-3.15.1
+collecting ... collected 2 items
+
+tests/test_labor_overhead_multi_day.py::test_multi_day_overhead_consistency FAILED [ 50%]
+tests/test_labor_overhead_multi_day.py::test_multi_day_overhead_with_storage FAILED [100%]
+
+=================================== FAILURES ===================================
+_____________________ test_multi_day_overhead_consistency ______________________
+
+    def test_multi_day_overhead_consistency():
+        """Test that overhead is consistently applied across weekday, weekend, and holiday.
+    
+        This test verifies:
+            1. Overhead is applied on ALL production days (weekday, weekend, holiday)
+            2. Overhead amounts are consistent (same node parameters)
+            3. Labor hours = production time + overhead for each day
+        """
+        setup = create_multi_day_overhead_test_setup()
+    
+        model_obj = UnifiedNodeModel(
+            nodes=setup['nodes'],
+            routes=setup['routes'],
+            forecast=setup['forecast'],
+            labor_calendar=setup['labor_calendar'],
+            cost_structure=setup['cost_structure'],
+            start_date=setup['start_date'],
+            end_date=setup['end_date'],
+            use_batch_tracking=True,
+            allow_shortages=False,
+        )
+    
+        result = model_obj.solve(
+            solver_name='cbc',
+            time_limit_seconds=60,
+            tee=False,
+        )
+    
+        assert result.is_optimal() or result.is_feasible(), \
+            f"Solution failed: {result.termination_condition}"
+    
+        # Extract production and labor data
+        test_dates_list = list(setup['test_dates'].values())
+        results = extract_production_and_labor(model_obj.model, "6122", test_dates_list)
+    
+        print(f"\n{'='*80}")
+        print(f"MULTI-DAY OVERHEAD CONSISTENCY TEST")
+        print(f"{'='*80}")
+    
+        # Analyze each day
+        overhead_by_date = {}
+        production_rate = 1400.0
+    
+        for date_label, date_val in setup['test_dates'].items():
+            day_data = results[date_val]
+            production_qty = day_data['production_qty']
+            labor_vars = day_data['labor_vars']
+    
+            if labor_vars and production_qty > 100:
+                production_time = production_qty / production_rate
+                labor_hours_used = labor_vars['labor_hours_used']
+                overhead_time = labor_hours_used - production_time
+    
+                overhead_by_date[date_label] = {
+                    'date': date_val,
+                    'production_qty': production_qty,
+                    'production_time': production_time,
+                    'labor_hours_used': labor_hours_used,
+                    'overhead_time': overhead_time,
+                    'labor_vars': labor_vars,
+                }
+    
+                day_name = date_val.strftime('%A %b %d, %Y')
+                day_type = "HOLIDAY" if "holiday" in date_label else ("WEEKEND" if "weekend" in date_label else "WEEKDAY")
+    
+                print(f"\n{day_name} ({day_type}):")
+                print(f"  Production: {production_qty:,.0f} units = {production_time:.2f}h")
+                print(f"  Labor hours used: {labor_hours_used:.2f}h")
+                print(f"  Overhead time: {overhead_time:.2f}h")
+                print(f"  Fixed hours: {labor_vars['fixed_hours_used']:.2f}h")
+                print(f"  Overtime hours: {labor_vars['overtime_hours_used']:.2f}h")
+    
+        print(f"\n{'='*80}")
+        print(f"OVERHEAD VERIFICATION")
+        print(f"{'='*80}")
+    
+        # Verify overhead applied on all production days
+        production_days = [label for label, data in overhead_by_date.items()]
+>       assert len(production_days) >= 3, \
+            f"Expected production on at least 3 days, got {len(production_days)}"
+E       AssertionError: Expected production on at least 3 days, got 2
+E       assert 2 >= 3
+E        +  where 2 = len(['monday_weekday', 'tuesday_weekday'])
+
+tests/test_labor_overhead_multi_day.py:300: AssertionError
+----------------------------- Captured stdout call -----------------------------
+
+Unified Model Data Summary:
+  Nodes: 2
+    Manufacturing: 1
+    Demand: 1
+    With truck constraints: 0
+  Routes: 1
+  Truck schedules: 0
+  Planning horizon: 2025-06-02 to 2025-06-13 (12 days)
+  Products: 1
+  Demand entries: 5
+
+Building Unified Node Model...
+  Sets defined: 2 nodes, 1 products, 12 dates, 1 routes
+  Production dates for cohorts: 12 in horizon + 0 from initial inventory
+  Cohort indices: 156 cohorts
+  Shipment cohorts by origin node:
+    6122: 78
+  Shipment cohort indices: 78
+  Demand cohort indices: 29
+  Changeover tracking: 12 production days, 12 product indicators
+  Labor cost variables: 12 labor hour variables added
+  Variables created successfully
+  Adding core constraints...
+  Changeover tracking constraints added (48 constraints)
+  Labor cost constraints added (12 node-date pairs, 108 constraints)
+  Holding cost skipped (all storage rates are zero)
+  Core constraints added
+  Model complete and ready to solve
+
+================================================================================
+MULTI-DAY OVERHEAD CONSISTENCY TEST
+================================================================================
+
+Monday Jun 02, 2025 (WEEKDAY):
+  Production: 12,600 units = 9.00h
+  Labor hours used: 9.75h
+  Overhead time: 0.75h
+  Fixed hours: 9.75h
+  Overtime hours: 0.00h
+
+Tuesday Jun 03, 2025 (WEEKDAY):
+  Production: 11,200 units = 8.00h
+  Labor hours used: 8.75h
+  Overhead time: 0.75h
+  Fixed hours: 8.75h
+  Overtime hours: 0.00h
+
+================================================================================
+OVERHEAD VERIFICATION
+================================================================================
+_____________________ test_multi_day_overhead_with_storage _____________________
+
+    def test_multi_day_overhead_with_storage():
+        """Test overhead with multi-day production allowing inventory carryover.
+    
+        This test removes the instant transit constraint to allow production
+        to be scheduled on cheaper weekdays even if demand is on weekend/holiday.
+        Verifies overhead still applies to actual production days chosen by optimizer.
+        """
+        setup = create_multi_day_overhead_test_setup()
+    
+        # Modify route to have 1-day transit
+        setup['routes'][0] = UnifiedRoute(
+            id="ROUTE-6122-6110",
+            origin_node_id="6122",
+            destination_node_id="6110",
+            transport_mode=TransportMode.AMBIENT,
+            transit_days=1.0,  # Allow advance production
+            cost_per_unit=0.1,
+        )
+    
+        model_obj = UnifiedNodeModel(
+            nodes=setup['nodes'],
+            routes=setup['routes'],
+            forecast=setup['forecast'],
+            labor_calendar=setup['labor_calendar'],
+            cost_structure=setup['cost_structure'],
+            start_date=setup['start_date'],
+            end_date=setup['end_date'],
+            use_batch_tracking=True,
+            allow_shortages=False,
+        )
+    
+        result = model_obj.solve(
+            solver_name='cbc',
+            time_limit_seconds=60,
+            tee=False,
+        )
+    
+>       assert result.is_optimal() or result.is_feasible()
+E       AssertionError: assert (False or False)
+E        +  where False = is_optimal()
+E        +    where is_optimal = OptimizationResult(success=False, objective_value=None, solver_status=<SolverStatus.warning: 'warning'>, termination_condition=<TerminationCondition.infeasible: 'infeasible'>, solve_time_seconds=0.039853811264038086, solver_name='cbc', gap=None, num_variables=359, num_constraints=340, num_integer_vars=36, infeasibility_message='Model is infeasible. Constraints cannot all be satisfied simultaneously.', solver_output=None, metadata={}).is_optimal
+E        +  and   False = is_feasible()
+E        +    where is_feasible = OptimizationResult(success=False, objective_value=None, solver_status=<SolverStatus.warning: 'warning'>, termination_condition=<TerminationCondition.infeasible: 'infeasible'>, solve_time_seconds=0.039853811264038086, solver_name='cbc', gap=None, num_variables=359, num_constraints=340, num_integer_vars=36, infeasibility_message='Model is infeasible. Constraints cannot all be satisfied simultaneously.', solver_output=None, metadata={}).is_feasible
+
+tests/test_labor_overhead_multi_day.py:384: AssertionError
+----------------------------- Captured stdout call -----------------------------
+
+Unified Model Data Summary:
+  Nodes: 2
+    Manufacturing: 1
+    Demand: 1
+    With truck constraints: 0
+  Routes: 1
+  Truck schedules: 0
+  Planning horizon: 2025-06-02 to 2025-06-13 (12 days)
+  Products: 1
+  Demand entries: 5
+
+Building Unified Node Model...
+  Sets defined: 2 nodes, 1 products, 12 dates, 1 routes
+  Production dates for cohorts: 12 in horizon + 0 from initial inventory
+  Cohort indices: 156 cohorts
+  Shipment cohorts by origin node:
+    6122: 66
+  Shipment cohort indices: 66
+  Demand cohort indices: 29
+  Changeover tracking: 12 production days, 12 product indicators
+  Labor cost variables: 12 labor hour variables added
+  Variables created successfully
+  Adding core constraints...
+  Changeover tracking constraints added (48 constraints)
+  Labor cost constraints added (12 node-date pairs, 108 constraints)
+  Holding cost skipped (all storage rates are zero)
+  Core constraints added
+  Model complete and ready to solve
+=============================== warnings summary ===============================
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+  /home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_labor_overhead_multi_day.py::test_multi_day_overhead_consistency
+FAILED tests/test_labor_overhead_multi_day.py::test_multi_day_overhead_with_storage
+======================== 2 failed, 8 warnings in 1.18s =========================
+
+
+================================================================================
+Running: Overtime Preference
+================================================================================
+============================= test session starts ==============================
+platform linux -- Python 3.11.2, pytest-8.4.2, pluggy-1.6.0 -- /home/sverzijl/planning_latest/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/sverzijl/planning_latest
+plugins: cov-7.0.0, mock-3.15.1
+collecting ... collected 2 items
+
+tests/test_overtime_preference.py::test_overtime_preference_over_weekend PASSED [ 50%]
+tests/test_overtime_preference.py::test_weekend_only_when_necessary FAILED [100%]
+
+=================================== FAILURES ===================================
+_______________________ test_weekend_only_when_necessary _______________________
+
+    def test_weekend_only_when_necessary():
+        """Test that weekends are only used when weekday capacity is exhausted.
+    
+        Scenario:
+        - High demand that exceeds weekday capacity
+        - Weekdays: 12h + 2h OT = 14h max
+        - Weekend needed for overflow demand
+        """
+    
+        # Create manufacturing node
+        mfg_node = UnifiedNode(
+            id='MFG',
+            name='Manufacturing',
+            capabilities=NodeCapabilities(
+                can_manufacture=True,
+                can_store=True,
+                production_rate_per_hour=1000.0,
+            ),
+            storage_mode=StorageMode.AMBIENT,
+        )
+    
+        demand_node = UnifiedNode(
+            id='DEMAND',
+            name='Customer',
+            capabilities=NodeCapabilities(
+                has_demand=True,
+                can_store=True,
+            ),
+            storage_mode=StorageMode.AMBIENT,
+        )
+    
+        nodes = [mfg_node, demand_node]
+    
+        route = UnifiedRoute(
+            id='R1',
+            origin_node_id='MFG',
+            destination_node_id='DEMAND',
+            transport_mode=TransportMode.AMBIENT,
+            transit_days=1.0,
+            cost_per_unit=0.1,
+        )
+        routes = [route]
+    
+        # Labor calendar
+        start_date = datetime(2025, 1, 6).date()  # Monday
+    
+        labor_days = []
+        for i in range(7):
+            date = start_date + timedelta(days=i)
+            day_of_week = date.weekday()
+    
+            if day_of_week < 5:  # Monday-Friday
+                labor_days.append(LaborDay(
+                    date=date,
+                    fixed_hours=12.0,
+                    overtime_hours=2.0,
+                    is_fixed_day=True,
+                    regular_rate=20.0,
+                    overtime_rate=30.0,
+                    non_fixed_rate=40.0,  # Not used on fixed days but needs a value
+                    minimum_hours=0.0,
+                ))
+            else:  # Saturday-Sunday
+                labor_days.append(LaborDay(
+                    date=date,
+                    fixed_hours=0.0,
+                    overtime_hours=0.0,
+                    is_fixed_day=False,
+                    regular_rate=20.0,  # Not used on non-fixed days
+                    overtime_rate=30.0,  # Not used on non-fixed days
+                    non_fixed_rate=40.0,
+                    minimum_hours=4.0,
+                ))
+    
+        labor_calendar = LaborCalendar(name="Test Calendar", days=labor_days)
+    
+        # Very high demand: 100,000 units (100h of production)
+        # Weekdays can only do: 5 days × 14h = 70h = 70,000 units
+        # Need weekend to meet demand
+        wednesday = start_date + timedelta(days=2)
+    
+        forecast = Forecast(name="Test Forecast", entries=[
+            ForecastEntry(
+                location_id='DEMAND',
+                product_id='PRODUCT_A',
+                forecast_date=wednesday,
+                quantity=100000.0,  # Very high demand
+            )
+        ])
+    
+        cost_structure = CostStructure(
+            production_cost_per_unit=0.0,
+            storage_cost_frozen_per_unit_day=0.0,
+            storage_cost_ambient_per_unit_day=0.0,
+            shortage_penalty_per_unit=10000.0,
+        )
+    
+        model = UnifiedNodeModel(
+            nodes=nodes,
+            routes=routes,
+            forecast=forecast,
+            labor_calendar=labor_calendar,
+            cost_structure=cost_structure,
+            start_date=start_date,
+            end_date=start_date + timedelta(days=6),
+            use_batch_tracking=True,
+            allow_shortages=False,
+            enforce_shelf_life=False,
+        )
+    
+        result = model.solve(time_limit_seconds=60, mip_gap=0.01)
+    
+        print("\n" + "="*80)
+        print("WEEKEND USAGE TEST (HIGH DEMAND)")
+        print("="*80)
+    
+>       assert result.success, f"Solution should succeed. Error: {result.infeasibility_message}"
+E       AssertionError: Solution should succeed. Error: Model is infeasible. Constraints cannot all be satisfied simultaneously.
+E       assert False
+E        +  where False = OptimizationResult(success=False, objective_value=None, solver_status=<SolverStatus.error: 'error'>, termination_condition=<TerminationCondition.infeasible: 'infeasible'>, solve_time_seconds=0.0221254825592041, solver_name=None, gap=None, num_variables=143, num_constraints=147, num_integer_vars=21, infeasibility_message='Model is infeasible. Constraints cannot all be satisfied simultaneously.', solver_output=None, metadata={}).success
+
+tests/test_overtime_preference.py:345: AssertionError
+----------------------------- Captured stdout call -----------------------------
+
+Unified Model Data Summary:
+  Nodes: 2
+    Manufacturing: 1
+    Demand: 1
+    With truck constraints: 0
+  Routes: 1
+  Truck schedules: 0
+  Planning horizon: 2025-01-06 to 2025-01-12 (7 days)
+  Products: 1
+  Demand entries: 1
+
+Building Unified Node Model...
+  Sets defined: 2 nodes, 1 products, 7 dates, 1 routes
+  Production dates for cohorts: 7 in horizon + 0 from initial inventory
+  Cohort indices: 56 cohorts
+  Shipment cohorts by origin node:
+    MFG: 21
+  Shipment cohort indices: 21
+  Demand cohort indices: 3
+  Changeover tracking: 7 production days, 7 product indicators
+  Labor cost variables: 7 labor hour variables added
+  Variables created successfully
+  Adding core constraints...
+  Changeover tracking constraints added (28 constraints)
+  Labor cost constraints added (7 node-date pairs, 63 constraints)
+  Holding cost skipped (all storage rates are zero)
+  Core constraints added
+  Model complete and ready to solve
+
+================================================================================
+WEEKEND USAGE TEST (HIGH DEMAND)
+================================================================================
+=============================== warnings summary ===============================
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+  /home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+tests/test_overtime_preference.py::test_overtime_preference_over_weekend
+tests/test_overtime_preference.py::test_weekend_only_when_necessary
+  /home/sverzijl/planning_latest/src/optimization/unified_node_model.py:260: UserWarning: Zero cost parameters detected: Production cost is 0. This may cause solver to leave some variables uninitialized (valid behavior). Consider using small non-zero costs (e.g., 0.0001) if you encounter solution extraction issues.
+    warnings.warn(warning_msg, UserWarning)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_overtime_preference.py::test_weekend_only_when_necessary - ...
+=================== 1 failed, 1 passed, 10 warnings in 1.06s ===================
+
+
+================================================================================
+Running: Baseline Labor Costs
+================================================================================
+============================= test session starts ==============================
+platform linux -- Python 3.11.2, pytest-8.4.2, pluggy-1.6.0 -- /home/sverzijl/planning_latest/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/sverzijl/planning_latest
+plugins: cov-7.0.0, mock-3.15.1
+collecting ... collected 3 items
+
+tests/test_labor_cost_baseline.py::test_labor_cost_baseline_fixed_day_no_overtime FAILED [ 33%]
+tests/test_labor_cost_baseline.py::test_labor_cost_baseline_fixed_day_with_overtime FAILED [ 66%]
+tests/test_labor_cost_baseline.py::test_labor_cost_baseline_non_fixed_day FAILED [100%]
+
+=================================== FAILURES ===================================
+________________ test_labor_cost_baseline_fixed_day_no_overtime ________________
+
+    @pytest.mark.baseline
+    def test_labor_cost_baseline_fixed_day_no_overtime():
+        """Baseline: Fixed day with 6h production (no overtime).
+    
+        Setup:
+            - Monday (fixed day): 12h @ $20/h regular, OT @ $30/h
+            - Production: 8,400 units = 6h at 1,400 units/hr
+            - Overhead: 0.5h startup + 0.25h shutdown = 0.75h
+            - Total labor hours: 6h + 0.75h = 6.75h
+    
+        Current Behavior (blended rate):
+            - Blended rate = ($20 + $30) / 2 = $25/h
+            - Labor cost = 6.75h × $25 = $168.75
+    
+        Expected Behavior (piecewise - NOT YET IMPLEMENTED):
+            - All hours at regular rate: 6.75h × $20 = $135.00
+            - Error: $33.75 (25% overcharge)
+        """
+        setup = create_minimal_labor_test_setup(
+            production_date=date(2025, 10, 20),  # Monday
+            demand_qty=8400.0,  # 6h production
+            is_fixed_day=True,
+        )
+    
+        # Create model
+        model_obj = UnifiedNodeModel(
+            nodes=setup['nodes'],
+            routes=setup['routes'],
+            forecast=setup['forecast'],
+            labor_calendar=setup['labor_calendar'],
+            cost_structure=setup['cost_structure'],
+            start_date=setup['production_date'],
+            end_date=setup['production_date'],
+            use_batch_tracking=True,
+            allow_shortages=False,
+        )
+    
+        # Solve
+        result = model_obj.solve(
+            solver_name='cbc',
+            time_limit_seconds=30,
+            tee=False,
+        )
+    
+        # Assert solution found
+        assert result.is_optimal() or result.is_feasible(), \
+            f"Expected feasible solution, got {result.termination_condition}"
+    
+        # Extract solution
+        solution = model_obj.get_solution()
+    
+        # Extract total cost (includes labor cost)
+        total_cost = solution.get('total_cost', 0)
+        production_cost = solution.get('total_production_cost', 0)
+        transport_cost = solution.get('total_transport_cost', 0)
+    
+        # Calculate labor cost (by subtraction - no direct extraction in current model)
+        labor_cost_extracted = total_cost - production_cost - transport_cost
+    
+        # Expected values with current blended rate (NO OVERHEAD - BUG!)
+        PRODUCTION_TIME = 8400.0 / 1400.0  # 6.0h
+        OVERHEAD_TIME = 0.5 + 0.25  # 0.75h
+        BLENDED_RATE = (20.0 + 30.0) / 2  # $25/h
+    
+        # CURRENT BEHAVIOR: Only charges for production time, NOT overhead!
+        EXPECTED_LABOR_COST_CURRENT = PRODUCTION_TIME * BLENDED_RATE  # $150.00 (BUG: no overhead!)
+    
+        # CORRECT with blended rate (including overhead)
+        TOTAL_HOURS = PRODUCTION_TIME + OVERHEAD_TIME  # 6.75h
+        EXPECTED_LABOR_COST_BLENDED_WITH_OVERHEAD = TOTAL_HOURS * BLENDED_RATE  # $168.75
+    
+        # CORRECT with piecewise (including overhead)
+        EXPECTED_LABOR_COST_PIECEWISE = TOTAL_HOURS * 20.0  # $135.00 (all regular rate)
+    
+        # Error vs correct piecewise
+        ERROR_AMOUNT = EXPECTED_LABOR_COST_BLENDED_WITH_OVERHEAD - EXPECTED_LABOR_COST_PIECEWISE  # $33.75
+        ERROR_PCT = (ERROR_AMOUNT / EXPECTED_LABOR_COST_PIECEWISE) * 100  # 25%
+    
+        # Save baseline
+        baseline = {
+            'test_name': 'test_labor_cost_baseline_fixed_day_no_overtime',
+            'scenario': 'Fixed day, 6h production (no overtime)',
+            'production_qty': 8400.0,
+            'labor_hours_production': PRODUCTION_TIME,
+            'labor_hours_overhead': OVERHEAD_TIME,
+            'labor_hours_total': TOTAL_HOURS,
+            'regular_rate': 20.0,
+            'overtime_rate': 30.0,
+            'blended_rate': BLENDED_RATE,
+            'labor_cost_actual': labor_cost_extracted,
+            'labor_cost_current_expected': EXPECTED_LABOR_COST_CURRENT,
+            'labor_cost_blended_with_overhead': EXPECTED_LABOR_COST_BLENDED_WITH_OVERHEAD,
+            'labor_cost_piecewise_correct': EXPECTED_LABOR_COST_PIECEWISE,
+            'bug': 'Current model does NOT include overhead time in labor cost',
+            'error_amount': ERROR_AMOUNT,
+            'error_pct': ERROR_PCT,
+        }
+    
+        baseline_file = Path(__file__).parent / "test_baseline_labor_fixed_no_ot.json"
+        with open(baseline_file, 'w') as f:
+            json.dump(baseline, f, indent=2)
+    
+        print(f"\n✓ Baseline saved: {baseline_file}")
+        print(f"  Labor cost (current): ${labor_cost_extracted:.2f}")
+        print(f"  Expected (piecewise + overhead): ${EXPECTED_LABOR_COST_PIECEWISE:.2f}")
+        print(f"  Error: ${ERROR_AMOUNT:.2f} ({ERROR_PCT:.1f}%)")
+        print(f"  ⚠️ BUG: Current model does NOT include overhead time in labor cost!")
+    
+        # Assert baseline captured (with tolerance) - check against CURRENT behavior
+>       assert abs(labor_cost_extracted - EXPECTED_LABOR_COST_CURRENT) < 1.0, \
+            f"Baseline labor cost {labor_cost_extracted:.2f} differs from current expected {EXPECTED_LABOR_COST_CURRENT:.2f}"
+E       AssertionError: Baseline labor cost 140.00 differs from current expected 150.00
+E       assert 10.0 < 1.0
+E        +  where 10.0 = abs((140.0 - 150.0))
+
+tests/test_labor_cost_baseline.py:248: AssertionError
+----------------------------- Captured stdout call -----------------------------
+
+Unified Model Data Summary:
+  Nodes: 2
+    Manufacturing: 1
+    Demand: 1
+    With truck constraints: 0
+  Routes: 1
+  Truck schedules: 0
+  Planning horizon: 2025-10-20 to 2025-10-20 (1 days)
+  Products: 1
+  Demand entries: 1
+
+Building Unified Node Model...
+  Sets defined: 2 nodes, 1 products, 1 dates, 1 routes
+  Production dates for cohorts: 1 in horizon + 0 from initial inventory
+  Cohort indices: 2 cohorts
+  Shipment cohorts by origin node:
+    6122: 1
+  Shipment cohort indices: 1
+  Demand cohort indices: 1
+  Changeover tracking: 1 production days, 1 product indicators
+  Labor cost variables: 1 labor hour variables added
+  Variables created successfully
+  Adding core constraints...
+  Changeover tracking constraints added (4 constraints)
+  Labor cost constraints added (1 node-date pairs, 9 constraints)
+  Holding cost skipped (all storage rates are zero)
+  Core constraints added
+  Model complete and ready to solve
+
+✓ Baseline saved: /home/sverzijl/planning_latest/tests/test_baseline_labor_fixed_no_ot.json
+  Labor cost (current): $140.00
+  Expected (piecewise + overhead): $135.00
+  Error: $33.75 (25.0%)
+  ⚠️ BUG: Current model does NOT include overhead time in labor cost!
+_______________ test_labor_cost_baseline_fixed_day_with_overtime _______________
+
+    @pytest.mark.baseline
+    def test_labor_cost_baseline_fixed_day_with_overtime():
+        """Baseline: Fixed day with 14h production (includes overtime).
+    
+        Setup:
+            - Monday (fixed day): 12h @ $20/h regular, 2h OT @ $30/h
+            - Production: 19,600 units = 14h at 1,400 units/hr
+            - Overhead: 0.5h startup + 0.25h shutdown = 0.75h
+            - Total labor hours: 14h + 0.75h = 14.75h
+    
+        Current Behavior (blended rate):
+            - Blended rate = ($20 + $30) / 2 = $25/h
+            - Labor cost = 14.75h × $25 = $368.75
+    
+        Expected Behavior (piecewise - NOT YET IMPLEMENTED):
+            - Fixed: 12h × $20 = $240
+            - Overtime: 2.75h × $30 = $82.50
+            - Total: $322.50
+            - Error: $46.25 (14.3% overcharge)
+        """
+        setup = create_minimal_labor_test_setup(
+            production_date=date(2025, 10, 20),  # Monday
+            demand_qty=19600.0,  # 14h production (maxes out capacity)
+            is_fixed_day=True,
+        )
+    
+        # Create model
+        model_obj = UnifiedNodeModel(
+            nodes=setup['nodes'],
+            routes=setup['routes'],
+            forecast=setup['forecast'],
+            labor_calendar=setup['labor_calendar'],
+            cost_structure=setup['cost_structure'],
+            start_date=setup['production_date'],
+            end_date=setup['production_date'],
+            use_batch_tracking=True,
+            allow_shortages=False,
+        )
+    
+        # Solve
+        result = model_obj.solve(
+            solver_name='cbc',
+            time_limit_seconds=30,
+            tee=False,
+        )
+    
+        # Assert solution found
+>       assert result.is_optimal() or result.is_feasible(), \
+            f"Expected feasible solution, got {result.termination_condition}"
+E       AssertionError: Expected feasible solution, got infeasible
+E       assert (False or False)
+E        +  where False = is_optimal()
+E        +    where is_optimal = OptimizationResult(success=False, objective_value=None, solver_status=<SolverStatus.warning: 'warning'>, termination_condition=<TerminationCondition.infeasible: 'infeasible'>, solve_time_seconds=0.02570319175720215, solver_name='cbc', gap=None, num_variables=13, num_constraints=17, num_integer_vars=3, infeasibility_message='Model is infeasible. Constraints cannot all be satisfied simultaneously.', solver_output=None, metadata={}).is_optimal
+E        +  and   False = is_feasible()
+E        +    where is_feasible = OptimizationResult(success=False, objective_value=None, solver_status=<SolverStatus.warning: 'warning'>, termination_condition=<TerminationCondition.infeasible: 'infeasible'>, solve_time_seconds=0.02570319175720215, solver_name='cbc', gap=None, num_variables=13, num_constraints=17, num_integer_vars=3, infeasibility_message='Model is infeasible. Constraints cannot all be satisfied simultaneously.', solver_output=None, metadata={}).is_feasible
+
+tests/test_labor_cost_baseline.py:299: AssertionError
+----------------------------- Captured stdout call -----------------------------
+
+Unified Model Data Summary:
+  Nodes: 2
+    Manufacturing: 1
+    Demand: 1
+    With truck constraints: 0
+  Routes: 1
+  Truck schedules: 0
+  Planning horizon: 2025-10-20 to 2025-10-20 (1 days)
+  Products: 1
+  Demand entries: 1
+
+Building Unified Node Model...
+  Sets defined: 2 nodes, 1 products, 1 dates, 1 routes
+  Production dates for cohorts: 1 in horizon + 0 from initial inventory
+  Cohort indices: 2 cohorts
+  Shipment cohorts by origin node:
+    6122: 1
+  Shipment cohort indices: 1
+  Demand cohort indices: 1
+  Changeover tracking: 1 production days, 1 product indicators
+  Labor cost variables: 1 labor hour variables added
+  Variables created successfully
+  Adding core constraints...
+  Changeover tracking constraints added (4 constraints)
+  Labor cost constraints added (1 node-date pairs, 9 constraints)
+  Holding cost skipped (all storage rates are zero)
+  Core constraints added
+  Model complete and ready to solve
+____________________ test_labor_cost_baseline_non_fixed_day ____________________
+
+    @pytest.mark.baseline
+    def test_labor_cost_baseline_non_fixed_day():
+        """Baseline: Non-fixed day (weekend) production.
+    
+        Setup:
+            - Saturday (non-fixed day): $40/h rate, 4h minimum payment
+            - Production: 2,800 units = 2h at 1,400 units/hr
+            - Overhead: 0.5h startup + 0.25h shutdown = 0.75h
+            - Total labor hours: 2h + 0.75h = 2.75h
+    
+        Current Behavior:
+            - Uses non_fixed_rate: $40/h
+            - Labor cost = 2.75h × $40 = $110
+            - WARNING: Does NOT enforce 4-hour minimum! (Bug)
+    
+        Expected Behavior (piecewise with 4h minimum):
+            - Paid hours = max(2.75, 4.0) = 4.0h
+            - Labor cost = 4.0h × $40 = $160
+            - Current error: $50 undercharge (31% error)
+        """
+        setup = create_minimal_labor_test_setup(
+            production_date=date(2025, 10, 25),  # Saturday
+            demand_qty=2800.0,  # 2h production
+            is_fixed_day=False,
+            non_fixed_rate=40.0,
+            minimum_hours=4.0,
+        )
+    
+        # Create model
+        model_obj = UnifiedNodeModel(
+            nodes=setup['nodes'],
+            routes=setup['routes'],
+            forecast=setup['forecast'],
+            labor_calendar=setup['labor_calendar'],
+            cost_structure=setup['cost_structure'],
+            start_date=setup['production_date'],
+            end_date=setup['production_date'],
+            use_batch_tracking=True,
+            allow_shortages=False,
+        )
+    
+        # Solve
+        result = model_obj.solve(
+            solver_name='cbc',
+            time_limit_seconds=30,
+            tee=False,
+        )
+    
+        # Assert solution found
+        assert result.is_optimal() or result.is_feasible(), \
+            f"Expected feasible solution, got {result.termination_condition}"
+    
+        # Extract solution
+        solution = model_obj.get_solution()
+    
+        # Extract total cost
+        total_cost = solution.get('total_cost', 0)
+        production_cost = solution.get('total_production_cost', 0)
+        transport_cost = solution.get('total_transport_cost', 0)
+    
+        # Calculate labor cost
+        labor_cost_extracted = total_cost - production_cost - transport_cost
+    
+        # Expected values
+        PRODUCTION_TIME = 2800.0 / 1400.0  # 2.0h
+        OVERHEAD_TIME = 0.5 + 0.25  # 0.75h
+        TOTAL_HOURS = PRODUCTION_TIME + OVERHEAD_TIME  # 2.75h
+        NON_FIXED_RATE = 40.0
+        MINIMUM_HOURS = 4.0
+    
+        EXPECTED_LABOR_COST_CURRENT = TOTAL_HOURS * NON_FIXED_RATE  # $110 (no minimum!)
+        EXPECTED_LABOR_COST_WITH_MINIMUM = MINIMUM_HOURS * NON_FIXED_RATE  # $160 (with 4h minimum)
+        ERROR_AMOUNT = EXPECTED_LABOR_COST_WITH_MINIMUM - EXPECTED_LABOR_COST_CURRENT
+        ERROR_PCT = (ERROR_AMOUNT / EXPECTED_LABOR_COST_WITH_MINIMUM) * 100
+    
+        # Save baseline
+        baseline = {
+            'test_name': 'test_labor_cost_baseline_non_fixed_day',
+            'scenario': 'Non-fixed day (weekend), 2h production',
+            'production_qty': 2800.0,
+            'labor_hours_production': PRODUCTION_TIME,
+            'labor_hours_overhead': OVERHEAD_TIME,
+            'labor_hours_total': TOTAL_HOURS,
+            'minimum_hours': MINIMUM_HOURS,
+            'non_fixed_rate': NON_FIXED_RATE,
+            'labor_cost_actual': labor_cost_extracted,
+            'labor_cost_expected_no_minimum': EXPECTED_LABOR_COST_CURRENT,
+            'labor_cost_expected_with_minimum': EXPECTED_LABOR_COST_WITH_MINIMUM,
+            'error_amount': ERROR_AMOUNT,
+            'error_pct': ERROR_PCT,
+            'bug': 'Current model does NOT enforce 4-hour minimum payment',
+        }
+    
+        baseline_file = Path(__file__).parent / "test_baseline_labor_non_fixed.json"
+        with open(baseline_file, 'w') as f:
+            json.dump(baseline, f, indent=2)
+    
+        print(f"\n✓ Baseline saved: {baseline_file}")
+        print(f"  Labor cost (no minimum): ${labor_cost_extracted:.2f}")
+        print(f"  Expected (with 4h min): ${EXPECTED_LABOR_COST_WITH_MINIMUM:.2f}")
+        print(f"  Error: ${ERROR_AMOUNT:.2f} ({ERROR_PCT:.1f}%)")
+        print(f"  ⚠️ BUG: Current model does NOT enforce 4-hour minimum!")
+    
+        # Assert baseline captured (current behavior without minimum)
+>       assert abs(labor_cost_extracted - EXPECTED_LABOR_COST_CURRENT) < 1.0
+E       assert 50.0 < 1.0
+E        +  where 50.0 = abs((160.0 - 110.0))
+
+tests/test_labor_cost_baseline.py:464: AssertionError
+----------------------------- Captured stdout call -----------------------------
+
+Unified Model Data Summary:
+  Nodes: 2
+    Manufacturing: 1
+    Demand: 1
+    With truck constraints: 0
+  Routes: 1
+  Truck schedules: 0
+  Planning horizon: 2025-10-25 to 2025-10-25 (1 days)
+  Products: 1
+  Demand entries: 1
+
+Building Unified Node Model...
+  Sets defined: 2 nodes, 1 products, 1 dates, 1 routes
+  Production dates for cohorts: 1 in horizon + 0 from initial inventory
+  Cohort indices: 2 cohorts
+  Shipment cohorts by origin node:
+    6122: 1
+  Shipment cohort indices: 1
+  Demand cohort indices: 1
+  Changeover tracking: 1 production days, 1 product indicators
+  Labor cost variables: 1 labor hour variables added
+  Variables created successfully
+  Adding core constraints...
+  Changeover tracking constraints added (4 constraints)
+  Labor cost constraints added (1 node-date pairs, 9 constraints)
+  Holding cost skipped (all storage rates are zero)
+  Core constraints added
+  Model complete and ready to solve
+
+✓ Baseline saved: /home/sverzijl/planning_latest/tests/test_baseline_labor_non_fixed.json
+  Labor cost (no minimum): $160.00
+  Expected (with 4h min): $160.00
+  Error: $50.00 (31.2%)
+  ⚠️ BUG: Current model does NOT enforce 4-hour minimum!
+=============================== warnings summary ===============================
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+  /home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+tests/test_labor_cost_baseline.py:139
+  /home/sverzijl/planning_latest/tests/test_labor_cost_baseline.py:139: PytestUnknownMarkWarning: Unknown pytest.mark.baseline - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.baseline
+
+tests/test_labor_cost_baseline.py:252
+  /home/sverzijl/planning_latest/tests/test_labor_cost_baseline.py:252: PytestUnknownMarkWarning: Unknown pytest.mark.baseline - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.baseline
+
+tests/test_labor_cost_baseline.py:360
+  /home/sverzijl/planning_latest/tests/test_labor_cost_baseline.py:360: PytestUnknownMarkWarning: Unknown pytest.mark.baseline - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.baseline
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_labor_cost_baseline.py::test_labor_cost_baseline_fixed_day_no_overtime
+FAILED tests/test_labor_cost_baseline.py::test_labor_cost_baseline_fixed_day_with_overtime
+FAILED tests/test_labor_cost_baseline.py::test_labor_cost_baseline_non_fixed_day
+======================== 3 failed, 11 warnings in 1.35s ========================
+ERROR: file or directory not found: tests/test_unified_node_model.py
+
+
+
+
+================================================================================
+Running: Labor Cost Isolation
+================================================================================
+============================= test session starts ==============================
+platform linux -- Python 3.11.2, pytest-8.4.2, pluggy-1.6.0 -- /home/sverzijl/planning_latest/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/sverzijl/planning_latest
+plugins: cov-7.0.0, mock-3.15.1
+collecting ... collected 1 item
+
+tests/test_labor_cost_isolation.py::test_labor_cost_only_no_storage PASSED [100%]
+
+=============================== warnings summary ===============================
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+  /home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+tests/test_labor_cost_isolation.py::test_labor_cost_only_no_storage
+  /home/sverzijl/planning_latest/src/optimization/unified_node_model.py:260: UserWarning: Zero cost parameters detected: All route transport costs are 0, frozen/ambient storage costs are 0. This may cause solver to leave some variables uninitialized (valid behavior). Consider using small non-zero costs (e.g., 0.0001) if you encounter solution extraction issues.
+    warnings.warn(warning_msg, UserWarning)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 1 passed, 9 warnings in 13.95s ========================
+
+
+================================================================================
+Running: Unified Model Core
+================================================================================
+============================= test session starts ==============================
+platform linux -- Python 3.11.2, pytest-8.4.2, pluggy-1.6.0 -- /home/sverzijl/planning_latest/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/sverzijl/planning_latest
+plugins: cov-7.0.0, mock-3.15.1
+collecting ... collected 0 items
+
+=============================== warnings summary ===============================
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+  /home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============================= 4 warnings in 0.01s ==============================
+
+
+================================================================================
+PHASE 3: INTEGRATION TEST
+================================================================================
+
+================================================================================
+Running: UI Workflow (4-week horizon)
+================================================================================
+============================= test session starts ==============================
+platform linux -- Python 3.11.2, pytest-8.4.2, pluggy-1.6.0 -- /home/sverzijl/planning_latest/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/sverzijl/planning_latest
+plugins: cov-7.0.0, mock-3.15.1
+collecting ... collected 2 items
+
+tests/test_integration_ui_workflow.py::test_ui_workflow_4_weeks_with_initial_inventory PASSED [ 50%]
+tests/test_integration_ui_workflow.py::test_ui_workflow_without_initial_inventory PASSED [100%]
+
+=============================== warnings summary ===============================
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+  /home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pydantic/_internal/_config.py:323: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+tests/test_integration_ui_workflow.py::test_ui_workflow_4_weeks_with_initial_inventory
+tests/test_integration_ui_workflow.py::test_ui_workflow_without_initial_inventory
+  /home/sverzijl/planning_latest/src/optimization/unified_node_model.py:260: UserWarning: Zero cost parameters detected: All route transport costs are 0, ambient storage costs are 0. This may cause solver to leave some variables uninitialized (valid behavior). Consider using small non-zero costs (e.g., 0.0001) if you encounter solution extraction issues.
+    warnings.warn(warning_msg, UserWarning)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================== 2 passed, 10 warnings in 84.75s (0:01:24) ===================
+
+
+================================================================================
+VALIDATION SUMMARY
+================================================================================
+
+PHASE 1: Non-Fixed Day Unit Tests
+  Weekend Below Min             : PASS ✓
+  Holiday Above Min             : PASS ✓
+  Holiday Below Min             : PASS ✓
+
+PHASE 2: Regression Test Suite
+  Weekday Labor                 : PASS ✓
+  Multi-Day                     : FAIL ✗
+  Overtime Preference           : FAIL ✗
+  Baseline Labor                : FAIL ✗
+  Labor Isolation               : PASS ✓
+  Unified Model Core            : FAIL ✗
+
+PHASE 3: Integration Test
+  Integration Test:             PASS ✓
+
+================================================================================
+OVERALL STATUS: FAILURE ✗
+Total: 6/10 test suites passed
+Phase 1 failures: 0
+Phase 2 failures: 4
+Phase 3 failures: 0
+
+Total execution time: 120.0 seconds
+================================================================================
+
