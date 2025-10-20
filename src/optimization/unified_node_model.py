@@ -4504,6 +4504,13 @@ def solve_weekly_pattern_warmstart(
 
     print(f"Solving Phase 2 ({total_individual_binary} binary vars, with warmstart)...")
 
+    # DIAGNOSTIC: Check warmstart pattern validity
+    # If too few active SKUs, warmstart might be bad
+    warmstart_active_ratio = num_warmstart_active / len(warmstart_hints) if len(warmstart_hints) > 0 else 0
+    if warmstart_active_ratio < 0.3:
+        print(f"\n⚠️  WARNING: Only {num_warmstart_active}/{len(warmstart_hints)} SKUs active ({warmstart_active_ratio*100:.1f}%)")
+        print(f"   Low activity ratio might indicate poor warmstart - consider disabling")
+
     result_phase2 = model_phase2.solve(
         solver_name=solver_name,
         time_limit_seconds=time_limit_phase2,
@@ -4523,6 +4530,18 @@ def solve_weekly_pattern_warmstart(
     print(f"   Status: {term_phase2}")
     if result_phase2.gap:
         print(f"   Gap: {result_phase2.gap * 100:.2f}%")
+
+    # DIAGNOSTIC: Check if Phase 2 cost is much worse than Phase 1
+    if result_phase2.objective_value > cost_phase1 * 2:
+        cost_ratio = result_phase2.objective_value / cost_phase1
+        print(f"\n⚠️  WARNING: Phase 2 cost is {cost_ratio:.1f}× worse than Phase 1!")
+        print(f"   This suggests warmstart is incompatible or solver hit infeasibility.")
+        print(f"   Possible causes:")
+        print(f"     - Pallet tracking constraints conflict with no-pallet warmstart pattern")
+        print(f"     - Large shortage penalties (check shortage_units in solution)")
+        print(f"     - Timeout before finding good solution")
+        if result_phase2.gap and result_phase2.gap > 0.10:
+            print(f"   Large gap ({result_phase2.gap*100:.1f}%) confirms solver struggled.")
 
     if progress_callback:
         progress_callback(2, "complete", phase2_time, result_phase2.objective_value)
