@@ -122,7 +122,8 @@ with tab_optimization:
 
         # Solver selection - HiGHS as recommended
         solver_names_display = {
-            'highs': 'HiGHS (Open Source - Recommended - 2.4× faster than CBC)',
+            'appsi_highs': 'APPSI HiGHS (Recommended - Fastest for binary variables)',
+            'highs': 'HiGHS (Open Source - Good performance)',
             'cbc': 'CBC (Open Source - Reliable)',
             'asl:cbc': 'ASL:CBC (AMPL Interface)',
             'glpk': 'GLPK (Open Source - Slower)',
@@ -131,7 +132,7 @@ with tab_optimization:
         }
 
         # Prioritize solvers in display order
-        solver_priority = ['highs', 'cbc', 'asl:cbc', 'gurobi', 'cplex', 'glpk']
+        solver_priority = ['appsi_highs', 'highs', 'cbc', 'asl:cbc', 'gurobi', 'cplex', 'glpk']
         solver_options = [s for s in solver_priority if s in available_solvers]
         # Add any remaining solvers not in priority list
         solver_options += [s for s in available_solvers if s not in solver_options and s in solver_names_display]
@@ -454,9 +455,9 @@ with tab_optimization:
                     result = solve_weekly_pattern_warmstart(
                         nodes=nodes,
                         routes=unified_routes,
-                        forecast=forecast,
-                        labor_calendar=labor_calendar,
-                        cost_structure=cost_structure,
+                        forecast=data['forecast'],
+                        labor_calendar=data['labor_calendar'],
+                        cost_structure=data['cost_structure'],
                         start_date=model.start_date,
                         end_date=model.end_date,
                         truck_schedules=unified_truck_schedules,
