@@ -488,8 +488,14 @@ with tab_optimization:
                         tee=show_solver_output,
                     )
 
-                # Display results
-                if result.is_optimal() or result.is_feasible():
+            # Extract model object (for weekly warmstart, it's in metadata)
+            if use_weekly_warmstart and result.metadata and 'model_phase2' in result.metadata:
+                result_model = result.metadata['model_phase2']
+            else:
+                result_model = model
+
+            # Display results (common for both single-phase and weekly warmstart)
+            if result.is_optimal() or result.is_feasible():
                     status_str = "optimal" if result.is_optimal() else "feasible"
                     st.success(f"✅ Optimization {status_str}!")
 
@@ -522,7 +528,7 @@ with tab_optimization:
 
                     # Store optimization results
                     session_state.store_optimization_results(
-                        model=model,
+                        model=result_model,
                         result=result
                     )
 

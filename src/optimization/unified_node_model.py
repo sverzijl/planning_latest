@@ -4551,6 +4551,7 @@ def solve_weekly_pattern_warmstart(
         'phase2_time': phase2_time,
         'phase1_cost': cost_phase1,
         'weekly_pattern': pattern_summary,
+        'model_phase2': model_phase2,  # Store model for UI
     })
 
     return result_phase2
