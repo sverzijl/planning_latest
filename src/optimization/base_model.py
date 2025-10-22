@@ -268,7 +268,18 @@ class BaseOptimizationModel(ABC):
         solve_time = time.time() - solve_start
 
         # Convert APPSI Results to our OptimizationResult
-        success = results.termination_condition.value in [0, 1, 2]  # optimal, feasible, maxTimeLimit
+        # Check termination condition by name (APPSI has: optimal, infeasible, unbounded, etc.)
+        from pyomo.contrib.appsi.base import TerminationCondition as AppsiTC
+        success = results.termination_condition in [
+            AppsiTC.optimal,
+            # Note: APPSI doesn't have 'feasible' - only optimal or infeasible
+            # maxTimeLimit with valid solution is treated as success
+        ]
+        # Also accept maxTimeLimit if we have an objective value
+        if results.termination_condition == AppsiTC.maxTimeLimit:
+            if hasattr(results, 'best_feasible_objective') and results.best_feasible_objective is not None:
+                success = True
+
         objective_value = getattr(results, 'best_feasible_objective', None)
 
         # Extract MIP gap from APPSI results
