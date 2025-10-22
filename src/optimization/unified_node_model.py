@@ -1604,6 +1604,22 @@ class UnifiedNodeModel(BaseOptimizationModel):
         solution['frozen_holding_cost'] = frozen_holding_cost
         solution['ambient_holding_cost'] = ambient_holding_cost
 
+        # Extract changeover statistics (start tracking formulation)
+        total_changeovers = 0
+        if hasattr(model, 'product_start'):
+            for idx in model.product_start:
+                try:
+                    start_val = value(model.product_start[idx])
+                    if start_val > 0.5:  # Binary variable threshold
+                        total_changeovers += 1
+                except (ValueError, AttributeError, KeyError, RuntimeError):
+                    continue
+
+        total_changeover_cost = total_changeovers * self.cost_structure.changeover_cost_per_start
+
+        solution['total_changeovers'] = total_changeovers
+        solution['total_changeover_cost'] = total_changeover_cost
+
         # Note: total_cost extraction moved to after all cost components are calculated
 
         # Extract labor cost breakdown (piecewise labor cost model)
@@ -1671,14 +1687,17 @@ class UnifiedNodeModel(BaseOptimizationModel):
 
         # Production batches for UI
         production_batches = []
+        total_production_quantity = 0.0
         for (date_val, prod), qty in production_by_date_product.items():
             production_batches.append({
                 'date': date_val,
                 'product': prod,
                 'quantity': qty,
             })
+            total_production_quantity += qty
 
         solution['production_batches'] = production_batches
+        solution['total_production_quantity'] = total_production_quantity
 
         # Extract batch_shipments (Shipment objects with production_date) for labeling report
         batch_shipments = []
