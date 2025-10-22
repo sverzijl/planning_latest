@@ -1,0 +1,327 @@
+/home/sverzijl/planning_latest/src/parsers/inventory_parser.py:167: UserWarning: Found 5 negative quantity values. These were set to 0.
+  warnings.warn(
+/home/sverzijl/planning_latest/src/optimization/unified_node_model.py:287: UserWarning: Zero cost parameters detected: All route transport costs are 0, ambient storage costs are 0. This may cause solver to leave some variables uninitialized (valid behavior). Consider using small non-zero costs (e.g., 0.0001) if you encounter solution extraction issues.
+  warnings.warn(warning_msg, UserWarning)
+================================================================================
+TEST: APPSI SAME-INSTANCE WARMSTART (RECOMMENDED APPROACH)
+================================================================================
+
+Strategy: Solve → Deactivate constraints → Re-solve same instance
+Expected: APPSI automatically hot-starts from previous solution
+
+================================================================================
+LOADING DATA
+================================================================================
+
+================================================================================
+BUILD SINGLE MODEL INSTANCE
+================================================================================
+
+Creating UnifiedNodeModel...
+
+📦 Preprocessed initial inventory: 23 items, prod_date=2025-10-21 (one day before snapshot)
+
+Unified Model Data Summary:
+  Nodes: 11
+    Manufacturing: 1
+    Demand: 9
+    With truck constraints: 1
+  Routes: 10
+  Truck schedules: 11
+  Planning horizon: 2025-10-20 to 2025-11-16 (28 days)
+  Products: 5
+  Demand entries: 1260
+
+Building Pyomo model...
+
+Building Unified Node Model...
+  Sets defined: 11 nodes, 5 products, 28 dates, 10 routes
+  Production dates for cohorts: 28 in horizon + 0 from initial inventory
+  Cohort indices: 17,780 cohorts
+  Shipment cohorts by origin node:
+    6104: 3780
+    6122: 7425
+    6125: 5670
+    Lineage: 1155
+  Shipment cohort indices: 18,030
+  Demand cohort indices: 14,175
+  Changeover tracking: 28 production days, 140 product indicators (VARIABLE (binary decision))
+  Labor cost variables: 28 labor hour variables added
+  Variables created successfully
+  Adding core constraints...
+  Changeover tracking constraints added (224 constraints)
+  Big-M value for product_produced linking: 19,600 units/day
+  Labor cost constraints added (28 node-date pairs, 252 constraints)
+  Adding storage shipment delay constraint for 3 nodes: ['6104', '6125', 'Lineage']
+    Added 75 storage delay constraints
+  Hybrid pallet formulation (MIP optimization):
+    Small cohorts (integer 0-10): 2,030
+    Domain reduced: 62 → 10 (84% reduction)
+  Pallet tracking enabled for states: ['frozen']
+    - Pallet integer variables: 2,030
+    - Domain per variable: 0-10 (vs 0-62 full formulation)
+    - Unit-tracked states: ['ambient', 'thawed']
+  Holding cost enabled: 17,780 total cohorts (5,926 pallet-tracked)
+
+  Staleness penalty enabled: $0.0500 per unit per day of age
+  Staleness penalty calculation: 14,175 demand cohorts
+  Formula: min(age_days, 17) × $0.0500 × demand_satisfied
+  Core constraints added
+  Truck constraints added (generalized for any node)
+  Model complete and ready to solve
+Model built in 3.1s
+
+Adding weekly pattern constraints...
+  Added 25 pattern variables
+  Added 95 linking constraints
+
+Creating APPSI solver (persistent connection)...
+
+================================================================================
+PHASE 1: SOLVE WITH WEEKLY PATTERN
+================================================================================
+Running HiGHS 1.11.0 (git hash: 364c83a): Copyright (c) 2025 HiGHS under MIT licence terms
+MIP  has 36977 rows; 55764 cols; 166715 nonzeros; 2587 integer variables (529 binary)
+Coefficient ranges:
+  Matrix [1e-04, 2e+04]
+  Cost   [5e-02, 1e+03]
+  Bound  [1e+00, 2e+04]
+  RHS    [1e-02, 2e+04]
+Presolving model
+28850 rows, 43301 cols, 134538 nonzeros  0s
+22482 rows, 33085 cols, 105579 nonzeros  0s
+16752 rows, 29937 cols, 90274 nonzeros  0s
+
+Solving MIP model with:
+   16752 rows
+   29937 cols (38 binary, 921 integer, 0 implied int., 28978 continuous, 0 domain fixed)
+   90274 nonzeros
+
+Src: B => Branching; C => Central rounding; F => Feasibility pump; J => Feasibility jump;
+     H => Heuristic; L => Sub-MIP; P => Empty MIP; R => Randomized rounding; Z => ZI Round;
+     I => Shifting; S => Solve LP; T => Evaluate node; U => Unbounded; X => User solution;
+     z => Trivial zero; l => Trivial lower; u => Trivial upper; p => Trivial point
+
+        Nodes      |    B&B Tree     |            Objective Bounds              |  Dynamic Constraints |       Work      
+Src  Proc. InQueue |  Leaves   Expl. | BestBound       BestSol              Gap |   Cuts   InLp Confl. | LpIters     Time
+
+         0       0         0   0.00%   134013.699881   inf                  inf        0      0      0         0     1.0s
+ R       0       0         0   0.00%   778895.081518   794759.784404      2.00%        0      0      0     19413     4.1s
+         1       0         1 100.00%   778895.081518   794759.784404      2.00%        0      0      0     19413     4.1s
+
+Solving report
+  Status            Optimal
+  Primal bound      794759.784404
+  Dual bound        778895.081518
+  Gap               2% (tolerance: 3%)
+  P-D integral      9.54081655458e-05
+  Solution status   feasible
+                    794759.784404 (objective)
+                    0 (bound viol.)
+                    1.7763568394e-16 (int. viol.)
+                    0 (row viol.)
+  Timing            4.11 (total)
+                    0.00 (presolve)
+                    0.00 (solve)
+                    0.00 (postsolve)
+  Max sub-MIP depth 0
+  Nodes             1
+  Repair LPs        0 (0 feasible; 0 iterations)
+  LP iterations     19413 (total)
+                    0 (strong br.)
+                    0 (separation)
+                    0 (heuristics)
+
+Phase 1 Results:
+  Solve time: 7.5s
+  Objective: $794,759.78
+  Termination: TerminationCondition.optimal
+
+PHASE 1 SOLUTION ANALYSIS:
+
+Production days per product (out of 28 days):
+  HELGAS GFREE MIXED GRAIN 500G: 28 days (100.0%)
+  HELGAS GFREE TRAD WHITE 470G: 28 days (100.0%)
+  HELGAS GFREE WHOLEM 500G: 28 days (100.0%)
+  WONDER GFREE WHITE 470G: 28 days (100.0%)
+  WONDER GFREE WHOLEM 500G: 28 days (100.0%)
+
+================================================================================
+PHASE 2: DEACTIVATE PATTERN, RE-SOLVE SAME INSTANCE
+================================================================================
+
+Deactivating pattern constraints...
+  Pattern constraints deactivated
+  Changeover constraints reactivated
+  Pattern variables fixed to 0
+
+================================================================================
+SOLVING FLEXIBLE MODEL (SAME INSTANCE)
+================================================================================
+
+DIAGNOSTIC: APPSI should automatically hot-start from Phase 1
+           Watch for fast convergence or early incumbent
+MIP  has 36910 rows; 55739 cols; 166693 nonzeros; 2562 integer variables (504 binary)
+Coefficient ranges:
+  Matrix [1e-04, 2e+04]
+  Cost   [5e-02, 1e+03]
+  Bound  [1e+00, 2e+04]
+  RHS    [1e-02, 2e+04]
+Presolving model
+29085 rows, 43508 cols, 135177 nonzeros  0s
+22636 rows, 33211 cols, 106109 nonzeros  0s
+16978 rows, 30086 cols, 90927 nonzeros  0s
+
+Solving MIP model with:
+   16978 rows
+   30086 cols (175 binary, 908 integer, 0 implied int., 29003 continuous, 0 domain fixed)
+   90927 nonzeros
+
+Src: B => Branching; C => Central rounding; F => Feasibility pump; J => Feasibility jump;
+     H => Heuristic; L => Sub-MIP; P => Empty MIP; R => Randomized rounding; Z => ZI Round;
+     I => Shifting; S => Solve LP; T => Evaluate node; U => Unbounded; X => User solution;
+     z => Trivial zero; l => Trivial lower; u => Trivial upper; p => Trivial point
+
+        Nodes      |    B&B Tree     |            Objective Bounds              |  Dynamic Constraints |       Work      
+Src  Proc. InQueue |  Leaves   Expl. | BestBound       BestSol              Gap |   Cuts   InLp Confl. | LpIters     Time
+
+ J       0       0         0   0.00%   -inf            3376253.95125      Large        0      0      0         0     1.4s
+ R       0       0         0   0.00%   789763.629302   2179480.832651    63.76%        0      0      0     20223     6.1s
+         0       0         0   0.00%   790236.90397    2179480.832651    63.74%     4123    126      0     29045    13.4s
+         0       0         0   0.00%   797650.248255   2179480.832651    63.40%     6348    218      0     50395    32.6s
+         0       0         0   0.00%   799196.429681   2179480.832651    63.33%     8362    301      0     65510    48.3s
+         0       0         0   0.00%   802544.228356   2179480.832651    63.18%    10431    386      0     74026    55.7s
+         0       0         0   0.00%   803048.283624   2179480.832651    63.15%     8107    453      0     79884    67.2s
+         0       0         0   0.00%   805458.850003   2179480.832651    63.04%    11709    602      0     88251    75.9s
+         0       0         0   0.00%   806981.910305   2179480.832651    62.97%     9047    688      0     94135    81.8s
+         0       0         0   0.00%   809107.078767   2179480.832651    62.88%     8120    847      0    100399    88.8s
+         0       0         0   0.00%   810936.129548   2179480.832651    62.79%    11022   1007      0    104347    94.3s
+         0       0         0   0.00%   812108.853325   2179480.832651    62.74%    10250   1154      0    107152    99.4s
+         0       0         0   0.00%   814307.981988   2179480.832651    62.64%     9880   1262      0    110380   105.5s
+         0       0         0   0.00%   816017.556382   2179480.832651    62.56%     9781   1344      0    112676   110.9s
+         0       0         0   0.00%   817049.233273   2179480.832651    62.51%     9867   1499      0    114902   116.7s
+         0       0         0   0.00%   819047.309351   2179480.832651    62.42%    10071   1555      0    117262   122.5s
+         0       0         0   0.00%   820593.301882   2179480.832651    62.35%     8716   1758      0    119637   129.1s
+         0       0         0   0.00%   821975.976976   2179480.832651    62.29%    11515   1879      0    121665   136.5s
+         0       0         0   0.00%   823233.312218   2179480.832651    62.23%     9595   1995      0    123562   142.1s
+         0       0         0   0.00%   823973.56426    2179480.832651    62.19%    10834   2064      0    125411   147.9s
+
+        Nodes      |    B&B Tree     |            Objective Bounds              |  Dynamic Constraints |       Work      
+Src  Proc. InQueue |  Leaves   Expl. | BestBound       BestSol              Gap |   Cuts   InLp Confl. | LpIters     Time
+
+         0       0         0   0.00%   824742.0038     2179480.832651    62.16%    12025   2177      0    127186   153.2s
+         0       0         0   0.00%   824962.469518   2179480.832651    62.15%    10685   2227      0    128765   158.7s
+         0       0         0   0.00%   825259.33576    2179480.832651    62.14%    11619   2317      0    130513   164.8s
+         0       0         0   0.00%   825462.516932   2179480.832651    62.13%    12481   2411      0    132665   171.7s
+         0       0         0   0.00%   825707.256523   2179480.832651    62.11%    10986   2433      0    134229   177.4s
+         0       0         0   0.00%   826081.879879   2179480.832651    62.10%    11607   2493      0    135464   182.9s
+         0       0         0   0.00%   826664.570855   2179480.832651    62.07%    12265   2470      0    136402   188.1s
+         0       0         0   0.00%   826762.458228   2179480.832651    62.07%    12642   2509      0    137308   193.7s
+         0       0         0   0.00%   826839.846349   2179480.832651    62.06%    11563   2488      0    138001   199.6s
+         0       0         0   0.00%   826897.923639   2179480.832651    62.06%    11863   2521      0    139024   204.8s
+ L       0       0         0   0.00%   826940.110742   1050893.841326    21.31%    12125   2552      0    139531   300.0s
+         0       0         0   0.00%   826940.110742   1050893.841326    21.31%    12125   2552      0    231268   300.0s
+
+Solving report
+  Status            Time limit reached
+  Primal bound      1050893.84133
+  Dual bound        826940.110742
+  Gap               21.31% (tolerance: 3%)
+  P-D integral      188.03200077
+  Solution status   feasible
+                    1050893.84133 (objective)
+                    0 (bound viol.)
+                    2.22044604925e-16 (int. viol.)
+                    0 (row viol.)
+  Timing            300.04 (total)
+                    0.00 (presolve)
+                    0.00 (solve)
+                    0.00 (postsolve)
+  Max sub-MIP depth 2
+  Nodes             0
+  Repair LPs        0 (0 feasible; 0 iterations)
+  LP iterations     231268 (total)
+                    0 (strong br.)
+                    119308 (separation)
+                    91737 (heuristics)
+WARNING: Loading a feasible but suboptimal solution. Please set
+load_solution=False and check results.termination_condition and
+results.found_feasible_solution() before loading a solution.
+
+Phase 2 Results:
+  Solve time: 301.3s
+  Objective: $1,050,893.84
+  Termination: TerminationCondition.maxTimeLimit
+
+PHASE 2 SOLUTION ANALYSIS:
+
+Production days per product (out of 28 days):
+  HELGAS GFREE MIXED GRAIN 500G: 8 days (28.6%)
+  HELGAS GFREE TRAD WHITE 470G: 11 days (39.3%)
+  HELGAS GFREE WHOLEM 500G: 9 days (32.1%)
+  WONDER GFREE WHITE 470G: 12 days (42.9%)
+  WONDER GFREE WHOLEM 500G: 4 days (14.3%)
+
+================================================================================
+RESULTS COMPARISON
+================================================================================
+
+Phase 1 (Pattern):  $794,759.78 in 7.5s
+Phase 2 (Flexible): $1,050,893.84 in 301.3s
+Total time:         308.9s
+
+Cost change: $256,134.06 (+32.23%)
+⚠️  Phase 2 WORSE: $256,134.06 increase
+   Unexpected! Flexible should be better (fewer constraints)
+
+Production pattern changes:
+  HELGAS GFREE MIXED GRAIN 500G: 28 → 8 days (-20)
+  HELGAS GFREE TRAD WHITE 470G: 28 → 11 days (-17)
+  HELGAS GFREE WHOLEM 500G: 28 → 9 days (-19)
+  WONDER GFREE WHITE 470G: 28 → 12 days (-16)
+  WONDER GFREE WHOLEM 500G: 28 → 4 days (-24)
+
+================================================================================
+DIAGNOSTIC ANALYSIS
+================================================================================
+
+1. WARMSTART MECHANISM:
+   Approach: Same model instance + APPSI persistent solver
+   Expected: Automatic hot-start (no explicit .set_value())
+   Phase 2 time: 301.3s
+   ⚠️  Slow, hot-start may not be working
+
+2. SOLUTION QUALITY:
+   Phase 1: ALL products every day (forced by pattern)
+   Phase 2: Optimized production schedule
+   ✓  Flexible model found better production pattern
+
+3. COST INCREASE ANALYSIS:
+   Phase 2 cost is $256,134.06 higher than Phase 1
+   ✓  Phase 2 reduced some SKUs (good!)
+   ?  But cost increased (unexpected)
+   → May indicate solver stopped at local optimum
+
+================================================================================
+RECOMMENDATION
+================================================================================
+
+⚠️  APPROACH NEEDS REFINEMENT
+
+Issues:
+  - Cost increased by $256,134.06
+  - Phase 2 slow (301.3s)
+
+Possible causes:
+  1. Pattern solution is poor quality (all SKUs daily)
+  2. Hot-start not effective for this problem
+  3. Need to improve pattern quality (less restrictive)
+
+Next steps:
+  1. Test cold-start flexible solve for comparison
+  2. Try partial pattern (only some products)
+  3. Consider LP relaxation warmstart instead
+
+================================================================================
+TEST COMPLETE
+================================================================================

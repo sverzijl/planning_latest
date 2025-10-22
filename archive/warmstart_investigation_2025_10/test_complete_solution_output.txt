@@ -1,0 +1,269 @@
+/home/sverzijl/planning_latest/src/parsers/inventory_parser.py:167: UserWarning: Found 5 negative quantity values. These were set to 0.
+  warnings.warn(
+/home/sverzijl/planning_latest/src/optimization/unified_node_model.py:287: UserWarning: Zero cost parameters detected: All route transport costs are 0, ambient storage costs are 0. This may cause solver to leave some variables uninitialized (valid behavior). Consider using small non-zero costs (e.g., 0.0001) if you encounter solution extraction issues.
+  warnings.warn(warning_msg, UserWarning)
+================================================================================
+TEST: COMPLETE SOLUTION PRESERVATION
+================================================================================
+
+Hypothesis: num_products_produced variables not set in Phase 1
+Fix: Set them before reactivating changeover constraints
+
+================================================================================
+PHASE 1: SOLVE PATTERN MODEL
+================================================================================
+
+📦 Preprocessed initial inventory: 23 items, prod_date=2025-10-21 (one day before snapshot)
+
+Unified Model Data Summary:
+  Nodes: 11
+    Manufacturing: 1
+    Demand: 9
+    With truck constraints: 1
+  Routes: 10
+  Truck schedules: 11
+  Planning horizon: 2025-10-20 to 2025-11-16 (28 days)
+  Products: 5
+  Demand entries: 1260
+
+Building Unified Node Model...
+  Sets defined: 11 nodes, 5 products, 28 dates, 10 routes
+  Production dates for cohorts: 28 in horizon + 0 from initial inventory
+  Cohort indices: 17,780 cohorts
+  Shipment cohorts by origin node:
+    6104: 3780
+    6122: 7425
+    6125: 5670
+    Lineage: 1155
+  Shipment cohort indices: 18,030
+  Demand cohort indices: 14,175
+  Changeover tracking: 28 production days, 140 product indicators (VARIABLE (binary decision))
+  Labor cost variables: 28 labor hour variables added
+  Variables created successfully
+  Adding core constraints...
+  Changeover tracking constraints added (224 constraints)
+  Big-M value for product_produced linking: 19,600 units/day
+  Labor cost constraints added (28 node-date pairs, 252 constraints)
+  Adding storage shipment delay constraint for 3 nodes: ['6104', '6125', 'Lineage']
+    Added 75 storage delay constraints
+  Hybrid pallet formulation (MIP optimization):
+    Small cohorts (integer 0-10): 2,030
+    Domain reduced: 62 → 10 (84% reduction)
+  Pallet tracking enabled for states: ['frozen']
+    - Pallet integer variables: 2,030
+    - Domain per variable: 0-10 (vs 0-62 full formulation)
+    - Unit-tracked states: ['ambient', 'thawed']
+  Holding cost enabled: 17,780 total cohorts (5,926 pallet-tracked)
+
+  Staleness penalty enabled: $0.0500 per unit per day of age
+  Staleness penalty calculation: 14,175 demand cohorts
+  Formula: min(age_days, 17) × $0.0500 × demand_satisfied
+  Core constraints added
+  Truck constraints added (generalized for any node)
+  Model complete and ready to solve
+
+Building Unified Node Model...
+  Sets defined: 11 nodes, 5 products, 28 dates, 10 routes
+  Production dates for cohorts: 28 in horizon + 0 from initial inventory
+  Cohort indices: 17,780 cohorts
+  Shipment cohorts by origin node:
+    6104: 3780
+    6122: 7425
+    6125: 5670
+    Lineage: 1155
+  Shipment cohort indices: 18,030
+  Demand cohort indices: 14,175
+  Changeover tracking: 28 production days, 140 product indicators (VARIABLE (binary decision))
+  Labor cost variables: 28 labor hour variables added
+  Variables created successfully
+  Adding core constraints...
+  Changeover tracking constraints added (224 constraints)
+  Big-M value for product_produced linking: 19,600 units/day
+  Labor cost constraints added (28 node-date pairs, 252 constraints)
+  Adding storage shipment delay constraint for 3 nodes: ['6104', '6125', 'Lineage']
+    Added 75 storage delay constraints
+  Hybrid pallet formulation (MIP optimization):
+    Small cohorts (integer 0-10): 2,030
+    Domain reduced: 62 → 10 (84% reduction)
+  Pallet tracking enabled for states: ['frozen']
+    - Pallet integer variables: 2,030
+    - Domain per variable: 0-10 (vs 0-62 full formulation)
+    - Unit-tracked states: ['ambient', 'thawed']
+  Holding cost enabled: 17,780 total cohorts (5,926 pallet-tracked)
+
+  Staleness penalty enabled: $0.0500 per unit per day of age
+  Staleness penalty calculation: 14,175 demand cohorts
+  Formula: min(age_days, 17) × $0.0500 × demand_satisfied
+  Core constraints added
+  Truck constraints added (generalized for any node)
+  Model complete and ready to solve
+Solving Phase 1...
+Running HiGHS 1.11.0 (git hash: 364c83a): Copyright (c) 2025 HiGHS under MIT licence terms
+MIP  has 36977 rows; 55764 cols; 166715 nonzeros; 2587 integer variables (529 binary)
+Coefficient ranges:
+  Matrix [1e-04, 2e+04]
+  Cost   [5e-02, 1e+03]
+  Bound  [1e+00, 2e+04]
+  RHS    [1e-02, 2e+04]
+Presolving model
+28844 rows, 43295 cols, 134526 nonzeros  0s
+22473 rows, 33086 cols, 105452 nonzeros  0s
+16748 rows, 29944 cols, 90022 nonzeros  0s
+
+Solving MIP model with:
+   16748 rows
+   29944 cols (38 binary, 913 integer, 0 implied int., 28993 continuous, 0 domain fixed)
+   90022 nonzeros
+
+Src: B => Branching; C => Central rounding; F => Feasibility pump; J => Feasibility jump;
+     H => Heuristic; L => Sub-MIP; P => Empty MIP; R => Randomized rounding; Z => ZI Round;
+     I => Shifting; S => Solve LP; T => Evaluate node; U => Unbounded; X => User solution;
+     z => Trivial zero; l => Trivial lower; u => Trivial upper; p => Trivial point
+
+        Nodes      |    B&B Tree     |            Objective Bounds              |  Dynamic Constraints |       Work      
+Src  Proc. InQueue |  Leaves   Expl. | BestBound       BestSol              Gap |   Cuts   InLp Confl. | LpIters     Time
+
+ J       0       0         0   0.00%   -inf            3139139.300127     Large        0      0      0         0     1.2s
+ R       0       0         0   0.00%   778895.081518   794726.160288      1.99%        0      0      0     19413     4.1s
+         1       0         1 100.00%   778895.081518   794726.160288      1.99%        0      0      0     19413     4.1s
+
+Solving report
+  Status            Optimal
+  Primal bound      794726.160288
+  Dual bound        778895.081518
+  Gap               1.99% (tolerance: 3%)
+  P-D integral      2.71088849066
+  Solution status   feasible
+                    794726.160288 (objective)
+                    0 (bound viol.)
+                    0 (int. viol.)
+                    0 (row viol.)
+  Timing            4.10 (total)
+                    0.00 (presolve)
+                    0.00 (solve)
+                    0.00 (postsolve)
+  Max sub-MIP depth 0
+  Nodes             1
+  Repair LPs        0 (0 feasible; 0 iterations)
+  LP iterations     19413 (total)
+                    0 (strong br.)
+                    0 (separation)
+                    0 (heuristics)
+
+Phase 1 Results:
+  Cost: $794,726.16
+  Time: 8.6s
+
+================================================================================
+APPLYING FIX: Preserve ALL Variables
+================================================================================
+
+Preserving complete solution (including auxiliary variables)...
+  Set 28 num_products_produced variables
+
+================================================================================
+PHASE 2: DEACTIVATE PATTERN, REACTIVATE CHANGEOVER
+================================================================================
+
+Deactivating pattern constraints...
+Reactivating changeover constraints...
+Fixing pattern variables to 0...
+
+Verifying Phase 1 solution is now feasible for Phase 2...
+  ✓  NO violations - Phase 1 solution is NOW feasible for Phase 2!
+
+================================================================================
+PHASE 2: SOLVE WITH PRESERVED SOLUTION
+================================================================================
+
+Expected: Should start from $794.7261602875083K or find better
+MIP  has 36910 rows; 55739 cols; 166693 nonzeros; 2562 integer variables (504 binary)
+Coefficient ranges:
+  Matrix [1e-04, 2e+04]
+  Cost   [5e-02, 1e+03]
+  Bound  [1e+00, 2e+04]
+  RHS    [1e-02, 2e+04]
+Presolving model
+29101 rows, 43524 cols, 135223 nonzeros  0s
+22628 rows, 33213 cols, 106002 nonzeros  0s
+17000 rows, 30134 cols, 90823 nonzeros  1s
+
+Solving MIP model with:
+   17000 rows
+   30134 cols (175 binary, 897 integer, 0 implied int., 29062 continuous, 0 domain fixed)
+   90823 nonzeros
+
+Src: B => Branching; C => Central rounding; F => Feasibility pump; J => Feasibility jump;
+     H => Heuristic; L => Sub-MIP; P => Empty MIP; R => Randomized rounding; Z => ZI Round;
+     I => Shifting; S => Solve LP; T => Evaluate node; U => Unbounded; X => User solution;
+     z => Trivial zero; l => Trivial lower; u => Trivial upper; p => Trivial point
+
+        Nodes      |    B&B Tree     |            Objective Bounds              |  Dynamic Constraints |       Work      
+Src  Proc. InQueue |  Leaves   Expl. | BestBound       BestSol              Gap |   Cuts   InLp Confl. | LpIters     Time
+
+ J       0       0         0   0.00%   -inf            3376253.95125      Large        0      0      0         0     1.4s
+ R       0       0         0   0.00%   789763.629302   1928089.771024    59.04%        0      0      0     19671     5.5s
+         0       0         0   0.00%   790318.437355   1928089.771024    59.01%     4157    123      0     26884    12.7s
+         0       0         0   0.00%   796832.090855   1928089.771024    58.67%     6479    211      0     43170    29.6s
+         0       0         0   0.00%   797650.111045   1928089.771024    58.63%     8727    281      0     55986    42.3s
+         0       0         0   0.00%   798084.232273   1928089.771024    58.61%    10501    355      0     65455    51.2s
+         0       0         0   0.00%   798891.692606   1928089.771024    58.57%     8187    426     68     75388    66.6s
+         0       0         0   0.00%   800631.761821   1928089.771024    58.48%    11404    574     68     81767    73.5s
+         0       0         0   0.00%   801304.848675   1928089.771024    58.44%     9145    645     68     87505    78.9s
+         0       0         0   0.00%   802890.855208   1928089.771024    58.36%     8628    801     68     92092    84.4s
+         0       0         0   0.00%   805840.911133   1928089.771024    58.21%     9268   1037     68     96160    90.5s
+         0       0         0   0.00%   807085.699792   1928089.771024    58.14%    12352   1125     68     98587    95.8s
+         0       0         0   0.00%   809160.676296   1928089.771024    58.03%    12038   1281     68    101371   101.7s
+         0       0         0   0.00%   811608.957618   1928089.771024    57.91%    11619   1411     68    103669   106.8s
+         0       0         0   0.00%   813488.366773   1928089.771024    57.81%    10532   1441     68    105848   112.3s
+         0       0         0   0.00%   815204.104014   1928089.771024    57.72%     9573   1545     68    107584   117.4s
+         0       0         0   0.00%   815680.751766   1928089.771024    57.69%    10687   1595     68    108236   120.1s
+
+Solving report
+  Status            Time limit reached
+  Primal bound      1928089.77102
+  Dual bound        815680.751766
+  Gap               57.69% (tolerance: 3%)
+  P-D integral      70.6820304885
+  Solution status   feasible
+                    1928089.77102 (objective)
+                    0 (bound viol.)
+                    4.97379915032e-16 (int. viol.)
+                    0 (row viol.)
+  Timing            120.06 (total)
+                    0.00 (presolve)
+                    0.00 (solve)
+                    0.00 (postsolve)
+  Max sub-MIP depth 0
+  Nodes             0
+  Repair LPs        0 (0 feasible; 0 iterations)
+  LP iterations     108236 (total)
+                    0 (strong br.)
+                    88565 (separation)
+                    0 (heuristics)
+WARNING: Loading a feasible but suboptimal solution. Please set
+load_solution=False and check results.termination_condition and
+results.found_feasible_solution() before loading a solution.
+
+Phase 2 Results:
+  Cost: $1,928,089.77
+  Time: 121.3s
+
+================================================================================
+RESULTS ANALYSIS
+================================================================================
+
+Phase 1:     $794,726.16 in 8.6s
+Phase 2:     $1,928,089.77 in 121.3s
+Difference:  $1,133,363.61 (+142.61%)
+
+❌ FAILURE: Phase 2 still worse than Phase 1
+   Cost increased by $1,133,363.61
+   Solution preservation didn't work
+
+Total time: 129.9s
+⚠️  Phase 2 was slow - hot-start may not be effective
+
+================================================================================
+TEST COMPLETE
+================================================================================

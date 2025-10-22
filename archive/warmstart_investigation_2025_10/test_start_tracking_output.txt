@@ -1,0 +1,291 @@
+/home/sverzijl/planning_latest/src/parsers/inventory_parser.py:167: UserWarning: Found 5 negative quantity values. These were set to 0.
+  warnings.warn(
+/home/sverzijl/planning_latest/src/optimization/unified_node_model.py:287: UserWarning: Zero cost parameters detected: All route transport costs are 0, ambient storage costs are 0. This may cause solver to leave some variables uninitialized (valid behavior). Consider using small non-zero costs (e.g., 0.0001) if you encounter solution extraction issues.
+  warnings.warn(warning_msg, UserWarning)
+================================================================================
+TEST: Sequence-Independent Changeover Formulation (Start Tracking)
+================================================================================
+
+User's proposed formulation:
+  y[i,t] ≥ b[i,t] - b[i,t-1]  (captures 0→1 transitions)
+  Capacity: production_time + setup_time * sum(y[i,t]) ≤ C
+
+Tests:
+  1. Pattern model with start tracking
+  2. Flexible model with start tracking
+  3. Pattern warmstart → Flexible
+
+
+================================================================================
+TEST 1: PATTERN MODEL WITH START TRACKING
+================================================================================
+
+📦 Preprocessed initial inventory: 23 items, prod_date=2025-10-21 (one day before snapshot)
+
+Unified Model Data Summary:
+  Nodes: 11
+    Manufacturing: 1
+    Demand: 9
+    With truck constraints: 1
+  Routes: 10
+  Truck schedules: 11
+  Planning horizon: 2025-10-20 to 2025-11-16 (28 days)
+  Products: 5
+  Demand entries: 1260
+
+Building pattern model with start tracking...
+
+Building Unified Node Model...
+  Sets defined: 11 nodes, 5 products, 28 dates, 10 routes
+  Production dates for cohorts: 28 in horizon + 0 from initial inventory
+  Cohort indices: 17,780 cohorts
+  Shipment cohorts by origin node:
+    6104: 3780
+    6122: 7425
+    6125: 5670
+    Lineage: 1155
+  Shipment cohort indices: 18,030
+  Demand cohort indices: 14,175
+  Changeover tracking: 28 production days, 140 product indicators (VARIABLE (binary decision))
+  Labor cost variables: 28 labor hour variables added
+  Variables created successfully
+  Adding core constraints...
+  Changeover tracking constraints added (224 constraints)
+  Big-M value for product_produced linking: 19,600 units/day
+  Labor cost constraints added (28 node-date pairs, 252 constraints)
+  Adding storage shipment delay constraint for 3 nodes: ['6104', '6125', 'Lineage']
+    Added 75 storage delay constraints
+  Hybrid pallet formulation (MIP optimization):
+    Small cohorts (integer 0-10): 2,030
+    Domain reduced: 62 → 10 (84% reduction)
+  Pallet tracking enabled for states: ['frozen']
+    - Pallet integer variables: 2,030
+    - Domain per variable: 0-10 (vs 0-62 full formulation)
+    - Unit-tracked states: ['ambient', 'thawed']
+  Holding cost enabled: 17,780 total cohorts (5,926 pallet-tracked)
+
+  Staleness penalty enabled: $0.0500 per unit per day of age
+  Staleness penalty calculation: 14,175 demand cohorts
+  Formula: min(age_days, 17) × $0.0500 × demand_satisfied
+  Core constraints added
+  Truck constraints added (generalized for any node)
+  Model complete and ready to solve
+  Added pattern constraints (parameter-controlled)
+  Added 140 product_start variables
+  Added 140 changeover detection constraints
+  Deactivated counting constraint (using start tracking instead)
+  Added 28 capacity constraints with start tracking
+
+Pattern model structure:
+  Binary vars:   669
+  Integer vars:  2,058
+
+Solving pattern model...
+/home/sverzijl/planning_latest/src/optimization/unified_node_model.py:287: UserWarning: Zero cost parameters detected: All route transport costs are 0, ambient storage costs are 0. This may cause solver to leave some variables uninitialized (valid behavior). Consider using small non-zero costs (e.g., 0.0001) if you encounter solution extraction issues.
+  warnings.warn(warning_msg, UserWarning)
+
+Test 1 Results:
+  Cost:   $763,812.65
+  Time:   6.5s
+  Status: TerminationCondition.optimal
+
+================================================================================
+TEST 2: FLEXIBLE MODEL WITH START TRACKING
+================================================================================
+
+📦 Preprocessed initial inventory: 23 items, prod_date=2025-10-21 (one day before snapshot)
+
+Unified Model Data Summary:
+  Nodes: 11
+    Manufacturing: 1
+    Demand: 9
+    With truck constraints: 1
+  Routes: 10
+  Truck schedules: 11
+  Planning horizon: 2025-10-20 to 2025-11-16 (28 days)
+  Products: 5
+  Demand entries: 1260
+
+Building flexible model with start tracking...
+
+Building Unified Node Model...
+  Sets defined: 11 nodes, 5 products, 28 dates, 10 routes
+  Production dates for cohorts: 28 in horizon + 0 from initial inventory
+  Cohort indices: 17,780 cohorts
+  Shipment cohorts by origin node:
+    6104: 3780
+    6122: 7425
+    6125: 5670
+    Lineage: 1155
+  Shipment cohort indices: 18,030
+  Demand cohort indices: 14,175
+  Changeover tracking: 28 production days, 140 product indicators (VARIABLE (binary decision))
+  Labor cost variables: 28 labor hour variables added
+  Variables created successfully
+  Adding core constraints...
+  Changeover tracking constraints added (224 constraints)
+  Big-M value for product_produced linking: 19,600 units/day
+  Labor cost constraints added (28 node-date pairs, 252 constraints)
+  Adding storage shipment delay constraint for 3 nodes: ['6104', '6125', 'Lineage']
+    Added 75 storage delay constraints
+  Hybrid pallet formulation (MIP optimization):
+    Small cohorts (integer 0-10): 2,030
+    Domain reduced: 62 → 10 (84% reduction)
+  Pallet tracking enabled for states: ['frozen']
+    - Pallet integer variables: 2,030
+    - Domain per variable: 0-10 (vs 0-62 full formulation)
+    - Unit-tracked states: ['ambient', 'thawed']
+  Holding cost enabled: 17,780 total cohorts (5,926 pallet-tracked)
+
+  Staleness penalty enabled: $0.0500 per unit per day of age
+  Staleness penalty calculation: 14,175 demand cohorts
+  Formula: min(age_days, 17) × $0.0500 × demand_satisfied
+  Core constraints added
+  Truck constraints added (generalized for any node)
+  Model complete and ready to solve
+  Added 140 product_start variables
+  Added 140 changeover detection constraints
+  Deactivated counting constraint (using start tracking instead)
+  Added 28 capacity constraints with start tracking
+
+Flexible model structure:
+  Binary vars:   644
+  Integer vars:  2,058
+
+Solving flexible model...
+
+Test 2 Results:
+  Cost:   $763,812.65
+  Time:   6.5s
+  Status: TerminationCondition.optimal
+
+================================================================================
+TEST 3: PATTERN WARMSTART → FLEXIBLE (START TRACKING)
+================================================================================
+
+📦 Preprocessed initial inventory: 23 items, prod_date=2025-10-21 (one day before snapshot)
+
+Unified Model Data Summary:
+  Nodes: 11
+    Manufacturing: 1
+    Demand: 9
+    With truck constraints: 1
+  Routes: 10
+  Truck schedules: 11
+  Planning horizon: 2025-10-20 to 2025-11-16 (28 days)
+  Products: 5
+  Demand entries: 1260
+
+Building pattern model for warmstart...
+
+Building Unified Node Model...
+  Sets defined: 11 nodes, 5 products, 28 dates, 10 routes
+  Production dates for cohorts: 28 in horizon + 0 from initial inventory
+  Cohort indices: 17,780 cohorts
+  Shipment cohorts by origin node:
+    6104: 3780
+    6122: 7425
+    6125: 5670
+    Lineage: 1155
+  Shipment cohort indices: 18,030
+  Demand cohort indices: 14,175
+  Changeover tracking: 28 production days, 140 product indicators (VARIABLE (binary decision))
+  Labor cost variables: 28 labor hour variables added
+  Variables created successfully
+  Adding core constraints...
+  Changeover tracking constraints added (224 constraints)
+  Big-M value for product_produced linking: 19,600 units/day
+  Labor cost constraints added (28 node-date pairs, 252 constraints)
+  Adding storage shipment delay constraint for 3 nodes: ['6104', '6125', 'Lineage']
+    Added 75 storage delay constraints
+  Hybrid pallet formulation (MIP optimization):
+    Small cohorts (integer 0-10): 2,030
+    Domain reduced: 62 → 10 (84% reduction)
+  Pallet tracking enabled for states: ['frozen']
+    - Pallet integer variables: 2,030
+    - Domain per variable: 0-10 (vs 0-62 full formulation)
+    - Unit-tracked states: ['ambient', 'thawed']
+  Holding cost enabled: 17,780 total cohorts (5,926 pallet-tracked)
+
+  Staleness penalty enabled: $0.0500 per unit per day of age
+  Staleness penalty calculation: 14,175 demand cohorts
+  Formula: min(age_days, 17) × $0.0500 × demand_satisfied
+  Core constraints added
+  Truck constraints added (generalized for any node)
+  Model complete and ready to solve
+  Added pattern constraints (parameter-controlled)
+  Added 140 product_start variables
+  Added 140 changeover detection constraints
+  Deactivated counting constraint (using start tracking instead)
+  Added 28 capacity constraints with start tracking
+
+Phase 1: Solving pattern...
+  Phase 1: $763,812.65 in 6.5s
+
+Phase 2: Changing pattern_active: 1 → 0
+  ✓  NO structural changes (start tracking stays active)
+
+Phase 2: Re-solving...
+Expected initial incumbent: ~$763,813
+
+  Phase 2: $763,812.65 in 3.3s
+
+================================================================================
+COMPREHENSIVE COMPARISON
+================================================================================
+
+1. PATTERN MODEL (Start Tracking):
+   Cost: $763,812.65
+   Time: 6.5s
+   Binary vars: 669
+
+2. FLEXIBLE MODEL (Start Tracking):
+   Cost: $763,812.65
+   Time: 6.5s
+   Binary vars: 644
+
+3. WARMSTART (Pattern → Flexible with Start Tracking):
+   Phase 1: $763,812.65 in 6.5s
+   Phase 2: $763,812.65 in 3.3s
+   Total:   $763,812.65 in 9.8s
+   Change:  $-0.00 (-0.00%)
+
+================================================================================
+COMPARISON TO HISTORICAL RESULTS (Counting Constraint)
+================================================================================
+
+Counting constraint approach:
+  Pattern:  $779K in 8s   (counting deactivated)
+  Flexible: Unknown (not tested alone)
+  Warmstart Phase 2: $1,928K in 301s (warmstart failed)
+
+Start tracking approach:
+  Pattern:  $764K in 6s
+  Flexible: $764K in 6s
+  Warmstart Phase 2: $764K in 3s
+
+================================================================================
+WARMSTART EVALUATION
+================================================================================
+
+🎉 SUCCESS: Warmstart preserved incumbent!
+   Start tracking formulation enables APPSI warmstart!
+
+================================================================================
+FINAL RECOMMENDATION
+================================================================================
+
+✅ Start tracking formulation WORKS for pattern model
+   - Good cost: $763,813
+   - Fast solve: 6.5s
+
+✅ Start tracking formulation WORKS for flexible model
+   - Good cost: $763,813
+   - Reasonable time: 6.5s
+
+✅ Start tracking ENABLES APPSI warmstart!
+   - This is the SOLUTION to the warmstart problem!
+
+================================================================================
+TEST COMPLETE
+================================================================================

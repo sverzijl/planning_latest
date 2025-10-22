@@ -1,0 +1,143 @@
+/home/sverzijl/planning_latest/src/parsers/inventory_parser.py:167: UserWarning: Found 5 negative quantity values. These were set to 0.
+  warnings.warn(
+/home/sverzijl/planning_latest/src/optimization/unified_node_model.py:287: UserWarning: Zero cost parameters detected: All route transport costs are 0, ambient storage costs are 0. This may cause solver to leave some variables uninitialized (valid behavior). Consider using small non-zero costs (e.g., 0.0001) if you encounter solution extraction issues.
+  warnings.warn(warning_msg, UserWarning)
+================================================================================
+TEST: PHASE 1 SOLUTION FEASIBILITY FOR PHASE 2
+================================================================================
+
+Question: Is Phase 1 solution feasible for Phase 2 constraints?
+Expected: YES (Phase 2 is less constrained)
+
+================================================================================
+PHASE 1: SOLVE PATTERN MODEL
+================================================================================
+
+📦 Preprocessed initial inventory: 23 items, prod_date=2025-10-21 (one day before snapshot)
+
+Unified Model Data Summary:
+  Nodes: 11
+    Manufacturing: 1
+    Demand: 9
+    With truck constraints: 1
+  Routes: 10
+  Truck schedules: 11
+  Planning horizon: 2025-10-20 to 2025-11-16 (28 days)
+  Products: 5
+  Demand entries: 1260
+
+Building Unified Node Model...
+  Sets defined: 11 nodes, 5 products, 28 dates, 10 routes
+  Production dates for cohorts: 28 in horizon + 0 from initial inventory
+  Cohort indices: 17,780 cohorts
+  Shipment cohorts by origin node:
+    6104: 3780
+    6122: 7425
+    6125: 5670
+    Lineage: 1155
+  Shipment cohort indices: 18,030
+  Demand cohort indices: 14,175
+  Changeover tracking: 28 production days, 140 product indicators (VARIABLE (binary decision))
+  Labor cost variables: 28 labor hour variables added
+  Variables created successfully
+  Adding core constraints...
+  Changeover tracking constraints added (224 constraints)
+  Big-M value for product_produced linking: 19,600 units/day
+  Labor cost constraints added (28 node-date pairs, 252 constraints)
+  Adding storage shipment delay constraint for 3 nodes: ['6104', '6125', 'Lineage']
+    Added 75 storage delay constraints
+  Hybrid pallet formulation (MIP optimization):
+    Small cohorts (integer 0-10): 2,030
+    Domain reduced: 62 → 10 (84% reduction)
+  Pallet tracking enabled for states: ['frozen']
+    - Pallet integer variables: 2,030
+    - Domain per variable: 0-10 (vs 0-62 full formulation)
+    - Unit-tracked states: ['ambient', 'thawed']
+  Holding cost enabled: 17,780 total cohorts (5,926 pallet-tracked)
+
+  Staleness penalty enabled: $0.0500 per unit per day of age
+  Staleness penalty calculation: 14,175 demand cohorts
+  Formula: min(age_days, 17) × $0.0500 × demand_satisfied
+  Core constraints added
+  Truck constraints added (generalized for any node)
+  Model complete and ready to solve
+
+Building Unified Node Model...
+  Sets defined: 11 nodes, 5 products, 28 dates, 10 routes
+  Production dates for cohorts: 28 in horizon + 0 from initial inventory
+  Cohort indices: 17,780 cohorts
+  Shipment cohorts by origin node:
+    6104: 3780
+    6122: 7425
+    6125: 5670
+    Lineage: 1155
+  Shipment cohort indices: 18,030
+  Demand cohort indices: 14,175
+  Changeover tracking: 28 production days, 140 product indicators (VARIABLE (binary decision))
+  Labor cost variables: 28 labor hour variables added
+  Variables created successfully
+  Adding core constraints...
+  Changeover tracking constraints added (224 constraints)
+  Big-M value for product_produced linking: 19,600 units/day
+  Labor cost constraints added (28 node-date pairs, 252 constraints)
+  Adding storage shipment delay constraint for 3 nodes: ['6104', '6125', 'Lineage']
+    Added 75 storage delay constraints
+  Hybrid pallet formulation (MIP optimization):
+    Small cohorts (integer 0-10): 2,030
+    Domain reduced: 62 → 10 (84% reduction)
+  Pallet tracking enabled for states: ['frozen']
+    - Pallet integer variables: 2,030
+    - Domain per variable: 0-10 (vs 0-62 full formulation)
+    - Unit-tracked states: ['ambient', 'thawed']
+  Holding cost enabled: 17,780 total cohorts (5,926 pallet-tracked)
+
+  Staleness penalty enabled: $0.0500 per unit per day of age
+  Staleness penalty calculation: 14,175 demand cohorts
+  Formula: min(age_days, 17) × $0.0500 × demand_satisfied
+  Core constraints added
+  Truck constraints added (generalized for any node)
+  Model complete and ready to solve
+Solving Phase 1...
+Phase 1 cost: $779,385.84
+
+================================================================================
+FEASIBILITY CHECK: Phase 1 Solution vs Phase 2 Constraints
+================================================================================
+
+Checking changeover constraints (will be reactivated in Phase 2)...
+
+❌ FOUND 28 VIOLATIONS:
+   ('6122', datetime.date(2025, 10, 20)): body=-5.0000 < lower=0.0000
+   ('6122', datetime.date(2025, 10, 21)): body=-5.0000 < lower=0.0000
+   ('6122', datetime.date(2025, 10, 22)): body=-5.0000 < lower=0.0000
+   ('6122', datetime.date(2025, 10, 23)): body=-5.0000 < lower=0.0000
+   ('6122', datetime.date(2025, 10, 24)): body=-5.0000 < lower=0.0000
+   ('6122', datetime.date(2025, 10, 25)): body=-5.0000 < lower=0.0000
+   ('6122', datetime.date(2025, 10, 26)): body=-5.0000 < lower=0.0000
+   ('6122', datetime.date(2025, 10, 27)): body=-5.0000 < lower=0.0000
+   ('6122', datetime.date(2025, 10, 28)): body=-5.0000 < lower=0.0000
+   ('6122', datetime.date(2025, 10, 29)): body=-5.0000 < lower=0.0000
+   ... and 18 more
+
+⚠️  Phase 1 solution is INFEASIBLE for Phase 2!
+   This explains why Phase 2 can't use it
+
+Checking core constraints...
+
+================================================================================
+VERDICT
+================================================================================
+
+✅ Phase 1 solution IS FEASIBLE for Phase 2 constraints
+
+Conclusion:
+  - Phase 1 solution satisfies ALL Phase 2 constraints
+  - Phase 2 should AT MINIMUM return this solution
+  - But Phase 2 started with $3.38M (not $795K)
+
+🔍 ROOT CAUSE: APPSI is NOT preserving the MIP solution
+   when constraints are deactivated/reactivated!
+
+This is either:
+  A. APPSI bug/limitation (doesn't preserve MIP incumbent on model changes)
+  B. We need explicit solution preservation code

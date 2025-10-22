@@ -1,0 +1,4 @@
+================================================================================
+HiGHS SOLVER COMPREHENSIVE PERFORMANCE TEST
+================================================================================
+Error: Forecast file not found: data/examples/GFree Forecast.xlsm

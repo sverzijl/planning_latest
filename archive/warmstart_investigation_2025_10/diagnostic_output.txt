@@ -1,0 +1,186 @@
+/home/sverzijl/planning_latest/src/parsers/inventory_parser.py:167: UserWarning: Found 5 negative quantity values. These were set to 0.
+  warnings.warn(
+/home/sverzijl/planning_latest/src/optimization/unified_node_model.py:287: UserWarning: Zero cost parameters detected: All route transport costs are 0, ambient storage costs are 0. This may cause solver to leave some variables uninitialized (valid behavior). Consider using small non-zero costs (e.g., 0.0001) if you encounter solution extraction issues.
+  warnings.warn(warning_msg, UserWarning)
+================================================================================
+PALLET INTEGER DIAGNOSTIC TEST
+================================================================================
+
+Objective: Isolate whether pallet integers or binary selectors cause
+          the performance bottleneck in 6-week optimization
+
+Test: Phase 1 with weekly pattern + pallet integers
+      (110 binary vars + 4,515 integer vars)
+
+================================================================================
+LOADING DATA
+================================================================================
+
+Configuration:
+  Horizon: 6 weeks (42 days)
+  Timeout: 600s (10 minutes)
+  Solver: appsi_highs
+  Gap tolerance: 3%
+
+Cost Structure Verification:
+  Frozen pallet fixed: $14.26
+  Frozen pallet daily: $0.9800
+  ✓ Pallet costs configured - Phase 1 will create pallet variables
+
+================================================================================
+BUILDING PHASE 1 MODEL WITH PALLET TRACKING (DIAGNOSTIC MODE)
+================================================================================
+
+Expected variable counts:
+  Binary (weekly pattern): 90 (25 pattern + 65 weekends)
+  Integer (pallet tracking): ~4,515 (estimated)
+  Continuous: ~100,000 (estimated)
+
+Building UnifiedNodeModel with pallet-based costs...
+
+📦 Preprocessed initial inventory: 23 items, prod_date=2025-10-21 (one day before snapshot)
+
+Unified Model Data Summary:
+  Nodes: 11
+    Manufacturing: 1
+    Demand: 9
+    With truck constraints: 1
+  Routes: 10
+  Truck schedules: 11
+  Planning horizon: 2025-10-20 to 2025-11-30 (42 days)
+  Products: 5
+  Demand entries: 1890
+
+UnifiedNodeModel object created in 0.0s
+
+Building Pyomo model...
+
+Building Unified Node Model...
+  Sets defined: 11 nodes, 5 products, 42 dates, 10 routes
+  Production dates for cohorts: 42 in horizon + 0 from initial inventory
+  Cohort indices: 30,765 cohorts
+  Shipment cohorts by origin node:
+    6104: 8610
+    6122: 17015
+    6125: 12915
+    Lineage: 3150
+  Shipment cohort indices: 41,690
+  Demand cohort indices: 23,625
+  Changeover tracking: 42 production days, 210 product indicators (VARIABLE (binary decision))
+  Labor cost variables: 42 labor hour variables added
+  Variables created successfully
+  Adding core constraints...
+  Changeover tracking constraints added (336 constraints)
+  Big-M value for product_produced linking: 19,600 units/day
+  Labor cost constraints added (42 node-date pairs, 378 constraints)
+  Adding storage shipment delay constraint for 3 nodes: ['6104', '6125', 'Lineage']
+    Added 117 storage delay constraints
+  Hybrid pallet formulation (MIP optimization):
+    Small cohorts (integer 0-10): 4,515
+    Domain reduced: 62 → 10 (84% reduction)
+  Pallet tracking enabled for states: ['frozen']
+    - Pallet integer variables: 4,515
+    - Domain per variable: 0-10 (vs 0-62 full formulation)
+    - Unit-tracked states: ['ambient', 'thawed']
+  Holding cost enabled: 30,765 total cohorts (10,255 pallet-tracked)
+  Core constraints added
+  Truck constraints added (generalized for any node)
+  Model complete and ready to solve
+Pyomo model built in 22.5s
+
+Counting variables in base model...
+
+  Base model variable counts:
+    Binary: 756
+    Integer: 4,557
+    Continuous: 100,868
+
+Adding weekly pattern constraints...
+  Added 145 linking constraints
+  Added 25 weekly pattern binary variables
+
+  Final model variable counts:
+    Binary: 781 (+25)
+    Integer: 4,557 (no change)
+    Continuous: 100,868 (+0)
+
+================================================================================
+VALIDATION
+================================================================================
+
+  ✓ Pallet integer variables: 4,557 (expected ~4,500)
+  ⚠️  WARNING: Binary count 781 higher than expected (~110)
+
+================================================================================
+SOLVING PHASE 1 WITH PALLET TRACKING
+================================================================================
+
+Configuration:
+  Binary vars: 781
+  Integer vars: 4,557
+  Continuous vars: 100,868
+  Time limit: 600s (10 minutes)
+  Gap tolerance: 3%
+
+Solving...
+Running HiGHS 1.11.0 (git hash: 364c83a): Copyright (c) 2025 HiGHS under MIT licence terms
+MIP  has 63414 rows; 106206 cols; 302043 nonzeros; 5338 integer variables (781 binary)
+Coefficient ranges:
+  Matrix [1e-04, 2e+04]
+  Cost   [1e+00, 1e+03]
+  Bound  [1e+00, 2e+04]
+  RHS    [1e-02, 2e+04]
+Presolving model
+51137 rows, 80297 cols, 245582 nonzeros  0s
+39902 rows, 60585 cols, 191037 nonzeros  1s
+30023 rows, 53764 cols, 162636 nonzeros  2s
+
+Solving MIP model with:
+   30023 rows
+   53764 cols (124 binary, 2632 integer, 0 implied int., 51008 continuous, 0 domain fixed)
+   162636 nonzeros
+
+Src: B => Branching; C => Central rounding; F => Feasibility pump; J => Feasibility jump;
+     H => Heuristic; L => Sub-MIP; P => Empty MIP; R => Randomized rounding; Z => ZI Round;
+     I => Shifting; S => Solve LP; T => Evaluate node; U => Unbounded; X => User solution;
+     z => Trivial zero; l => Trivial lower; u => Trivial upper; p => Trivial point
+
+        Nodes      |    B&B Tree     |            Objective Bounds              |  Dynamic Constraints |       Work      
+Src  Proc. InQueue |  Leaves   Expl. | BestBound       BestSol              Gap |   Cuts   InLp Confl. | LpIters     Time
+
+ J       0       0         0   0.00%   -inf            4794791.002288     Large        0      0      0         0     3.9s
+ R       0       0         0   0.00%   950310.4184     951473.253564      0.12%        0      0      0     33377    18.2s
+         1       0         1 100.00%   950310.4184     951473.253564      0.12%        0      0      0     33377    18.2s
+
+Solving report
+  Status            Optimal
+  Primal bound      951473.253564
+  Dual bound        950310.4184
+  Gap               0.122% (tolerance: 3%)
+  P-D integral      13.8011485752
+  Solution status   feasible
+                    951473.253564 (objective)
+                    0 (bound viol.)
+                    2.22044604925e-15 (int. viol.)
+                    0 (row viol.)
+  Timing            18.22 (total)
+                    0.00 (presolve)
+                    0.00 (solve)
+                    0.00 (postsolve)
+  Max sub-MIP depth 0
+  Nodes             1
+  Repair LPs        0 (0 feasible; 0 iterations)
+  LP iterations     33377 (total)
+                    0 (strong br.)
+                    0 (separation)
+                    0 (heuristics)
+Traceback (most recent call last):
+  File "/home/sverzijl/planning_latest/test_pallet_integer_diagnostic.py", line 384, in <module>
+    exit(main())
+         ^^^^^^
+  File "/home/sverzijl/planning_latest/test_pallet_integer_diagnostic.py", line 306, in main
+    objective_value = pyo_value(model.objective)
+                                ^^^^^^^^^^^^^^^
+  File "/home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pyomo/core/base/block.py", line 552, in __getattr__
+    raise AttributeError(
+AttributeError: 'ConcreteModel' object has no attribute 'objective'. Did you mean: 'nobjectives'?

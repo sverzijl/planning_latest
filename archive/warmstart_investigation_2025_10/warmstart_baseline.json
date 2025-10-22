@@ -1,0 +1,11 @@
+{
+  "phase1_time": 49.27797508239746,
+  "phase2_time": 632.359118938446,
+  "total_time": 681.7574942111969,
+  "final_cost": 3387690.9202762,
+  "gap": 0.7742063572722817,
+  "success": true,
+  "termination": "TerminationCondition.maxTimeLimit",
+  "phase1_cost": 740345.1069286002,
+  "timestamp": "2025-10-21"
+}

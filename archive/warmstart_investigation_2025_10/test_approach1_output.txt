@@ -1,0 +1,454 @@
+/home/sverzijl/planning_latest/src/parsers/inventory_parser.py:167: UserWarning: Found 5 negative quantity values. These were set to 0.
+  warnings.warn(
+/home/sverzijl/planning_latest/src/optimization/unified_node_model.py:287: UserWarning: Zero cost parameters detected: All route transport costs are 0, ambient storage costs are 0. This may cause solver to leave some variables uninitialized (valid behavior). Consider using small non-zero costs (e.g., 0.0001) if you encounter solution extraction issues.
+  warnings.warn(warning_msg, UserWarning)
+================================================================================
+APPROACH 1: Non-APPSI SolverFactory with warmstart=True
+================================================================================
+
+Strategy: Use standard SolverFactory interface
+Expected: May generate .mst file for warmstart
+
+
+Creating SolverFactory('highs') solver...
+  ✓  SolverFactory('highs') available
+
+================================================================================
+PHASE 1: SOLVE PATTERN MODEL
+================================================================================
+
+📦 Preprocessed initial inventory: 23 items, prod_date=2025-10-21 (one day before snapshot)
+
+Unified Model Data Summary:
+  Nodes: 11
+    Manufacturing: 1
+    Demand: 9
+    With truck constraints: 1
+  Routes: 10
+  Truck schedules: 11
+  Planning horizon: 2025-10-20 to 2025-11-16 (28 days)
+  Products: 5
+  Demand entries: 1260
+
+Building Unified Node Model...
+  Sets defined: 11 nodes, 5 products, 28 dates, 10 routes
+  Production dates for cohorts: 28 in horizon + 0 from initial inventory
+  Cohort indices: 17,780 cohorts
+  Shipment cohorts by origin node:
+    6104: 3780
+    6122: 7425
+    6125: 5670
+    Lineage: 1155
+  Shipment cohort indices: 18,030
+  Demand cohort indices: 14,175
+  Changeover tracking: 28 production days, 140 product indicators (VARIABLE (binary decision))
+  Labor cost variables: 28 labor hour variables added
+  Variables created successfully
+  Adding core constraints...
+  Changeover tracking constraints added (224 constraints)
+  Big-M value for product_produced linking: 19,600 units/day
+  Labor cost constraints added (28 node-date pairs, 252 constraints)
+  Adding storage shipment delay constraint for 3 nodes: ['6104', '6125', 'Lineage']
+    Added 75 storage delay constraints
+  Hybrid pallet formulation (MIP optimization):
+    Small cohorts (integer 0-10): 2,030
+    Domain reduced: 62 → 10 (84% reduction)
+  Pallet tracking enabled for states: ['frozen']
+    - Pallet integer variables: 2,030
+    - Domain per variable: 0-10 (vs 0-62 full formulation)
+    - Unit-tracked states: ['ambient', 'thawed']
+  Holding cost enabled: 17,780 total cohorts (5,926 pallet-tracked)
+
+  Staleness penalty enabled: $0.0500 per unit per day of age
+  Staleness penalty calculation: 14,175 demand cohorts
+  Formula: min(age_days, 17) × $0.0500 × demand_satisfied
+  Core constraints added
+  Truck constraints added (generalized for any node)
+  Model complete and ready to solve
+
+Building Unified Node Model...
+  Sets defined: 11 nodes, 5 products, 28 dates, 10 routes
+  Production dates for cohorts: 28 in horizon + 0 from initial inventory
+  Cohort indices: 17,780 cohorts
+  Shipment cohorts by origin node:
+    6104: 3780
+    6122: 7425
+    6125: 5670
+    Lineage: 1155
+  Shipment cohort indices: 18,030
+  Demand cohort indices: 14,175
+  Changeover tracking: 28 production days, 140 product indicators (VARIABLE (binary decision))
+  Labor cost variables: 28 labor hour variables added
+  Variables created successfully
+  Adding core constraints...
+  Changeover tracking constraints added (224 constraints)
+  Big-M value for product_produced linking: 19,600 units/day
+  Labor cost constraints added (28 node-date pairs, 252 constraints)
+  Adding storage shipment delay constraint for 3 nodes: ['6104', '6125', 'Lineage']
+    Added 75 storage delay constraints
+  Hybrid pallet formulation (MIP optimization):
+    Small cohorts (integer 0-10): 2,030
+    Domain reduced: 62 → 10 (84% reduction)
+  Pallet tracking enabled for states: ['frozen']
+    - Pallet integer variables: 2,030
+    - Domain per variable: 0-10 (vs 0-62 full formulation)
+    - Unit-tracked states: ['ambient', 'thawed']
+  Holding cost enabled: 17,780 total cohorts (5,926 pallet-tracked)
+
+  Staleness penalty enabled: $0.0500 per unit per day of age
+  Staleness penalty calculation: 14,175 demand cohorts
+  Formula: min(age_days, 17) × $0.0500 × demand_satisfied
+  Core constraints added
+  Truck constraints added (generalized for any node)
+  Model complete and ready to solve
+Solving Phase 1...
+Running HiGHS 1.11.0 (git hash: 364c83a): Copyright (c) 2025 HiGHS under MIT licence terms
+ERROR:   getOptionIndex: Option "mip_gap" is unknown
+MIP  has 36977 rows; 55764 cols; 166715 nonzeros; 2587 integer variables (529 binary)
+Coefficient ranges:
+  Matrix [1e-04, 2e+04]
+  Cost   [5e-02, 1e+03]
+  Bound  [1e+00, 2e+04]
+  RHS    [1e-02, 2e+04]
+Presolving model
+28852 rows, 43303 cols, 134542 nonzeros  0s
+22442 rows, 33064 cols, 105564 nonzeros  1s
+16676 rows, 29939 cols, 90105 nonzeros  2s
+
+Solving MIP model with:
+   16676 rows
+   29939 cols (38 binary, 929 integer, 0 implied int., 28972 continuous, 0 domain fixed)
+   90105 nonzeros
+
+Src: B => Branching; C => Central rounding; F => Feasibility pump; J => Feasibility jump;
+     H => Heuristic; L => Sub-MIP; P => Empty MIP; R => Randomized rounding; Z => ZI Round;
+     I => Shifting; S => Solve LP; T => Evaluate node; U => Unbounded; X => User solution;
+     z => Trivial zero; l => Trivial lower; u => Trivial upper; p => Trivial point
+
+        Nodes      |    B&B Tree     |            Objective Bounds              |  Dynamic Constraints |       Work      
+Src  Proc. InQueue |  Leaves   Expl. | BestBound       BestSol              Gap |   Cuts   InLp Confl. | LpIters     Time
+
+ J       0       0         0   0.00%   -inf            3109451.833038     Large        0      0      0         0     2.9s
+ R       0       0         0   0.00%   778895.081518   779233.435943      0.04%        0      0      0     19286    10.2s
+         0       0         0   0.00%   778916.577142   779233.435943      0.04%      595     68      0     19580    26.2s
+         0       0         0   0.00%   778927.646932   779233.435943      0.04%     1797    187      0     20150    31.5s
+         0       0         0   0.00%   778933.841046   779233.435943      0.04%     2653    183      0     20423    36.5s
+ L       0       0         0   0.00%   778933.841046   779141.995943      0.03%     2756    198      0     20436   124.4s
+         0       0         0   0.00%   778933.841046   779141.995943      0.03%     2629    198      0     42149   124.4s
+
+Solving report
+  Status            Time limit reached
+  Primal bound      779141.995943
+  Dual bound        778933.841046
+  Gap               0.0267% (tolerance: 0.01%)
+  P-D integral      7.01769016361
+  Solution status   feasible
+                    779141.995943 (objective)
+                    0 (bound viol.)
+                    0 (int. viol.)
+                    0 (row viol.)
+  Timing            124.36 (total)
+                    0.00 (presolve)
+                    0.00 (solve)
+                    0.00 (postsolve)
+  Max sub-MIP depth 4
+  Nodes             0
+  Repair LPs        0 (0 feasible; 0 iterations)
+  LP iterations     42149 (total)
+                    0 (strong br.)
+                    1150 (separation)
+                    21713 (heuristics)
+/home/sverzijl/planning_latest/src/optimization/unified_node_model.py:287: UserWarning: Zero cost parameters detected: All route transport costs are 0, ambient storage costs are 0. This may cause solver to leave some variables uninitialized (valid behavior). Consider using small non-zero costs (e.g., 0.0001) if you encounter solution extraction issues.
+  warnings.warn(warning_msg, UserWarning)
+
+Phase 1 Results:
+  Cost: $779,142.00
+  Time: 132.3s
+  Status: maxTimeLimit
+
+================================================================================
+PHASE 2: BUILD FLEXIBLE MODEL (SEPARATE INSTANCE)
+================================================================================
+
+📦 Preprocessed initial inventory: 23 items, prod_date=2025-10-21 (one day before snapshot)
+
+Unified Model Data Summary:
+  Nodes: 11
+    Manufacturing: 1
+    Demand: 9
+    With truck constraints: 1
+  Routes: 10
+  Truck schedules: 11
+  Planning horizon: 2025-10-20 to 2025-11-16 (28 days)
+  Products: 5
+  Demand entries: 1260
+
+Building Unified Node Model...
+  Sets defined: 11 nodes, 5 products, 28 dates, 10 routes
+  Production dates for cohorts: 28 in horizon + 0 from initial inventory
+  Cohort indices: 17,780 cohorts
+  Shipment cohorts by origin node:
+    6104: 3780
+    6122: 7425
+    6125: 5670
+    Lineage: 1155
+  Shipment cohort indices: 18,030
+  Demand cohort indices: 14,175
+  Changeover tracking: 28 production days, 140 product indicators (VARIABLE (binary decision))
+  Labor cost variables: 28 labor hour variables added
+  Variables created successfully
+  Adding core constraints...
+  Changeover tracking constraints added (224 constraints)
+  Big-M value for product_produced linking: 19,600 units/day
+  Labor cost constraints added (28 node-date pairs, 252 constraints)
+  Adding storage shipment delay constraint for 3 nodes: ['6104', '6125', 'Lineage']
+    Added 75 storage delay constraints
+  Hybrid pallet formulation (MIP optimization):
+    Small cohorts (integer 0-10): 2,030
+    Domain reduced: 62 → 10 (84% reduction)
+  Pallet tracking enabled for states: ['frozen']
+    - Pallet integer variables: 2,030
+    - Domain per variable: 0-10 (vs 0-62 full formulation)
+    - Unit-tracked states: ['ambient', 'thawed']
+  Holding cost enabled: 17,780 total cohorts (5,926 pallet-tracked)
+
+  Staleness penalty enabled: $0.0500 per unit per day of age
+  Staleness penalty calculation: 14,175 demand cohorts
+  Formula: min(age_days, 17) × $0.0500 × demand_satisfied
+  Core constraints added
+  Truck constraints added (generalized for any node)
+  Model complete and ready to solve
+
+Transferring variable values from Phase 1...
+WARNING (W1001): Setting Var 'demand_from_cohort['6130',WONDER GFREE WHOLEM
+500G,2025-10-22,2025-10-31]' to a value `-1.7053025658242404e-13` (float) not
+in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'demand_from_cohort['6130',HELGAS GFREE MIXED
+GRAIN 500G,2025-10-22,2025-11-02]' to a value `-7.105427357601002e-15` (float)
+not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'demand_from_cohort['6130',WONDER GFREE WHOLEM
+500G,2025-10-28,2025-11-10]' to a value `-1.1368683772161603e-13` (float) not
+in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',HELGAS GFREE TRAD WHITE
+470G,2025-10-29,2025-11-01,ambient]' to a value `-1.7053025658242404e-13`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',HELGAS GFREE TRAD WHITE
+470G,2025-11-06,2025-11-11,ambient]' to a value `-4.547473508864641e-13`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',WONDER GFREE WHITE
+470G,2025-10-28,2025-10-30,ambient]' to a value `-1.1368683772161603e-13`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',HELGAS GFREE MIXED GRAIN
+500G,2025-10-21,2025-10-21,ambient]' to a value `-5.684341886080802e-14`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',HELGAS GFREE TRAD WHITE
+470G,2025-11-06,2025-11-08,ambient]' to a value `-4.547473508864641e-13`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',WONDER GFREE WHOLEM
+500G,2025-10-22,2025-10-26,ambient]' to a value `-8.526512829121202e-14`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort[Lineage,WONDER GFREE WHOLEM
+500G,2025-10-20,2025-10-24,frozen]' to a value `-2.842170943040401e-14`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',WONDER GFREE WHOLEM
+500G,2025-10-22,2025-10-25,ambient]' to a value `-8.526512829121202e-14`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',WONDER GFREE WHITE
+470G,2025-11-06,2025-11-07,ambient]' to a value `-1.1368683772161603e-13`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',WONDER GFREE WHOLEM
+500G,2025-10-22,2025-10-24,ambient]' to a value `-8.526512829121202e-14`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',WONDER GFREE WHOLEM
+500G,2025-10-22,2025-10-27,ambient]' to a value `-8.526512829121202e-14`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',HELGAS GFREE WHOLEM
+500G,2025-11-06,2025-11-11,ambient]' to a value `-1.1368683772161603e-13`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',HELGAS GFREE TRAD WHITE
+470G,2025-11-06,2025-11-07,ambient]' to a value `-4.547473508864641e-13`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',HELGAS GFREE TRAD WHITE
+470G,2025-10-30,2025-11-01,ambient]' to a value `-2.2737367544323206e-13`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',WONDER GFREE WHITE
+470G,2025-10-29,2025-11-04,ambient]' to a value `-8.526512829121202e-14`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',WONDER GFREE WHITE
+470G,2025-10-28,2025-10-29,ambient]' to a value `-1.1368683772161603e-13`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',HELGAS GFREE TRAD WHITE
+470G,2025-10-30,2025-10-31,ambient]' to a value `-2.2737367544323206e-13`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',WONDER GFREE WHOLEM
+500G,2025-10-30,2025-11-04,ambient]' to a value `-8.526512829121202e-14`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',HELGAS GFREE TRAD WHITE
+470G,2025-11-06,2025-11-10,ambient]' to a value `-4.547473508864641e-13`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6130',HELGAS GFREE WHOLEM
+500G,2025-10-28,2025-11-06,ambient]' to a value `-4.973799150320701e-14`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',WONDER GFREE WHITE
+470G,2025-11-06,2025-11-13,ambient]' to a value `-1.1368683772161603e-13`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',HELGAS GFREE TRAD WHITE
+470G,2025-10-29,2025-11-02,ambient]' to a value `-1.7053025658242404e-13`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',HELGAS GFREE TRAD WHITE
+470G,2025-10-29,2025-11-03,ambient]' to a value `-1.7053025658242404e-13`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',WONDER GFREE WHITE
+470G,2025-11-06,2025-11-11,ambient]' to a value `-1.1368683772161603e-13`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',WONDER GFREE WHITE
+470G,2025-11-06,2025-11-09,ambient]' to a value `-1.1368683772161603e-13`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',HELGAS GFREE TRAD WHITE
+470G,2025-10-31,2025-11-05,ambient]' to a value `-2.1600499167107046e-12`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',WONDER GFREE WHOLEM
+500G,2025-10-22,2025-10-28,ambient]' to a value `-8.526512829121202e-14`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',HELGAS GFREE TRAD WHITE
+470G,2025-10-31,2025-11-06,ambient]' to a value `-2.1600499167107046e-12`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',HELGAS GFREE WHOLEM
+500G,2025-11-06,2025-11-12,ambient]' to a value `-1.1368683772161603e-13`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',HELGAS GFREE TRAD WHITE
+470G,2025-11-06,2025-11-09,ambient]' to a value `-4.547473508864641e-13`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',HELGAS GFREE TRAD WHITE
+470G,2025-10-29,2025-10-31,ambient]' to a value `-1.7053025658242404e-13`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',HELGAS GFREE WHOLEM
+500G,2025-11-06,2025-11-13,ambient]' to a value `-1.1368683772161603e-13`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',HELGAS GFREE TRAD WHITE
+470G,2025-11-11,2025-11-11,ambient]' to a value `-2.2737367544323206e-13`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',WONDER GFREE WHITE
+470G,2025-11-06,2025-11-08,ambient]' to a value `-1.1368683772161603e-13`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',HELGAS GFREE TRAD WHITE
+470G,2025-10-31,2025-11-04,ambient]' to a value `-2.1600499167107046e-12`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',HELGAS GFREE WHOLEM
+500G,2025-11-06,2025-11-10,ambient]' to a value `-1.1368683772161603e-13`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',HELGAS GFREE WHOLEM
+500G,2025-11-06,2025-11-08,ambient]' to a value `-1.1368683772161603e-13`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',WONDER GFREE WHITE
+470G,2025-10-29,2025-11-05,ambient]' to a value `-8.526512829121202e-14`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',HELGAS GFREE TRAD WHITE
+470G,2025-10-30,2025-11-04,ambient]' to a value `-2.2737367544323206e-13`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',WONDER GFREE WHITE
+470G,2025-10-29,2025-11-06,ambient]' to a value `-8.526512829121202e-14`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',WONDER GFREE WHITE
+470G,2025-11-06,2025-11-12,ambient]' to a value `-1.1368683772161603e-13`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',HELGAS GFREE TRAD WHITE
+470G,2025-10-30,2025-11-02,ambient]' to a value `-2.2737367544323206e-13`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',HELGAS GFREE TRAD WHITE
+470G,2025-10-30,2025-11-03,ambient]' to a value `-2.2737367544323206e-13`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6130',WONDER GFREE WHOLEM
+500G,2025-10-28,2025-11-09,ambient]' to a value `-4.4301233970145404e-14`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',HELGAS GFREE WHOLEM
+500G,2025-11-06,2025-11-09,ambient]' to a value `-1.1368683772161603e-13`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',WONDER GFREE WHOLEM
+500G,2025-10-22,2025-10-23,ambient]' to a value `-8.526512829121202e-14`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',WONDER GFREE WHITE
+470G,2025-11-06,2025-11-10,ambient]' to a value `-1.1368683772161603e-13`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'inventory_cohort['6122',HELGAS GFREE WHOLEM
+500G,2025-11-06,2025-11-07,ambient]' to a value `-1.1368683772161603e-13`
+(float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'overtime_hours_used['6122',2025-10-29]' to a
+value `-1.7763568394002505e-15` (float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'overtime_hours_used['6122',2025-11-12]' to a
+value `-1.7763568394002505e-15` (float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'overtime_hours_used['6122',2025-11-13]' to a
+value `-1.7763568394002505e-15` (float) not in domain NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+WARNING (W1001): Setting Var 'shortage['6105',HELGAS GFREE WHOLEM
+500G,2025-10-23]' to a value `-5.684341886080802e-14` (float) not in domain
+NonNegativeReals.
+    See also https://pyomo.readthedocs.io/en/stable/errors.html#w1001
+  Transferred 55739 variable values
+
+================================================================================
+PHASE 2: SOLVE WITH warmstart=True
+================================================================================
+
+DIAGNOSTIC: Watch for warmstart file generation or 'MIP start' message
+Traceback (most recent call last):
+  File "/home/sverzijl/planning_latest/test_approach1_solverfactory.py", line 257, in <module>
+    exit(main())
+         ^^^^^^
+  File "/home/sverzijl/planning_latest/test_approach1_solverfactory.py", line 221, in main
+    result2 = solver.solve(model2, warmstart=True, tee=True)  # EXPLICIT warmstart flag
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: LegacySolverWrapper.solve() got an unexpected keyword argument 'warmstart'
