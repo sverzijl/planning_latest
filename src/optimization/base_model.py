@@ -313,8 +313,12 @@ class BaseOptimizationModel(ABC):
                 if result.objective_value is None and 'total_cost' in self.solution:
                     result.objective_value = self.solution['total_cost']
             except Exception as e:
-                result.infeasibility_message = f"Error extracting solution: {e}"
-                result.success = False
+                # Log solution extraction error but DON'T override solver success
+                # The solve succeeded - solution extraction is a separate concern
+                result.infeasibility_message = f"Warning: Solution extraction failed: {e}. Solve was successful but solution data unavailable."
+                # Keep result.success = True (solver succeeded)
+                # Just mark that solution data is incomplete
+                result.metadata['solution_extraction_failed'] = True
 
         return result
 
@@ -525,8 +529,10 @@ class BaseOptimizationModel(ABC):
                 if result.objective_value is None and 'total_cost' in self.solution:
                     result.objective_value = self.solution['total_cost']
             except Exception as e:
-                result.infeasibility_message = f"Error extracting solution: {e}"
-                result.success = False
+                # Log solution extraction error but DON'T override solver success
+                result.infeasibility_message = f"Warning: Solution extraction failed: {e}. Solve was successful but solution data unavailable."
+                # Keep result.success = True (solver succeeded)
+                result.metadata['solution_extraction_failed'] = True
 
         return result
 

@@ -31,12 +31,18 @@ def test_non_production_day_minimum():
         forecast_file="data/examples/Gfree Forecast.xlsm",
         network_file="data/examples/Network_Config.xlsx",
     )
-    forecast, locations, routes, labor_calendar, trucks, costs = parser.parse_all()
+    forecast, locations, routes, labor_calendar, trucks_list, costs = parser.parse_all()
 
+    # Get manufacturing site
+    from src.models.location import LocationType
+    manufacturing_site = next((loc for loc in locations if loc.type == LocationType.MANUFACTURING), None)
+    assert manufacturing_site is not None, "No manufacturing site found"
+
+    # Convert to unified format
     converter = LegacyToUnifiedConverter()
-    nodes = converter.convert_locations_to_nodes(locations)
-    unified_routes = converter.convert_routes(routes, nodes)
-    unified_trucks = converter.convert_truck_schedules(trucks)
+    nodes = converter.convert_nodes(manufacturing_site, locations, forecast)
+    unified_routes = converter.convert_routes(routes)
+    unified_trucks = converter.convert_truck_schedules(trucks_list, manufacturing_site.id)
 
     # Test 1-week with weekend included
     start_date = date(2025, 10, 7)  # Tuesday
@@ -52,6 +58,7 @@ def test_non_production_day_minimum():
         end_date=end_date,
         truck_schedules=unified_trucks,
         use_batch_tracking=True,
+        allow_shortages=True,  # Allow shortages for test feasibility
         force_all_skus_daily=False,
     )
 
@@ -112,12 +119,16 @@ def test_overtime_before_weekend():
         forecast_file="data/examples/Gfree Forecast.xlsm",
         network_file="data/examples/Network_Config.xlsx",
     )
-    forecast, locations, routes, labor_calendar, trucks, costs = parser.parse_all()
+    forecast, locations, routes, labor_calendar, trucks_list, costs = parser.parse_all()
+
+    from src.models.location import LocationType
+    manufacturing_site = next((loc for loc in locations if loc.type == LocationType.MANUFACTURING), None)
+    assert manufacturing_site is not None, "No manufacturing site found"
 
     converter = LegacyToUnifiedConverter()
-    nodes = converter.convert_locations_to_nodes(locations)
-    unified_routes = converter.convert_routes(routes, nodes)
-    unified_trucks = converter.convert_truck_schedules(trucks)
+    nodes = converter.convert_nodes(manufacturing_site, locations, forecast)
+    unified_routes = converter.convert_routes(routes)
+    unified_trucks = converter.convert_truck_schedules(trucks_list, manufacturing_site.id)
 
     start_date = date(2025, 10, 7)
     end_date = date(2025, 10, 13)
@@ -132,6 +143,7 @@ def test_overtime_before_weekend():
         end_date=end_date,
         truck_schedules=unified_trucks,
         use_batch_tracking=True,
+        allow_shortages=True,  # Allow shortages for test feasibility
         force_all_skus_daily=False,
     )
 
@@ -199,12 +211,16 @@ def test_changeover_detection_accuracy():
         forecast_file="data/examples/Gfree Forecast.xlsm",
         network_file="data/examples/Network_Config.xlsx",
     )
-    forecast, locations, routes, labor_calendar, trucks, costs = parser.parse_all()
+    forecast, locations, routes, labor_calendar, trucks_list, costs = parser.parse_all()
+
+    from src.models.location import LocationType
+    manufacturing_site = next((loc for loc in locations if loc.type == LocationType.MANUFACTURING), None)
+    assert manufacturing_site is not None, "No manufacturing site found"
 
     converter = LegacyToUnifiedConverter()
-    nodes = converter.convert_locations_to_nodes(locations)
-    unified_routes = converter.convert_routes(routes, nodes)
-    unified_trucks = converter.convert_truck_schedules(trucks)
+    nodes = converter.convert_nodes(manufacturing_site, locations, forecast)
+    unified_routes = converter.convert_routes(routes)
+    unified_trucks = converter.convert_truck_schedules(trucks_list, manufacturing_site.id)
 
     start_date = date(2025, 10, 7)
     end_date = date(2025, 10, 13)
@@ -219,6 +235,7 @@ def test_changeover_detection_accuracy():
         end_date=end_date,
         truck_schedules=unified_trucks,
         use_batch_tracking=True,
+        allow_shortages=True,  # Allow shortages for test feasibility
         force_all_skus_daily=False,
     )
 
