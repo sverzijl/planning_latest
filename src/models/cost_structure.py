@@ -151,6 +151,31 @@ class CostStructure(BaseModel):
         ge=0
     )
 
+    # Freshness incentive (2025-10-22)
+    freshness_incentive_weight: float = Field(
+        default=0.0,
+        description=(
+            "Staleness penalty per unit per day of age ($/unit/day). "
+            "Encourages FIFO/FEFO by penalizing use of older inventory. "
+            "Typical value: 0.05 (1-5% of main costs). "
+            "Set to 0.0 to disable freshness incentive."
+        ),
+        ge=0
+    )
+
+    # Changeover cost (2025-10-22)
+    changeover_cost_per_start: float = Field(
+        default=0.0,
+        description=(
+            "Cost per product changeover/startup ($/changeover). "
+            "Tracks 0→1 transitions in production schedule. "
+            "Penalizes switching between products to encourage campaign production. "
+            "Typical value: 50-200 depending on changeover complexity. "
+            "Set to 0.0 to disable changeover cost."
+        ),
+        ge=0
+    )
+
     def calculate_waste_cost(self, units: float, unit_production_cost: Optional[float] = None) -> float:
         """
         Calculate cost of wasted units.

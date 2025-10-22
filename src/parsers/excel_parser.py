@@ -441,6 +441,10 @@ class ExcelParser:
             storage_cost_fixed_per_pallet_ambient=cost_dict.get("storage_cost_fixed_per_pallet_ambient"),  # None if not present
             waste_cost_multiplier=cost_dict.get("waste_cost_multiplier", 1.5),
             shortage_penalty_per_unit=cost_dict.get("shortage_penalty_per_unit", 10.0),
+            # Freshness incentive (2025-10-22)
+            freshness_incentive_weight=cost_dict.get("freshness_incentive_weight", 0.0),
+            # Changeover cost (2025-10-22)
+            changeover_cost_per_start=cost_dict.get("changeover_cost_per_start", 0.0),
         )
 
     def parse_all(
