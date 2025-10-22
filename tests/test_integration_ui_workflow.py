@@ -9,9 +9,9 @@ It serves as the primary regression test ensuring UI workflow compatibility and 
 PURPOSE:
 --------
 Validates the complete optimization workflow using real production data files:
-- GFree Forecast.xlsm (SAP IBP export with 17,760 forecast entries)
-- Network_Config.xlsx (11 locations, 10 routes, 585 labor days)
-- inventory.xlsx (optional initial inventory snapshot)
+- Gluten Free Forecast - Latest.xlsm (SAP IBP export with latest demand data)
+- Network_Config.xlsx (11 locations, 10 routes, 585 labor days, updated cost params)
+- inventory_latest.XLSX (optional initial inventory snapshot)
 
 This test exactly mirrors the UI Planning Tab workflow with typical user settings,
 ensuring that code changes don't break the user experience or degrade performance.
@@ -79,9 +79,10 @@ def data_files():
     """Paths to real data files."""
     data_dir = Path(__file__).parent.parent / "data" / "examples"
 
-    forecast_file = data_dir / "Gfree Forecast.xlsm"
+    # Use Latest files for most up-to-date test data
+    forecast_file = data_dir / "Gluten Free Forecast - Latest.xlsm"
     network_file = data_dir / "Network_Config.xlsx"
-    inventory_file = data_dir / "inventory.xlsx"
+    inventory_file = data_dir / "inventory_latest.XLSX"
 
     # Verify required files exist
     assert forecast_file.exists(), f"Forecast file not found: {forecast_file}"
