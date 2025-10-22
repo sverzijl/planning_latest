@@ -365,142 +365,142 @@ with tab_optimization:
 
             # Display results
             if result.is_optimal() or result.is_feasible():
-                    status_str = "optimal" if result.is_optimal() else "feasible"
-                    st.success(f"✅ Optimization {status_str}!")
+                status_str = "optimal" if result.is_optimal() else "feasible"
+                st.success(f"✅ Optimization {status_str}!")
 
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Status", status_str.title())
+                with col2:
+                    # Validate objective value is finite before displaying
+                    if result.objective_value is None:
+                        cost_display = "$0.00"
+                    elif math.isinf(result.objective_value):
+                        cost_display = "Invalid (∞)"
+                        st.warning("⚠️ Objective value is infinite. Check cost parameters.")
+                    elif math.isnan(result.objective_value):
+                        cost_display = "Invalid (NaN)"
+                        st.warning("⚠️ Objective value is NaN. Check cost parameters.")
+                    else:
+                        cost_display = f"${result.objective_value:,.2f}"
+                    st.metric("Total Cost", cost_display)
+                with col3:
+                    st.metric("Solve Time", f"{result.solve_time_seconds or 0:.1f}s")
+                with col4:
+                    # Validate gap is finite before displaying
+                    if result.gap is None:
+                        pass  # Don't show gap metric
+                    elif math.isnan(result.gap) or math.isinf(result.gap):
+                        st.metric("Gap", "N/A")
+                    else:
+                        st.metric("Gap", f"{result.gap * 100:.2f}%")
+
+                # Store optimization results
+                session_state.store_optimization_results(
+                    model=result_model,
+                    result=result
+                )
+
+                # Display cost breakdown if available
+                st.divider()
+                st.markdown(section_header("Cost Breakdown", level=4, icon="💰"), unsafe_allow_html=True)
+
+                if hasattr(result, 'solution') and result.solution:
+                    sol = result.solution
+                    col1, col2, col3, col4, col5 = st.columns(5)
+
+                    with col1:
+                        labor_cost = sol.get('total_labor_cost', 0)
+                        st.markdown(colored_metric("Labor", f"${labor_cost:,.0f}", "primary"), unsafe_allow_html=True)
+
+                    with col2:
+                        prod_cost = sol.get('total_production_cost', 0)
+                        st.markdown(colored_metric("Production", f"${prod_cost:,.0f}", "secondary"), unsafe_allow_html=True)
+
+                    with col3:
+                        transport_cost = sol.get('total_transport_cost', 0)
+                        st.markdown(colored_metric("Transport", f"${transport_cost:,.0f}", "accent"), unsafe_allow_html=True)
+
+                    with col4:
+                        inventory_cost = sol.get('total_inventory_cost', 0)
+                        st.markdown(colored_metric("Inventory", f"${inventory_cost:,.0f}", "success"), unsafe_allow_html=True)
+
+                    with col5:
+                        shortage_cost = sol.get('total_shortage_cost', 0)
+                        shortage_units = sol.get('total_shortage_units', 0)
+                        if shortage_units > 0:
+                            st.markdown(colored_metric("Shortage", f"${shortage_cost:,.0f}", "warning"), unsafe_allow_html=True)
+                            st.caption(f"{shortage_units:,.0f} units unmet")
+                        else:
+                            st.markdown(success_badge("100% Demand Satisfied"), unsafe_allow_html=True)
+
+                    # Production summary
+                    st.divider()
                     col1, col2, col3, col4 = st.columns(4)
                     with col1:
-                        st.metric("Status", status_str.title())
+                        total_production = sol.get('total_production_quantity', 0)
+                        st.markdown(colored_metric("Total Production", f"{total_production:,.0f} units", "primary"), unsafe_allow_html=True)
                     with col2:
-                        # Validate objective value is finite before displaying
-                        if result.objective_value is None:
-                            cost_display = "$0.00"
-                        elif math.isinf(result.objective_value):
-                            cost_display = "Invalid (∞)"
-                            st.warning("⚠️ Objective value is infinite. Check cost parameters.")
-                        elif math.isnan(result.objective_value):
-                            cost_display = "Invalid (NaN)"
-                            st.warning("⚠️ Objective value is NaN. Check cost parameters.")
-                        else:
-                            cost_display = f"${result.objective_value:,.2f}"
-                        st.metric("Total Cost", cost_display)
+                        num_batches = len(sol.get('production_batches', []))
+                        st.markdown(colored_metric("Production Batches", str(num_batches), "secondary"), unsafe_allow_html=True)
                     with col3:
-                        st.metric("Solve Time", f"{result.solve_time_seconds or 0:.1f}s")
+                        num_shipments = sum(len(v) for v in sol.get('shipments_by_route_product_date', {}).values())
+                        st.markdown(colored_metric("Shipments", str(num_shipments), "accent"), unsafe_allow_html=True)
                     with col4:
-                        # Validate gap is finite before displaying
-                        if result.gap is None:
-                            pass  # Don't show gap metric
-                        elif math.isnan(result.gap) or math.isinf(result.gap):
-                            st.metric("Gap", "N/A")
+                        # Changeover statistics (new with start tracking formulation)
+                        total_changeovers = sol.get('total_changeovers', 0)
+                        if total_changeovers > 0:
+                            st.markdown(colored_metric("Product Changeovers", str(total_changeovers), "warning"), unsafe_allow_html=True)
+                            changeover_cost = sol.get('total_changeover_cost', 0)
+                            if changeover_cost > 0:
+                                st.caption(f"Cost: ${changeover_cost:,.0f}")
                         else:
-                            st.metric("Gap", f"{result.gap * 100:.2f}%")
+                            st.markdown(colored_metric("Product Changeovers", "0", "success"), unsafe_allow_html=True)
 
-                    # Store optimization results
-                    session_state.store_optimization_results(
-                        model=result_model,
-                        result=result
-                    )
+                st.divider()
+                st.info("✅ Optimization complete! View detailed results in the **Results** page.")
 
-                    # Display cost breakdown if available
-                    st.divider()
-                    st.markdown(section_header("Cost Breakdown", level=4, icon="💰"), unsafe_allow_html=True)
+                if st.button("📈 View Results", type="primary", use_container_width=True, key="view_opt_results"):
+                    st.switch_page("pages/3_Results.py")
 
-                    if hasattr(result, 'solution') and result.solution:
-                        sol = result.solution
-                        col1, col2, col3, col4, col5 = st.columns(5)
+            elif result.is_infeasible():
+                st.error("❌ Problem is infeasible - no solution exists that satisfies all constraints")
 
-                        with col1:
-                            labor_cost = sol.get('total_labor_cost', 0)
-                            st.markdown(colored_metric("Labor", f"${labor_cost:,.0f}", "primary"), unsafe_allow_html=True)
+                # Show diagnostics
+                if result.infeasibility_message:
+                    st.warning("**Diagnostics:**")
+                    st.write(result.infeasibility_message)
 
-                        with col2:
-                            prod_cost = sol.get('total_production_cost', 0)
-                            st.markdown(colored_metric("Production", f"${prod_cost:,.0f}", "secondary"), unsafe_allow_html=True)
+                st.info("💡 Try enabling 'Allow Demand Shortages' to find a feasible solution")
 
-                        with col3:
-                            transport_cost = sol.get('total_transport_cost', 0)
-                            st.markdown(colored_metric("Transport", f"${transport_cost:,.0f}", "accent"), unsafe_allow_html=True)
+            else:
+                st.warning(f"⚠️ Solver returned unexpected status")
 
-                        with col4:
-                            inventory_cost = sol.get('total_inventory_cost', 0)
-                            st.markdown(colored_metric("Inventory", f"${inventory_cost:,.0f}", "success"), unsafe_allow_html=True)
+                with st.expander("🔍 Solver Diagnostics", expanded=True):
+                    st.write("**Termination Condition:**", result.termination_condition)
+                    st.write("**Solver Status:**", result.solver_status)
+                    st.write("**Success Flag:**", result.success)
+                    st.write("**Objective Value:**", result.objective_value)
 
-                        with col5:
-                            shortage_cost = sol.get('total_shortage_cost', 0)
-                            shortage_units = sol.get('total_shortage_units', 0)
-                            if shortage_units > 0:
-                                st.markdown(colored_metric("Shortage", f"${shortage_cost:,.0f}", "warning"), unsafe_allow_html=True)
-                                st.caption(f"{shortage_units:,.0f} units unmet")
-                            else:
-                                st.markdown(success_badge("100% Demand Satisfied"), unsafe_allow_html=True)
-
-                        # Production summary
-                        st.divider()
-                        col1, col2, col3, col4 = st.columns(4)
-                        with col1:
-                            total_production = sol.get('total_production_quantity', 0)
-                            st.markdown(colored_metric("Total Production", f"{total_production:,.0f} units", "primary"), unsafe_allow_html=True)
-                        with col2:
-                            num_batches = len(sol.get('production_batches', []))
-                            st.markdown(colored_metric("Production Batches", str(num_batches), "secondary"), unsafe_allow_html=True)
-                        with col3:
-                            num_shipments = sum(len(v) for v in sol.get('shipments_by_route_product_date', {}).values())
-                            st.markdown(colored_metric("Shipments", str(num_shipments), "accent"), unsafe_allow_html=True)
-                        with col4:
-                            # Changeover statistics (new with start tracking formulation)
-                            total_changeovers = sol.get('total_changeovers', 0)
-                            if total_changeovers > 0:
-                                st.markdown(colored_metric("Product Changeovers", str(total_changeovers), "warning"), unsafe_allow_html=True)
-                                changeover_cost = sol.get('total_changeover_cost', 0)
-                                if changeover_cost > 0:
-                                    st.caption(f"Cost: ${changeover_cost:,.0f}")
-                            else:
-                                st.markdown(colored_metric("Product Changeovers", "0", "success"), unsafe_allow_html=True)
-
-                    st.divider()
-                    st.info("✅ Optimization complete! View detailed results in the **Results** page.")
-
-                    if st.button("📈 View Results", type="primary", use_container_width=True, key="view_opt_results"):
-                        st.switch_page("pages/3_Results.py")
-
-                elif result.is_infeasible():
-                    st.error("❌ Problem is infeasible - no solution exists that satisfies all constraints")
-
-                    # Show diagnostics
                     if result.infeasibility_message:
-                        st.warning("**Diagnostics:**")
-                        st.write(result.infeasibility_message)
+                        st.warning(f"**Message:** {result.infeasibility_message}")
 
-                    st.info("💡 Try enabling 'Allow Demand Shortages' to find a feasible solution")
+                    # Check if this is actually optimal but flagged wrong
+                    from pyomo.opt import TerminationCondition
+                    if result.termination_condition == TerminationCondition.optimal:
+                        st.info("""
+                        **Termination condition is OPTIMAL** but success flag is False.
+                        This may be due to:
+                        1. Solution load failure
+                        2. Solver status != ok
+                        3. Objective value extraction issue
 
-                else:
-                    st.warning(f"⚠️ Solver returned unexpected status")
+                        Check if results are still stored in session state despite this warning.
+                        """)
 
-                    with st.expander("🔍 Solver Diagnostics", expanded=True):
-                        st.write("**Termination Condition:**", result.termination_condition)
-                        st.write("**Solver Status:**", result.solver_status)
-                        st.write("**Success Flag:**", result.success)
-                        st.write("**Objective Value:**", result.objective_value)
-
-                        if result.infeasibility_message:
-                            st.warning(f"**Message:** {result.infeasibility_message}")
-
-                        # Check if this is actually optimal but flagged wrong
-                        from pyomo.opt import TerminationCondition
-                        if result.termination_condition == TerminationCondition.optimal:
-                            st.info("""
-                            **Termination condition is OPTIMAL** but success flag is False.
-                            This may be due to:
-                            1. Solution load failure
-                            2. Solver status != ok
-                            3. Objective value extraction issue
-
-                            Check if results are still stored in session state despite this warning.
-                            """)
-
-                            # Try to view results anyway
-                            if st.button("🔍 Try Viewing Results Anyway", type="secondary"):
-                                st.switch_page("pages/3_Results.py")
+                        # Try to view results anyway
+                        if st.button("🔍 Try Viewing Results Anyway", type="secondary"):
+                            st.switch_page("pages/3_Results.py")
 
         except Exception as e:
             st.error(f"❌ Error during optimization: {e}")
