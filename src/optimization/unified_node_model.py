@@ -1699,6 +1699,25 @@ class UnifiedNodeModel(BaseOptimizationModel):
         solution['production_batches'] = production_batches
         solution['total_production_quantity'] = total_production_quantity
 
+        # Extract truck assignments
+        truck_assignments = []
+        if hasattr(model, 'truck_load'):
+            for truck_idx, dest, prod, delivery_date in model.truck_load:
+                try:
+                    load_qty = value(model.truck_load[truck_idx, dest, prod, delivery_date])
+                    if load_qty > 0.01:
+                        truck_assignments.append({
+                            'truck_index': truck_idx,
+                            'destination': dest,
+                            'product': prod,
+                            'delivery_date': delivery_date,
+                            'quantity': load_qty,
+                        })
+                except (ValueError, AttributeError, KeyError, RuntimeError):
+                    continue
+
+        solution['truck_assignments'] = truck_assignments
+
         # Extract batch_shipments (Shipment objects with production_date) for labeling report
         batch_shipments = []
         if self.use_batch_tracking and hasattr(model, 'shipment_cohort'):
@@ -2679,7 +2698,9 @@ class UnifiedNodeModel(BaseOptimizationModel):
         Binary linking strategy:
         1. production > 0 => product_produced = 1 (big-M constraint)
         2. product_start[i,t] >= product_produced[i,t] - product_produced[i,t-1] (start detection)
-        3. production_day <= sum(product_produced) (simplified linking)
+        3. production_day two-way binding:
+           - Upper: production_day <= sum(product_produced) (forces 0 when no products)
+           - Lower: production_day >= product_produced[i] for each i (forces 1 when any product)
         """
 
         if not hasattr(model, 'production_day'):
@@ -2765,14 +2786,16 @@ class UnifiedNodeModel(BaseOptimizationModel):
 
                     prev_date = date
 
-        # Constraint 3: Link production_day to product_produced (simplified)
+        # Constraint 3: Link production_day to product_produced (two-way binding)
         # production_day = 1 if any product runs, 0 otherwise
-        # Use: production_day <= sum(product_produced[i]) for all i
-        def production_day_linking_rule(model, node_id, date):
-            """Link production_day to any product being produced.
+        # Need BOTH upper and lower bounds to force correct value
 
-            If no products running: sum = 0, so production_day must be 0
-            If any products running: sum >= 1, so production_day can be 1
+        # Upper bound: production_day <= sum(product_produced)
+        # If no products: sum=0 → forces production_day=0
+        def production_day_upper_rule(model, node_id, date):
+            """Upper bound: production_day cannot exceed sum of products.
+
+            If sum=0 (no products), forces production_day=0.
             """
             return model.production_day[node_id, date] <= sum(
                 model.product_produced[node_id, prod, date]
@@ -2780,13 +2803,26 @@ class UnifiedNodeModel(BaseOptimizationModel):
                 if (node_id, prod, date) in model.product_produced
             )
 
-        model.production_day_linking_con = Constraint(
+        model.production_day_upper_con = Constraint(
             production_day_index,
-            rule=production_day_linking_rule,
-            doc="Production day indicator linked to any product running"
+            rule=production_day_upper_rule,
+            doc="Production day upper bound: can't exceed sum of products"
         )
 
-        constraint_count += len(model.start_detection_con) + len(production_day_index)
+        # Lower bound: production_day >= product_produced[i] for each product i
+        # If ANY product is 1, forces production_day >= 1 → production_day = 1
+        model.production_day_lower_con = ConstraintList()
+
+        for node_id in self.manufacturing_nodes:
+            for prod in model.products:
+                for date in model.dates:
+                    if (node_id, prod, date) in model.product_produced:
+                        # If this product is produced, production_day must be 1
+                        model.production_day_lower_con.add(
+                            model.production_day[node_id, date] >= model.product_produced[node_id, prod, date]
+                        )
+
+        constraint_count += len(model.start_detection_con) + len(production_day_index) + len(model.production_day_lower_con)
 
         # Print summary
         print(f"  Changeover tracking constraints added ({constraint_count:,} constraints)")
