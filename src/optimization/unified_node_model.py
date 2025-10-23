@@ -45,6 +45,7 @@ from pyomo.environ import (
     NonNegativeReals,
     NonNegativeIntegers,
     Binary,
+    Expression,
     value,
     quicksum,
 )
@@ -87,6 +88,7 @@ class UnifiedNodeModel(BaseOptimizationModel):
         forecast: Forecast,
         labor_calendar: LaborCalendar,
         cost_structure: CostStructure,
+        products: Dict[str, 'Product'],
         start_date: Date,
         end_date: Date,
         truck_schedules: Optional[List[UnifiedTruckSchedule]] = None,
@@ -109,6 +111,7 @@ class UnifiedNodeModel(BaseOptimizationModel):
             forecast: Demand forecast
             labor_calendar: Labor availability and costs
             cost_structure: Cost parameters
+            products: Dictionary mapping product_id to Product objects (with units_per_mix)
             start_date: Planning horizon start
             end_date: Planning horizon end (inclusive)
             truck_schedules: Optional list of truck schedules
@@ -139,6 +142,7 @@ class UnifiedNodeModel(BaseOptimizationModel):
         self.forecast = forecast
         self.labor_calendar = labor_calendar
         self.cost_structure = cost_structure
+        self.products_dict = products
         self.start_date = start_date
         self.end_date = end_date
         self.truck_schedules = truck_schedules or []
@@ -408,6 +412,57 @@ class UnifiedNodeModel(BaseOptimizationModel):
             # No trucks = no capacity limit on shipments
             return float('inf')
 
+    def _calculate_max_mixes(self, product_id: str) -> int:
+        """Calculate maximum number of mixes that can be produced per day for a product.
+
+        Uses maximum daily labor hours and production rate to determine the upper bound
+        on mix count for a given product based on its units_per_mix.
+
+        Args:
+            product_id: Product identifier
+
+        Returns:
+            Maximum number of mixes per day (integer)
+        """
+        # Maximum production hours per day (including overtime)
+        max_hours = 14.0  # 12 fixed + 2 overtime
+
+        # Get production rate from manufacturing node
+        if self.manufacturing_nodes:
+            node_id = next(iter(self.manufacturing_nodes))
+            node = self.nodes[node_id]
+            production_rate = node.capabilities.production_rate_per_hour or 1400.0
+        else:
+            production_rate = 1400.0  # Default production rate
+
+        # Get units per mix for this product
+        product = self.products_dict.get(product_id)
+        if not product:
+            raise ValueError(f"Product {product_id} not found in products dictionary")
+
+        units_per_mix = product.units_per_mix
+
+        # Calculate max mixes: ceiling(max_hours × production_rate / units_per_mix)
+        max_units = max_hours * production_rate
+        max_mixes = math.ceil(max_units / units_per_mix)
+
+        return max_mixes
+
+    def _mix_count_bounds(self, model, node_id, prod_id, date_val):
+        """Calculate bounds for mix_count variable.
+
+        Args:
+            model: Pyomo model
+            node_id: Node identifier
+            prod_id: Product identifier
+            date_val: Date value
+
+        Returns:
+            Tuple of (lower_bound, upper_bound)
+        """
+        max_mixes = self._calculate_max_mixes(prod_id)
+        return (0, max_mixes)
+
     def build_model(self) -> ConcreteModel:
         """Build Pyomo optimization model (skeleton only - constraints in Phase 5).
 
@@ -471,18 +526,41 @@ class UnifiedNodeModel(BaseOptimizationModel):
             print(f"  ⚠️  Initial inventory ({max_initial_inventory:,.0f} units) exceeds daily production ({max_daily_production:,.0f} units)")
             print(f"      Adjusting inventory bounds to accommodate existing stock")
 
-        # Production variables (only for manufacturing nodes)
+        # Mix-Based Production Variables (Task 4: Mix-Based Production)
+        # Production occurs in discrete mixes of fixed size (units_per_mix)
         production_index = [
             (node_id, prod, date)
             for node_id in self.manufacturing_nodes
             for prod in model.products
             for date in model.dates
         ]
-        model.production = Var(
+
+        # Pre-calculate max_mixes for each product and cache
+        self._max_mixes_cache = {}
+        for prod in model.products:
+            self._max_mixes_cache[prod] = self._calculate_max_mixes(prod)
+
+        # mix_count: Integer variable representing number of mixes produced
+        model.mix_count = Var(
             production_index,
-            within=NonNegativeReals,
-            bounds=(0, max_daily_production),  # Quick Win #1: Tightened bounds
-            doc="Production quantity at manufacturing nodes (bounded by daily capacity)"
+            within=NonNegativeIntegers,
+            bounds=self._mix_count_bounds,
+            doc="Number of mixes produced at manufacturing nodes (integer, bounded by max mixes per day)"
+        )
+
+        # production: Derived expression = mix_count × units_per_mix
+        def production_rule(m, node_id, prod, date):
+            """Calculate production quantity from mix count.
+
+            production[node, prod, date] = mix_count[node, prod, date] × units_per_mix[prod]
+            """
+            units_per_mix = self.products_dict[prod].units_per_mix
+            return m.mix_count[node_id, prod, date] * units_per_mix
+
+        model.production = Expression(
+            production_index,
+            rule=production_rule,
+            doc="Production quantity at manufacturing nodes (derived from mix_count × units_per_mix)"
         )
 
         # Inventory variables (cohort-based if batch tracking enabled)
@@ -2727,27 +2805,26 @@ class UnifiedNodeModel(BaseOptimizationModel):
 
         if not self.force_all_skus_daily:
             # Only create linking constraint when product_produced is a decision variable
-            # Calculate default Big-M once for all constraints
-            big_m_default = self.get_max_daily_production()
 
             def product_produced_linking_rule(model, node_id, prod, date):
-                """If product is produced (qty > 0), force product_produced = 1.
+                """If product is produced (mix_count > 0), force product_produced = 1.
 
-                Uses big-M formulation: production <= M * product_produced
-                If product_produced = 0, then production must be 0.
-                If production > 0, then product_produced must be 1.
+                Uses big-M formulation: mix_count <= max_mixes * product_produced
+                If product_produced = 0, then mix_count must be 0.
+                If mix_count > 0, then product_produced must be 1.
 
-                M can be customized per SKU-day via bigm_overrides parameter.
-                Smaller M values make it easier for solver to skip that SKU.
+                Using mix_count instead of production creates a tighter formulation
+                since max_mixes is typically much smaller than max_production.
+                Example: max_mixes = 48 vs max_production = 19,600 units
                 """
-                # Use override Big-M if specified, otherwise use default
-                big_m = self.bigm_overrides.get((node_id, prod, date), big_m_default)
-                return model.production[node_id, prod, date] <= big_m * model.product_produced[node_id, prod, date]
+                # Get max_mixes for this product (pre-calculated and cached)
+                max_mixes = self._max_mixes_cache[prod]
+                return model.mix_count[node_id, prod, date] <= max_mixes * model.product_produced[node_id, prod, date]
 
             model.product_produced_linking_con = Constraint(
                 product_produced_index,
                 rule=product_produced_linking_rule,
-                doc="Link production quantity to binary product indicator (variable-specific big-M)"
+                doc="Link mix_count to binary product indicator (tighter big-M using max_mixes)"
             )
             constraint_count += len(product_produced_index)
 
@@ -2827,10 +2904,9 @@ class UnifiedNodeModel(BaseOptimizationModel):
         # Print summary
         print(f"  Changeover tracking constraints added ({constraint_count:,} constraints)")
         if not self.force_all_skus_daily:
+            print(f"  Big-M: Using max_mixes per product (tighter than max_production)")
             if self.bigm_overrides:
-                print(f"  Big-M: default={big_m_default:,.0f} units/day, {len(self.bigm_overrides)} SKUs with custom values")
-            else:
-                print(f"  Big-M value for product_produced linking: {big_m_default:,.0f} units/day")
+                print(f"  Warning: bigm_overrides parameter is deprecated with mix-based production")
         else:
             print(f"  Big-M linking skipped (all SKUs fixed to produce daily)")
 
