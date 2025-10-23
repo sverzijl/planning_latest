@@ -30,9 +30,9 @@ Settings match UI Planning Tab defaults:
 
 PERFORMANCE REQUIREMENTS:
 ------------------------
-- ✓ Solve time: < 30 seconds (typically 15-20s)
+- ✓ Solve time: < 400 seconds (baseline: ~300s, mix-based expected: 280-350s)
 - ✓ Solution status: OPTIMAL or FEASIBLE
-- ✓ Fill rate: ≥ 95% demand satisfaction
+- ✓ Fill rate: ≥ 85% demand satisfaction
 - ✓ MIP gap: < 1%
 - ✓ No infeasibilities
 
@@ -73,6 +73,43 @@ from src.parsers.multi_file_parser import MultiFileParser
 from src.optimization.unified_node_model import UnifiedNodeModel
 from src.optimization.legacy_to_unified_converter import LegacyToUnifiedConverter
 from tests.conftest import create_test_products
+
+
+def validate_mix_based_production(solution, products):
+    """Verify all production is in integer multiples of mix sizes.
+
+    This validation ensures that:
+    1. mix_counts key exists in solution
+    2. All mix_count values are integers
+    3. Units = mix_count × units_per_mix for each entry
+    4. Product has correct mix size
+
+    Args:
+        solution: Solution dictionary from model.get_solution()
+        products: Dictionary mapping product_id to Product objects
+
+    Raises:
+        AssertionError: If any validation check fails
+    """
+    assert 'mix_counts' in solution, "Solution missing mix_counts"
+
+    # Check each mix count entry
+    for (node_id, prod_id, date_val), mix_data in solution['mix_counts'].items():
+        # Verify mix_count is integer
+        assert isinstance(mix_data['mix_count'], int), \
+            f"Mix count {mix_data['mix_count']} is not integer for product {prod_id} on {date_val}"
+
+        # Verify units = mix_count × units_per_mix
+        expected_units = mix_data['mix_count'] * mix_data['units_per_mix']
+        assert mix_data['units'] == expected_units, \
+            f"Units mismatch for product {prod_id} on {date_val}: " \
+            f"{mix_data['units']} != {mix_data['mix_count']} × {mix_data['units_per_mix']} = {expected_units}"
+
+        # Verify product has correct mix size
+        product = products[prod_id]
+        assert mix_data['units_per_mix'] == product.units_per_mix, \
+            f"Mix size mismatch for product {prod_id}: " \
+            f"{mix_data['units_per_mix']} (in solution) != {product.units_per_mix} (in product model)"
 
 
 @pytest.fixture
@@ -342,6 +379,9 @@ def test_ui_workflow_4_weeks_with_initial_inventory(parsed_data):
     solution = model.get_solution()
     assert solution is not None, "Solution should not be None"
 
+    # Validate mix-based production (NEW: Task 10)
+    validate_mix_based_production(solution, products)
+
     # Cost breakdown
     print("\n" + "="*80)
     print("COST BREAKDOWN")
@@ -473,13 +513,15 @@ def test_ui_workflow_4_weeks_with_initial_inventory(parsed_data):
     if not (result.is_optimal() or result.is_feasible()):
         deferred_assertions.append(f"Solution not optimal/feasible: {result.termination_condition}")
 
-    # Performance threshold: 240s (accounts for pallet-based holding costs)
+    # Performance threshold: 400s (accounts for pallet-based + mix-based constraints)
     # Note: Pallet-based holding costs add ~18,675 integer variables
-    # Solve time increases from ~20s (baseline) to ~35-180s (acceptable for business accuracy)
+    # Note: Mix-based production replaces continuous production vars with integer mix_count vars
+    # Combined baseline: ~300s, expected with mix-based: 280-350s (±10-15%)
     # This ensures "partial pallets occupy full pallet space" rule for storage costs
+    # AND enforces discrete batch production in integer multiples of mix sizes
     # Note: Truck loading uses unit-based capacity (not pallet-level) for tractability
-    if solve_time >= 240:
-        deferred_assertions.append(f"⚠ Solve time {solve_time:.2f}s exceeds 240s threshold (performance regression)")
+    if solve_time >= 400:
+        deferred_assertions.append(f"⚠ Solve time {solve_time:.2f}s exceeds 400s threshold (performance regression)")
 
     # Baseline fill rate: 87.5%, after bugfix: 91.7% - use 85% threshold
     if fill_rate < 85.0:

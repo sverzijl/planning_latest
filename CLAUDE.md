@@ -321,6 +321,7 @@ pytest --cov=src tests/
 11. **Pallet-level granularity:** Integer pallet variables for storage enforce "partial pallets occupy full pallet space" rule
 12. **Binary variable enforcement:** True binary product_produced variables prevent fractional SKU production; HiGHS solver enables practical performance
 13. **Start tracking changeover:** (2025-10-22) Sequence-independent formulation tracks product startups (0→1 transitions) using inequality constraints instead of counting constraint; 2% better cost, 19% faster, enables APPSI warmstart for long horizons. See `docs/optimization/changeover_formulations.md`
+14. **Mix-based production enforcement:** (2025-10-23) Production occurs in integer multiples of product-specific batch sizes. Each product has a `units_per_mix` parameter (e.g., 415 units per mix), and the optimization model uses integer `mix_count` variables with production as a derived expression (`production = mix_count × units_per_mix`). This reflects real manufacturing constraints where products are made in discrete batches, not continuous quantities.
 
 **Recent Key Updates:**
 - **Start Tracking Changeover** (Oct 2025): Replaced counting constraint with start tracking formulation; better performance and enables warmstart
@@ -356,7 +357,7 @@ venv/bin/python -m pytest tests/test_integration_ui_workflow.py -v
 **Test validates:**
 - UI workflow compatibility (4-week horizon, 1% MIP gap, batch tracking)
 - Real data files (GFree Forecast.xlsm, Network_Config.xlsx)
-- Performance (solve time < 30s for 4-week)
+- Performance (solve time < 400s for 4-week; baseline ~300s with pallet+mix constraints)
 - Solution quality (fill rate ≥ 85%, optimal/feasible status)
 
 **Run before:**

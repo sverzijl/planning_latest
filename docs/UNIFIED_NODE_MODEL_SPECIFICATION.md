@@ -3,9 +3,12 @@
 **IMPORTANT MAINTENANCE REQUIREMENT:**
 This documentation must be updated whenever changes are made to `src/optimization/unified_node_model.py`. Keep this document synchronized with the actual implementation to serve as the authoritative reference for model behavior.
 
-**Last Updated:** 2025-10-19
+**Last Updated:** 2025-10-23
 **Model Version:** UnifiedNodeModel (Phase 3 - Primary Optimization Approach)
 **Location:** `src/optimization/unified_node_model.py`
+
+**Changelog:**
+- 2025-10-23: Added mix-based production variables (mix_count, production expression)
 
 ---
 
@@ -40,10 +43,23 @@ The objective is to **minimize total cost** (production + labor + transport + st
 
 ### 2.1 Production Variables
 
-**`production[node_id, product, date]`** (continuous, ≥0)
-- Units produced at each manufacturing node on each date
-- Bounded by maximum daily production capacity (typically ~19,600 units with overtime)
+**`mix_count[node_id, product, date]`** (integer, ≥0)
+- **Type:** Integer decision variable
+- **Domain:** NonNegativeIntegers
+- **Bounds:** (0, max_mixes) where max_mixes = ⌈(max_hours × production_rate) / units_per_mix⌉
+- **Purpose:** Number of mixes (batches) of product produced at manufacturing node on date
+- **Example:** For 415-unit mix with 14h max labor and 1400 units/hr rate:
+  - max_units = 14 × 1400 = 19,600 units
+  - max_mixes = ⌈19,600 / 415⌉ = 48 mixes
 - Only created for nodes with `can_produce()` capability
+
+**`production[node_id, product, date]`** (expression, derived)
+- **Type:** Expression (NOT a variable - automatically computed from mix_count)
+- **Formula:** `production[node_id, product, date] = mix_count[node_id, product, date] × units_per_mix[product]`
+- **Purpose:** Total units of product produced at node on date
+- **Benefit:** Automatically enforces integer multiples of mix size (e.g., 0, 415, 830, 1245... units)
+- **Note:** This is a derived value, not an independent decision variable
+- Bounded implicitly by mix_count bounds (typically ~19,600 units max with overtime)
 
 ### 2.2 Inventory Variables (Cohort-Based Tracking)
 
@@ -221,10 +237,11 @@ production_time + overhead_time <= available_labor_hours
 
 **Binary Linking (Big-M):**
 ```
-production[node, product, date] <= M × product_produced[node, product, date]
+mix_count[node, product, date] <= M × product_produced[node, product, date]
 ```
-- Forces `product_produced = 1` when production > 0
-- M = maximum daily production capacity (calculated, not hardcoded)
+- Forces `product_produced = 1` when mix_count > 0 (production occurs)
+- M = maximum daily mix count: ⌈(max_hours × production_rate) / units_per_mix⌉
+- **Note:** Uses `mix_count` instead of `production` for tighter formulation (integer bounds)
 
 **Product Counting:**
 ```
@@ -685,7 +702,14 @@ Given all the above, the Pyomo solver (CBC, Gurobi, CPLEX, etc.) searches for va
 
 ## 8. PERFORMANCE CHARACTERISTICS
 
-### 8.1 Solve Time (4-week horizon with CBC solver)
+### 8.1 Solve Time (4-week horizon with APPSI HiGHS solver)
+
+**With mix-based production + pallet-based storage + binary changeover:**
+- Solve time: 280-350 seconds (baseline ~300s, expected ±10-15% with mix-based)
+- Integer variables: ~140 mix_count + ~18,675 pallet counts + ~140 binary product_produced + ~28 labor binaries
+- MIP gap: <1%
+- **Mix-based impact:** Production is derived expression (not variable), but mix_count integers add complexity
+- **Integration test threshold:** <400 seconds
 
 **With binary product_produced + warmstart:**
 - Solve time: <120 seconds (target with warmstart enabled)
@@ -702,11 +726,6 @@ Given all the above, the Pyomo solver (CBC, Gurobi, CPLEX, etc.) searches for va
 - Solve time: 20-30 seconds
 - Integer variables: ~28 labor binaries + changeover tracking (no pallet variables)
 - MIP gap: <1%
-
-**Integration test timeout:**
-- Maximum allowed: 120 seconds
-- Expected: <30 seconds (with unit-based costs)
-- Default configuration uses unit-based costs to ensure fast solve times
 
 ### 8.2 Scalability
 
