@@ -1,0 +1,332 @@
+/home/sverzijl/planning_latest/src/parsers/inventory_parser.py:167: UserWarning: Found 8 negative quantity values. These were set to 0.
+  warnings.warn(
+/home/sverzijl/planning_latest/src/parsers/inventory_parser.py:173: UserWarning: Skipped 39 entries with Storage Location 5000 (excluded from inventory).
+  warnings.warn(
+/home/sverzijl/planning_latest/src/optimization/unified_node_model.py:292: UserWarning: Zero cost parameters detected: All route transport costs are 0, ambient storage costs are 0. This may cause solver to leave some variables uninitialized (valid behavior). Consider using small non-zero costs (e.g., 0.0001) if you encounter solution extraction issues.
+  warnings.warn(warning_msg, UserWarning)
+========================================================================================================================
+MIX-BASED PRODUCTION PERFORMANCE BENCHMARKS
+========================================================================================================================
+
+Date: 2025-10-23
+Solver: APPSI HiGHS
+MIP Gap: 1%
+Time Limit: 600s (10 minutes)
+Batch Tracking: Enabled
+Pallet-Based Costs: Disabled
+
+================================================================================
+BENCHMARK: 1-week planning horizon
+================================================================================
+
+Loading data files:
+  Network:   Network_Config.xlsx
+  Forecast:  Gluten Free Forecast - Latest.xlsm
+  Inventory: inventory_latest.XLSX
+
+Data loaded in 2.36s
+  Products: 5
+  Nodes: 11
+  Routes: 10
+  Labor days: 585
+  Truck schedules: 11
+  Forecast records: 20295
+  Inventory snapshot: Yes
+
+Planning horizon: 2025-01-06 to 2025-01-12 (1 weeks)
+
+Creating optimization model...
+
+📦 Preprocessed initial inventory: 34 items, prod_date=2025-10-22 (one day before snapshot)
+
+Unified Model Data Summary:
+  Nodes: 11
+    Manufacturing: 1
+    Demand: 9
+    With truck constraints: 1
+  Routes: 10
+  Truck schedules: 11
+  Planning horizon: 2025-01-06 to 2025-01-12 (7 days)
+  Products: 5
+  Demand entries: 0
+
+Model created in 0.04s
+
+Solving with APPSI HiGHS (1% MIP gap, 600s time limit)...
+
+Building Unified Node Model...
+  Sets defined: 11 nodes, 5 products, 7 dates, 10 routes
+  Production dates for cohorts: 7 in horizon + 1 from initial inventory
+  Cohort indices: 1,540 cohorts
+  Shipment cohorts by origin node:
+    6104: 210
+    6122: 390
+    6125: 315
+  Shipment cohort indices: 915
+  Demand cohort indices: 0
+  Changeover tracking: 7 production days, 35 product indicators (VARIABLE (binary decision))
+  Start tracking: 35 start indicators (binary)
+  Labor cost variables: 7 labor hour variables added
+  Variables created successfully
+  Adding core constraints...
+  Changeover tracking constraints added (112 constraints)
+  Big-M: Using max_mixes per product (tighter than max_production)
+  Labor cost constraints added (7 node-date pairs, 63 constraints)
+  Adding storage shipment delay constraint for 3 nodes: ['6104', '6125', 'Lineage']
+    Added 12 storage delay constraints
+  Hybrid pallet formulation (MIP optimization):
+    Small cohorts (integer 0-10): 140
+    Domain reduced: 62 → 10 (84% reduction)
+  Pallet tracking enabled for states: ['frozen']
+    - Pallet integer variables: 140
+    - Domain per variable: 0-10 (vs 0-62 full formulation)
+    - Unit-tracked states: ['ambient', 'thawed']
+  Holding cost enabled: 1,540 total cohorts (513 pallet-tracked)
+
+  Staleness penalty enabled: $5.0000 per unit per age ratio
+  Staleness penalty calculation: 0 demand cohorts
+  Formula: (age_days / 17) × $5.0000 × demand_satisfied
+  Changeover cost enabled: $38.40 per start
+  Core constraints added
+  Truck constraints added (generalized for any node)
+  Model complete and ready to solve
+/home/sverzijl/planning_latest/src/parsers/inventory_parser.py:167: UserWarning: Found 8 negative quantity values. These were set to 0.
+  warnings.warn(
+/home/sverzijl/planning_latest/src/parsers/inventory_parser.py:173: UserWarning: Skipped 39 entries with Storage Location 5000 (excluded from inventory).
+  warnings.warn(
+/home/sverzijl/planning_latest/src/optimization/unified_node_model.py:292: UserWarning: Zero cost parameters detected: All route transport costs are 0, ambient storage costs are 0. This may cause solver to leave some variables uninitialized (valid behavior). Consider using small non-zero costs (e.g., 0.0001) if you encounter solution extraction issues.
+  warnings.warn(warning_msg, UserWarning)
+
+Solve completed in 0.50s
+  Success: True
+  Feasible: True
+  Optimal: False
+  Variables: 3239 (2903 cont, 175 int, 161 bin)
+  Constraints: 2136
+
+Solution quality:
+  Total cost: $0.00
+  Total production: 0 units
+  Total mixes: 0.0
+  Total changeovers: 0
+
+================================================================================
+BENCHMARK: 2-week planning horizon
+================================================================================
+
+Loading data files:
+  Network:   Network_Config.xlsx
+  Forecast:  Gluten Free Forecast - Latest.xlsm
+  Inventory: inventory_latest.XLSX
+
+Data loaded in 1.85s
+  Products: 5
+  Nodes: 11
+  Routes: 10
+  Labor days: 585
+  Truck schedules: 11
+  Forecast records: 20295
+  Inventory snapshot: Yes
+
+Planning horizon: 2025-01-06 to 2025-01-19 (2 weeks)
+
+Creating optimization model...
+
+📦 Preprocessed initial inventory: 34 items, prod_date=2025-10-22 (one day before snapshot)
+
+Unified Model Data Summary:
+  Nodes: 11
+    Manufacturing: 1
+    Demand: 9
+    With truck constraints: 1
+  Routes: 10
+  Truck schedules: 11
+  Planning horizon: 2025-01-06 to 2025-01-19 (14 days)
+  Products: 5
+  Demand entries: 0
+
+Model created in 0.02s
+
+Solving with APPSI HiGHS (1% MIP gap, 600s time limit)...
+
+Building Unified Node Model...
+  Sets defined: 11 nodes, 5 products, 14 dates, 10 routes
+  Production dates for cohorts: 14 in horizon + 1 from initial inventory
+  Cohort indices: 5,775 cohorts
+  Shipment cohorts by origin node:
+    6104: 910
+    6122: 1755
+    6125: 1365
+    Lineage: 140
+  Shipment cohort indices: 4,170
+  Demand cohort indices: 0
+  Changeover tracking: 14 production days, 70 product indicators (VARIABLE (binary decision))
+  Start tracking: 70 start indicators (binary)
+  Labor cost variables: 14 labor hour variables added
+  Variables created successfully
+  Adding core constraints...
+  Changeover tracking constraints added (224 constraints)
+  Big-M: Using max_mixes per product (tighter than max_production)
+  Labor cost constraints added (14 node-date pairs, 126 constraints)
+  Adding storage shipment delay constraint for 3 nodes: ['6104', '6125', 'Lineage']
+    Added 33 storage delay constraints
+  Hybrid pallet formulation (MIP optimization):
+    Small cohorts (integer 0-10): 525
+    Domain reduced: 62 → 10 (84% reduction)
+  Pallet tracking enabled for states: ['frozen']
+    - Pallet integer variables: 525
+    - Domain per variable: 0-10 (vs 0-62 full formulation)
+    - Unit-tracked states: ['ambient', 'thawed']
+  Holding cost enabled: 5,775 total cohorts (1,925 pallet-tracked)
+
+  Staleness penalty enabled: $5.0000 per unit per age ratio
+  Staleness penalty calculation: 0 demand cohorts
+  Formula: (age_days / 17) × $5.0000 × demand_satisfied
+  Changeover cost enabled: $38.40 per start
+  Core constraints added
+  Truck constraints added (generalized for any node)
+  Model complete and ready to solve
+/home/sverzijl/planning_latest/src/parsers/inventory_parser.py:167: UserWarning: Found 8 negative quantity values. These were set to 0.
+  warnings.warn(
+/home/sverzijl/planning_latest/src/parsers/inventory_parser.py:173: UserWarning: Skipped 39 entries with Storage Location 5000 (excluded from inventory).
+  warnings.warn(
+/home/sverzijl/planning_latest/src/optimization/unified_node_model.py:292: UserWarning: Zero cost parameters detected: All route transport costs are 0, ambient storage costs are 0. This may cause solver to leave some variables uninitialized (valid behavior). Consider using small non-zero costs (e.g., 0.0001) if you encounter solution extraction issues.
+  warnings.warn(warning_msg, UserWarning)
+
+Solve completed in 1.17s
+  Success: True
+  Feasible: True
+  Optimal: False
+  Variables: 11758 (10841 cont, 595 int, 322 bin)
+  Constraints: 7221
+
+Solution quality:
+  Total cost: $0.00
+  Total production: 0 units
+  Total mixes: 0.0
+  Total changeovers: 0
+
+================================================================================
+BENCHMARK: 4-week planning horizon
+================================================================================
+
+Loading data files:
+  Network:   Network_Config.xlsx
+  Forecast:  Gluten Free Forecast - Latest.xlsm
+  Inventory: inventory_latest.XLSX
+
+Data loaded in 1.89s
+  Products: 5
+  Nodes: 11
+  Routes: 10
+  Labor days: 585
+  Truck schedules: 11
+  Forecast records: 20295
+  Inventory snapshot: Yes
+
+Planning horizon: 2025-01-06 to 2025-02-02 (4 weeks)
+
+Creating optimization model...
+
+📦 Preprocessed initial inventory: 34 items, prod_date=2025-10-22 (one day before snapshot)
+
+Unified Model Data Summary:
+  Nodes: 11
+    Manufacturing: 1
+    Demand: 9
+    With truck constraints: 1
+  Routes: 10
+  Truck schedules: 11
+  Planning horizon: 2025-01-06 to 2025-02-02 (28 days)
+  Products: 5
+  Demand entries: 0
+
+Model created in 0.02s
+
+Solving with APPSI HiGHS (1% MIP gap, 600s time limit)...
+
+Building Unified Node Model...
+  Sets defined: 11 nodes, 5 products, 28 dates, 10 routes
+  Production dates for cohorts: 28 in horizon + 1 from initial inventory
+  Cohort indices: 17,780 cohorts
+  Shipment cohorts by origin node:
+    6104: 3780
+    6122: 7425
+    6125: 5670
+    Lineage: 1155
+  Shipment cohort indices: 18,030
+  Demand cohort indices: 0
+  Changeover tracking: 28 production days, 140 product indicators (VARIABLE (binary decision))
+  Start tracking: 140 start indicators (binary)
+  Labor cost variables: 28 labor hour variables added
+  Variables created successfully
+  Adding core constraints...
+  Changeover tracking constraints added (448 constraints)
+  Big-M: Using max_mixes per product (tighter than max_production)
+  Labor cost constraints added (28 node-date pairs, 252 constraints)
+  Adding storage shipment delay constraint for 3 nodes: ['6104', '6125', 'Lineage']
+    Added 75 storage delay constraints
+  Hybrid pallet formulation (MIP optimization):
+    Small cohorts (integer 0-10): 2,030
+    Domain reduced: 62 → 10 (84% reduction)
+  Pallet tracking enabled for states: ['frozen']
+    - Pallet integer variables: 2,030
+    - Domain per variable: 0-10 (vs 0-62 full formulation)
+    - Unit-tracked states: ['ambient', 'thawed']
+  Holding cost enabled: 17,780 total cohorts (5,926 pallet-tracked)
+
+  Staleness penalty enabled: $5.0000 per unit per age ratio
+  Staleness penalty calculation: 0 demand cohorts
+  Formula: (age_days / 17) × $5.0000 × demand_satisfied
+  Changeover cost enabled: $38.40 per start
+  Core constraints added
+  Truck constraints added (generalized for any node)
+  Model complete and ready to solve
+
+Solve completed in 5.07s
+  Success: True
+  Feasible: True
+  Optimal: False
+  Variables: 40416 (37602 cont, 2170 int, 644 bin)
+  Constraints: 21661
+
+Solution quality:
+  Total cost: $0.00
+  Total production: 0 units
+  Total mixes: 0.0
+  Total changeovers: 0
+
+========================================================================================================================
+BENCHMARK RESULTS SUMMARY
+========================================================================================================================
+
+Horizon        Load   Create    Solve    Total     Vars     Cont     Int     Bin   Constr Status         MIP Gap         Cost
+------------------------------------------------------------------------------------------------------------------------
+1-week        2.4s     0.0s     0.5s     2.9s    3,239    2,903     175     161    2,136 FEASIBLE           N/A           $0
+2-week        1.9s     0.0s     1.2s     3.0s   11,758   10,841     595     322    7,221 FEASIBLE           N/A           $0
+4-week        1.9s     0.0s     5.1s     7.0s   40,416   37,602   2,170     644   21,661 FEASIBLE           N/A           $0
+
+========================================================================================================================
+
+SOLUTION QUALITY
+========================================================================================================================
+
+Horizon         Production        Mixes  Changeovers
+--------------------------------------------------
+1-week                  0          0.0            0
+2-week                  0          0.0            0
+4-week                  0          0.0            0
+
+========================================================================================================================
+
+PERFORMANCE VS TARGETS
+========================================================================================================================
+
+Horizon      Solve Time       Target       Status
+--------------------------------------------------
+1-week            0.5s         100s       PASS ✓
+2-week            1.2s         200s       PASS ✓
+4-week            5.1s         400s       PASS ✓
+
+
+✅ All benchmarks passed performance targets!
