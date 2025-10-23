@@ -22,6 +22,7 @@ from ..models import (
     LaborCalendar,
     LaborDay,
     CostStructure,
+    Product,
 )
 from .product_alias_resolver import ProductAliasResolver
 
@@ -446,6 +447,123 @@ class ExcelParser:
             # Changeover cost (2025-10-22)
             changeover_cost_per_start=cost_dict.get("changeover_cost_per_start", 0.0),
         )
+
+    def parse_products(self, sheet_name: str = "Products") -> dict[str, Product]:
+        """
+        Parse product definitions from Excel sheet.
+
+        Args:
+            sheet_name: Name of the sheet containing product data (default: "Products")
+
+        Returns:
+            Dictionary mapping product_id to Product object
+
+        Raises:
+            ValueError: If sheet is missing or malformed
+            ValueError: If units_per_mix column is missing (required as of 2025-10-23)
+        """
+        try:
+            df = pd.read_excel(
+                self.file_path,
+                sheet_name=sheet_name,
+                engine="openpyxl"
+            )
+        except ValueError as e:
+            if "Worksheet" in str(e) and "does not exist" in str(e):
+                raise ValueError(
+                    f"\n{'='*70}\n"
+                    f"MISSING PRODUCTS SHEET\n"
+                    f"{'='*70}\n"
+                    f"\n"
+                    f"The Excel file '{self.file_path.name}' does not contain a '{sheet_name}' sheet.\n"
+                    f"\n"
+                    f"REQUIRED ACTION:\n"
+                    f"  1. Open your Excel file: {self.file_path}\n"
+                    f"  2. Create a new sheet named '{sheet_name}'\n"
+                    f"  3. Add the following columns:\n"
+                    f"     - product_id (string, required)\n"
+                    f"     - name (string, required)\n"
+                    f"     - sku (string, required)\n"
+                    f"     - shelf_life_ambient_days (float, default: 17)\n"
+                    f"     - shelf_life_frozen_days (float, default: 120)\n"
+                    f"     - shelf_life_after_thaw_days (float, default: 14)\n"
+                    f"     - min_acceptable_shelf_life_days (float, default: 7)\n"
+                    f"     - units_per_mix (integer, required, must be > 0)\n"
+                    f"\n"
+                    f"EXAMPLE:\n"
+                    f"  product_id | name      | sku   | ... | units_per_mix\n"
+                    f"  -----------|-----------|-------|-----|---------------\n"
+                    f"  G144       | Product A | G144  | ... | 415\n"
+                    f"  G145       | Product B | G145  | ... | 387\n"
+                    f"\n"
+                    f"DOCUMENTATION:\n"
+                    f"  - See: data/examples/EXCEL_TEMPLATE_SPEC.md\n"
+                    f"  - Example: data/examples/Network_Config.xlsx\n"
+                    f"\n"
+                    f"{'='*70}\n"
+                ) from e
+            raise
+
+        # Validate required columns
+        required_cols = {"product_id", "name", "sku", "units_per_mix"}
+        if not required_cols.issubset(df.columns):
+            missing = required_cols - set(df.columns)
+
+            # Special error for units_per_mix (new required field)
+            if "units_per_mix" in missing:
+                raise ValueError(
+                    f"\n{'='*70}\n"
+                    f"MISSING REQUIRED COLUMN: units_per_mix\n"
+                    f"{'='*70}\n"
+                    f"\n"
+                    f"The Products sheet in '{self.file_path.name}' is missing the\n"
+                    f"'units_per_mix' column, which is required as of 2025-10-23.\n"
+                    f"\n"
+                    f"REQUIRED ACTION:\n"
+                    f"  1. Open your Excel file: {self.file_path}\n"
+                    f"  2. Go to the '{sheet_name}' sheet\n"
+                    f"  3. Add a new column named 'units_per_mix'\n"
+                    f"  4. Fill in the number of units produced per mix for each product\n"
+                    f"     (e.g., 415, 387, 520)\n"
+                    f"\n"
+                    f"EXPLANATION:\n"
+                    f"  - units_per_mix defines how many units are produced in one batch\n"
+                    f"  - Production must be in integer multiples of this value\n"
+                    f"  - Example: If units_per_mix = 415, you can produce 0, 415, 830, 1245... units\n"
+                    f"  - This enforces discrete batch production (mix-based planning)\n"
+                    f"\n"
+                    f"EXAMPLE:\n"
+                    f"  product_id | name      | units_per_mix\n"
+                    f"  -----------|-----------|--------------\n"
+                    f"  G144       | Product A | 415\n"
+                    f"  G145       | Product B | 387\n"
+                    f"\n"
+                    f"DOCUMENTATION:\n"
+                    f"  - Design doc: docs/plans/2025-10-23-mix-based-production-design.md\n"
+                    f"  - Template spec: data/examples/EXCEL_TEMPLATE_SPEC.md\n"
+                    f"\n"
+                    f"{'='*70}\n"
+                )
+
+            # Generic error for other missing columns
+            raise ValueError(f"Missing required columns in Products sheet: {missing}")
+
+        # Parse products
+        products = {}
+        for _, row in df.iterrows():
+            product = Product(
+                id=str(row["product_id"]),
+                name=str(row["name"]),
+                sku=str(row["sku"]),
+                ambient_shelf_life_days=float(row.get("shelf_life_ambient_days", 17.0)) if pd.notna(row.get("shelf_life_ambient_days")) else 17.0,
+                frozen_shelf_life_days=float(row.get("shelf_life_frozen_days", 120.0)) if pd.notna(row.get("shelf_life_frozen_days")) else 120.0,
+                thawed_shelf_life_days=float(row.get("shelf_life_after_thaw_days", 14.0)) if pd.notna(row.get("shelf_life_after_thaw_days")) else 14.0,
+                min_acceptable_shelf_life_days=float(row.get("min_acceptable_shelf_life_days", 7.0)) if pd.notna(row.get("min_acceptable_shelf_life_days")) else 7.0,
+                units_per_mix=int(row["units_per_mix"]),
+            )
+            products[product.id] = product
+
+        return products
 
     def parse_all(
         self,

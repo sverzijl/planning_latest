@@ -79,6 +79,7 @@ def gf_bread_product():
         id="P1",
         name="Gluten-Free Bread",
         sku="GFB-001",
+        units_per_mix=415,  # Standard mix size for testing
     )
 
 

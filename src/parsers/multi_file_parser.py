@@ -14,6 +14,7 @@ from ..models import (
     LaborCalendar,
     TruckSchedule,
     CostStructure,
+    Product,
 )
 from ..models.inventory import InventorySnapshot
 
@@ -213,6 +214,25 @@ class MultiFileParser:
         if self._network_parser is None:
             raise ValueError("Cannot parse cost structure: no network_file provided")
         return self._network_parser.parse_cost_structure(sheet_name)
+
+    def parse_products(self, sheet_name: str = "Products") -> dict[str, Product]:
+        """
+        Parse product definitions from network file.
+
+        Args:
+            sheet_name: Name of products sheet (default: "Products")
+
+        Returns:
+            Dictionary mapping product_id to Product object
+
+        Raises:
+            ValueError: If network_file was not provided
+            ValueError: If sheet is missing or malformed
+            ValueError: If units_per_mix column is missing (required as of 2025-10-23)
+        """
+        if self._network_parser is None:
+            raise ValueError("Cannot parse products: no network_file provided")
+        return self._network_parser.parse_products(sheet_name)
 
     def parse_all(
         self,

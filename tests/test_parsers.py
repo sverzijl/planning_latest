@@ -324,3 +324,188 @@ class TestExcelParserRealFiles:
 
         except Exception as e:
             pytest.fail(f"Failed to parse state-specific costs from Network_Config.xlsx: {e}")
+
+
+class TestExcelParserProducts:
+    """Tests for parsing Products sheet with units_per_mix."""
+
+    def test_parse_products_with_all_columns(self, tmp_path):
+        """Test parsing products with all columns including units_per_mix."""
+        test_file = tmp_path / "test_products.xlsx"
+
+        products_df = pd.DataFrame([
+            {
+                'product_id': 'G144',
+                'name': 'Product A',
+                'sku': 'G144',
+                'shelf_life_ambient_days': 17,
+                'shelf_life_frozen_days': 120,
+                'shelf_life_after_thaw_days': 14,
+                'min_acceptable_shelf_life_days': 7,
+                'units_per_mix': 415
+            },
+            {
+                'product_id': 'G145',
+                'name': 'Product B',
+                'sku': 'G145',
+                'shelf_life_ambient_days': 17,
+                'shelf_life_frozen_days': 120,
+                'shelf_life_after_thaw_days': 14,
+                'min_acceptable_shelf_life_days': 7,
+                'units_per_mix': 387
+            },
+        ])
+
+        with pd.ExcelWriter(test_file, engine='openpyxl') as writer:
+            products_df.to_excel(writer, sheet_name='Products', index=False)
+
+        parser = ExcelParser(test_file)
+        products = parser.parse_products()
+
+        # Verify parsing
+        assert len(products) == 2
+        assert 'G144' in products
+        assert 'G145' in products
+
+        # Verify Product A
+        prod_a = products['G144']
+        assert prod_a.id == 'G144'
+        assert prod_a.name == 'Product A'
+        assert prod_a.sku == 'G144'
+        assert prod_a.ambient_shelf_life_days == 17
+        assert prod_a.frozen_shelf_life_days == 120
+        assert prod_a.thawed_shelf_life_days == 14
+        assert prod_a.min_acceptable_shelf_life_days == 7
+        assert prod_a.units_per_mix == 415
+
+        # Verify Product B
+        prod_b = products['G145']
+        assert prod_b.units_per_mix == 387
+
+    def test_parse_products_with_minimal_columns(self, tmp_path):
+        """Test parsing products with only required columns and defaults for optional."""
+        test_file = tmp_path / "test_products.xlsx"
+
+        products_df = pd.DataFrame([
+            {
+                'product_id': 'P1',
+                'name': 'Minimal Product',
+                'sku': 'P001',
+                'units_per_mix': 500
+            }
+        ])
+
+        with pd.ExcelWriter(test_file, engine='openpyxl') as writer:
+            products_df.to_excel(writer, sheet_name='Products', index=False)
+
+        parser = ExcelParser(test_file)
+        products = parser.parse_products()
+
+        # Verify parsing with defaults
+        assert len(products) == 1
+        prod = products['P1']
+        assert prod.id == 'P1'
+        assert prod.name == 'Minimal Product'
+        assert prod.sku == 'P001'
+        assert prod.units_per_mix == 500
+        # Check defaults
+        assert prod.ambient_shelf_life_days == 17.0
+        assert prod.frozen_shelf_life_days == 120.0
+        assert prod.thawed_shelf_life_days == 14.0
+        assert prod.min_acceptable_shelf_life_days == 7.0
+
+    def test_parse_products_missing_units_per_mix_column(self, tmp_path):
+        """Test that parser raises clear error when units_per_mix column is missing."""
+        test_file = tmp_path / "test_products.xlsx"
+
+        # Create Products sheet WITHOUT units_per_mix
+        products_df = pd.DataFrame([
+            {
+                'product_id': 'G144',
+                'name': 'Product A',
+                'sku': 'G144',
+            }
+        ])
+
+        with pd.ExcelWriter(test_file, engine='openpyxl') as writer:
+            products_df.to_excel(writer, sheet_name='Products', index=False)
+
+        parser = ExcelParser(test_file)
+
+        # Should raise ValueError with helpful message
+        with pytest.raises(ValueError) as exc_info:
+            parser.parse_products()
+
+        error_msg = str(exc_info.value)
+        assert "units_per_mix" in error_msg.lower()
+        assert "required" in error_msg.lower()
+        assert "2025-10-23" in error_msg  # Date when requirement added
+
+    def test_parse_products_missing_products_sheet(self, tmp_path):
+        """Test that parser raises clear error when Products sheet doesn't exist."""
+        test_file = tmp_path / "test_no_products.xlsx"
+
+        # Create file with different sheet
+        dummy_df = pd.DataFrame([{'col1': 'value1'}])
+        with pd.ExcelWriter(test_file, engine='openpyxl') as writer:
+            dummy_df.to_excel(writer, sheet_name='OtherSheet', index=False)
+
+        parser = ExcelParser(test_file)
+
+        # Should raise ValueError with helpful message
+        with pytest.raises(ValueError) as exc_info:
+            parser.parse_products()
+
+        error_msg = str(exc_info.value)
+        assert "Products" in error_msg or "PRODUCTS" in error_msg.upper()
+        assert "sheet" in error_msg.lower()
+
+    def test_parse_products_missing_required_column(self, tmp_path):
+        """Test that parser raises error when other required columns are missing."""
+        test_file = tmp_path / "test_products.xlsx"
+
+        # Missing 'name' column
+        products_df = pd.DataFrame([
+            {
+                'product_id': 'G144',
+                'sku': 'G144',
+                'units_per_mix': 415
+            }
+        ])
+
+        with pd.ExcelWriter(test_file, engine='openpyxl') as writer:
+            products_df.to_excel(writer, sheet_name='Products', index=False)
+
+        parser = ExcelParser(test_file)
+
+        with pytest.raises(ValueError) as exc_info:
+            parser.parse_products()
+
+        error_msg = str(exc_info.value)
+        assert "name" in error_msg.lower()
+
+    def test_parse_products_from_real_network_config(self):
+        """Test parsing products from actual Network_Config.xlsx file."""
+        config_file = Path("/home/sverzijl/planning_latest/data/examples/Network_Config.xlsx")
+
+        if not config_file.exists():
+            pytest.skip(f"Network_Config.xlsx not found at {config_file}")
+
+        parser = ExcelParser(config_file)
+        products = parser.parse_products()
+
+        # Verify we got products
+        assert len(products) > 0, "Should have at least one product"
+
+        # Verify all products have units_per_mix > 0
+        for product_id, product in products.items():
+            assert product.units_per_mix > 0, f"Product {product_id} should have units_per_mix > 0"
+            assert isinstance(product.units_per_mix, int), f"Product {product_id} units_per_mix should be integer"
+            # Verify all required fields present
+            assert product.id
+            assert product.name
+            assert product.sku
+            assert product.ambient_shelf_life_days >= 0
+            assert product.frozen_shelf_life_days >= 0
+            assert product.thawed_shelf_life_days >= 0
+            assert product.min_acceptable_shelf_life_days >= 0
