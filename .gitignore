@@ -40,6 +40,9 @@ htmlcov/
 *.swo
 *~
 
+# Git worktrees
+.worktrees/
+
 # Jupyter Notebook
 .ipynb_checkpoints
 
