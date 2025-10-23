@@ -424,16 +424,35 @@ class UnifiedNodeModel(BaseOptimizationModel):
         Returns:
             Maximum number of mixes per day (integer)
         """
-        # Maximum production hours per day (including overtime)
-        max_hours = 14.0  # 12 fixed + 2 overtime
+        # Maximum production hours per day - read from labor calendar
+        # Find the maximum available hours across all days (fixed_hours + overtime capacity)
+        max_hours_across_days = []
+        for day in self.labor_calendar.days:
+            # Maximum for this day = fixed hours + typical overtime allowance
+            # Weekdays typically: 12 fixed + 2 OT = 14 hours
+            if day.fixed_hours > 0:
+                day_max = day.fixed_hours + 2.0  # Fixed days: standard + 2h OT
+            else:
+                # Non-fixed days: Conservative bound based on minimum_hours or default
+                day_max = day.minimum_hours if day.minimum_hours > 0 else 14.0
+            max_hours_across_days.append(day_max)
 
-        # Get production rate from manufacturing node
+        # Use maximum hours found across all days in calendar
+        max_hours = max(max_hours_across_days) if max_hours_across_days else 14.0
+
+        # Get production rate from manufacturing node (required, no fallback)
         if self.manufacturing_nodes:
             node_id = next(iter(self.manufacturing_nodes))
             node = self.nodes[node_id]
-            production_rate = node.capabilities.production_rate_per_hour or 1400.0
+            production_rate = node.capabilities.production_rate_per_hour
+
+            if production_rate is None or production_rate <= 0:
+                raise ValueError(
+                    f"Manufacturing node {node_id} must have production_rate_per_hour > 0. "
+                    f"Current value: {production_rate}. Check Locations sheet configuration."
+                )
         else:
-            production_rate = 1400.0  # Default production rate
+            raise ValueError("No manufacturing nodes found. Cannot calculate max_mixes.")
 
         # Get units per mix for this product
         product = self.products_dict.get(product_id)
