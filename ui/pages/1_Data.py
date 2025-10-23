@@ -391,6 +391,13 @@ with tab_upload:
 
                         forecast_obj, locations, routes, labor_calendar, truck_schedules_list, cost_structure = parser.parse_all()
 
+                        # Parse products (required for mix-based production)
+                        products = None
+                        try:
+                            products = parser.parse_products()
+                        except Exception as e:
+                            st.warning(f"⚠️ Error parsing products: {e}. Mix-based production may not work.")
+
                         # Parse product aliases (optional)
                         product_aliases = None
                         try:
@@ -438,6 +445,7 @@ with tab_upload:
                                 network_filename=network_file.name,
                                 initial_inventory=inventory_snapshot,
                                 product_aliases=product_aliases,
+                                products=products,
                                 inventory_filename=inventory_file.name if inventory_file else None,
                                 inventory_snapshot_date=inventory_snapshot_date if inventory_file else None,
                             )

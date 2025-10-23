@@ -325,6 +325,7 @@ with tab_optimization:
                     use_batch_tracking=use_batch_tracking,
                     allow_shortages=allow_shortages,
                     enforce_shelf_life=enforce_shelf_life,
+                    products=data.get('products'),
                 )
 
                 # Calculate planning horizon info
@@ -436,7 +437,7 @@ with tab_optimization:
 
                     # Production summary
                     st.divider()
-                    col1, col2, col3, col4 = st.columns(4)
+                    col1, col2, col3, col4, col5 = st.columns(5)
                     with col1:
                         total_production = sol.get('total_production_quantity', 0)
                         st.markdown(colored_metric("Total Production", f"{total_production:,.0f} units", "primary"), unsafe_allow_html=True)
@@ -444,9 +445,12 @@ with tab_optimization:
                         num_batches = len(sol.get('production_batches', []))
                         st.markdown(colored_metric("Production Batches", str(num_batches), "secondary"), unsafe_allow_html=True)
                     with col3:
-                        num_shipments = sum(len(v) for v in sol.get('shipments_by_route_product_date', {}).values())
-                        st.markdown(colored_metric("Shipments", str(num_shipments), "accent"), unsafe_allow_html=True)
+                        total_mixes = sol.get('total_mixes', 0)
+                        st.markdown(colored_metric("Total Mixes", str(total_mixes), "accent"), unsafe_allow_html=True)
                     with col4:
+                        num_shipments = sum(len(v) for v in sol.get('shipments_by_route_product_date', {}).values())
+                        st.markdown(colored_metric("Shipments", str(num_shipments), "success"), unsafe_allow_html=True)
+                    with col5:
                         # Changeover statistics (new with start tracking formulation)
                         total_changeovers = sol.get('total_changeovers', 0)
                         if total_changeovers > 0:
@@ -456,6 +460,29 @@ with tab_optimization:
                                 st.caption(f"Cost: ${changeover_cost:,.0f}")
                         else:
                             st.markdown(colored_metric("Product Changeovers", "0", "success"), unsafe_allow_html=True)
+
+                    # Mix production schedule table (if mix-based production is enabled)
+                    if 'mix_counts' in sol and sol['mix_counts']:
+                        st.divider()
+                        st.subheader("🔢 Mix Production Schedule")
+
+                        import pandas as pd
+
+                        mix_data = []
+                        for (node_id, prod_id, date_val), data in sol['mix_counts'].items():
+                            mix_data.append({
+                                'Date': date_val.strftime('%Y-%m-%d'),
+                                'Product': prod_id,
+                                'Mixes': data['mix_count'],
+                                'Units/Mix': data['units_per_mix'],
+                                'Total Units': data['units']
+                            })
+
+                        mix_df = pd.DataFrame(mix_data)
+                        mix_df = mix_df.sort_values(['Date', 'Product'])
+
+                        st.dataframe(mix_df, use_container_width=True, hide_index=True)
+                        st.caption(f"📊 Total: {len(mix_df)} production runs")
 
                 st.divider()
                 st.info("✅ Optimization complete! View detailed results in the **Results** page.")

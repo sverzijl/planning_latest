@@ -127,6 +127,7 @@ def store_parsed_data(
     network_filename: str = None,
     initial_inventory: Optional[Any] = None,
     product_aliases: Optional[Any] = None,
+    products: Optional[Any] = None,
     inventory_filename: str = None,
     inventory_snapshot_date: Optional[Any] = None,
 ):
@@ -145,6 +146,7 @@ def store_parsed_data(
     st.session_state.manufacturing_site = manufacturing_site
     st.session_state.initial_inventory = initial_inventory
     st.session_state.product_aliases = product_aliases
+    st.session_state.products = products
     st.session_state.forecast_filename = forecast_filename
     st.session_state.network_filename = network_filename
     st.session_state.inventory_filename = inventory_filename
@@ -205,6 +207,7 @@ def get_parsed_data() -> Optional[dict]:
         'manufacturing_site': st.session_state.manufacturing_site,
         'initial_inventory': st.session_state.initial_inventory,
         'product_aliases': st.session_state.product_aliases,
+        'products': st.session_state.get('products'),
     }
 
 
