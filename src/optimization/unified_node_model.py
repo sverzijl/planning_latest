@@ -1486,6 +1486,31 @@ class UnifiedNodeModel(BaseOptimizationModel):
 
         solution['production_by_date_product'] = production_by_date_product
 
+        # Extract mix counts
+        mix_counts: Dict[Tuple[str, str, Date], Dict[str, Any]] = {}
+        if hasattr(model, 'mix_count'):
+            for node_id in self.manufacturing_nodes:
+                for prod in model.products:
+                    for date_val in model.dates:
+                        if (node_id, prod, date_val) in model.mix_count:
+                            try:
+                                count = value(model.mix_count[node_id, prod, date_val])
+                                if count > 0.01:
+                                    units_per_mix = self.products_dict[prod].units_per_mix
+                                    mix_counts[(node_id, prod, date_val)] = {
+                                        'mix_count': int(round(count)),
+                                        'units': int(round(count * units_per_mix)),
+                                        'units_per_mix': units_per_mix
+                                    }
+                            except (ValueError, AttributeError, KeyError, RuntimeError):
+                                continue
+
+        solution['mix_counts'] = mix_counts
+
+        # Calculate total mixes
+        total_mixes = sum(data['mix_count'] for data in mix_counts.values())
+        solution['total_mixes'] = total_mixes
+
         # Extract cohort inventory for daily snapshot
         cohort_inventory: Dict[Tuple[str, str, Date, Date, str], float] = {}
         if self.use_batch_tracking:
