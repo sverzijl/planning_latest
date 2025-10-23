@@ -20,6 +20,7 @@ class Product(BaseModel):
     - Frozen shelf life: 120 days
     - Thawed shelf life: 14 days (reset after thawing)
     - Breadrooms discard stock with <7 days remaining
+    - Production occurs in discrete mixes of fixed size
 
     Attributes:
         id: Unique product identifier
@@ -29,6 +30,7 @@ class Product(BaseModel):
         frozen_shelf_life_days: Shelf life when stored frozen (default: 120)
         thawed_shelf_life_days: Shelf life after thawing (default: 14)
         min_acceptable_shelf_life_days: Minimum days before discard (default: 7)
+        units_per_mix: Number of units produced per mix/batch (required, must be > 0)
     """
     id: str = Field(..., description="Unique product identifier")
     name: str = Field(..., description="Product name")
@@ -52,6 +54,11 @@ class Product(BaseModel):
         default=7.0,
         description="Minimum acceptable shelf life for breadrooms",
         ge=0
+    )
+    units_per_mix: int = Field(
+        ...,
+        description="Number of units produced per mix/batch",
+        gt=0
     )
 
     def get_shelf_life(self, state: ProductState) -> float:

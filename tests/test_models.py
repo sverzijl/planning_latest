@@ -95,26 +95,95 @@ class TestProduct:
             id="P1",
             name="Gluten-Free Bread",
             sku="GFB-001",
+            units_per_mix=415,
         )
         assert product.ambient_shelf_life_days == 17.0
         assert product.frozen_shelf_life_days == 120.0
         assert product.thawed_shelf_life_days == 14.0
         assert product.min_acceptable_shelf_life_days == 7.0
+        assert product.units_per_mix == 415
 
     def test_get_shelf_life(self):
         """Test getting shelf life for different states."""
-        product = Product(id="P1", name="Test", sku="T1")
+        product = Product(id="P1", name="Test", sku="T1", units_per_mix=415)
         assert product.get_shelf_life(ProductState.AMBIENT) == 17.0
         assert product.get_shelf_life(ProductState.FROZEN) == 120.0
         assert product.get_shelf_life(ProductState.THAWED) == 14.0
 
     def test_is_acceptable(self):
         """Test checking if product is acceptable."""
-        product = Product(id="P1", name="Test", sku="T1")
+        product = Product(id="P1", name="Test", sku="T1", units_per_mix=415)
         assert product.is_acceptable(7.0)  # Exactly at threshold
         assert product.is_acceptable(10.0)  # Above threshold
         assert not product.is_acceptable(6.0)  # Below threshold
         assert not product.is_acceptable(0.0)  # Expired
+
+    def test_units_per_mix_required(self):
+        """Test that units_per_mix is a required field."""
+        with pytest.raises(Exception):  # Pydantic will raise ValidationError
+            Product(
+                id="P1",
+                name="Test Product",
+                sku="TEST-001",
+                # units_per_mix is missing
+            )
+
+    def test_units_per_mix_positive_value(self):
+        """Test that Product accepts positive units_per_mix values."""
+        product = Product(
+            id="P1",
+            name="Test Product",
+            sku="TEST-001",
+            units_per_mix=415,
+        )
+        assert product.units_per_mix == 415
+
+        # Test with different positive values
+        product2 = Product(
+            id="P2",
+            name="Test Product 2",
+            sku="TEST-002",
+            units_per_mix=387,
+        )
+        assert product2.units_per_mix == 387
+
+        # Test with small positive value
+        product3 = Product(
+            id="P3",
+            name="Test Product 3",
+            sku="TEST-003",
+            units_per_mix=1,
+        )
+        assert product3.units_per_mix == 1
+
+    def test_units_per_mix_rejects_zero(self):
+        """Test that Product rejects zero units_per_mix."""
+        with pytest.raises(Exception):  # Pydantic ValidationError
+            Product(
+                id="P1",
+                name="Test Product",
+                sku="TEST-001",
+                units_per_mix=0,
+            )
+
+    def test_units_per_mix_rejects_negative(self):
+        """Test that Product rejects negative units_per_mix."""
+        with pytest.raises(Exception):  # Pydantic ValidationError
+            Product(
+                id="P1",
+                name="Test Product",
+                sku="TEST-001",
+                units_per_mix=-1,
+            )
+
+        # Test with larger negative value
+        with pytest.raises(Exception):
+            Product(
+                id="P2",
+                name="Test Product 2",
+                sku="TEST-002",
+                units_per_mix=-415,
+            )
 
 
 class TestForecast:
