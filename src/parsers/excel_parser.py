@@ -469,7 +469,7 @@ class ExcelParser:
                 engine="openpyxl"
             )
         except ValueError as e:
-            if "Worksheet" in str(e) and "does not exist" in str(e):
+            if "Worksheet" in str(e) and ("not found" in str(e) or "does not exist" in str(e)):
                 raise ValueError(
                     f"\n{'='*70}\n"
                     f"MISSING PRODUCTS SHEET\n"
@@ -551,6 +551,25 @@ class ExcelParser:
         # Parse products
         products = {}
         for _, row in df.iterrows():
+            # Check for empty/NaN units_per_mix before conversion
+            if pd.isna(row["units_per_mix"]):
+                raise ValueError(
+                    f"\n{'='*70}\n"
+                    f"EMPTY units_per_mix VALUE\n"
+                    f"{'='*70}\n"
+                    f"\n"
+                    f"Product '{row['product_id']}' has an empty units_per_mix value.\n"
+                    f"Each product must specify how many units are produced per mix.\n"
+                    f"\n"
+                    f"REQUIRED ACTION:\n"
+                    f"  1. Open: {self.file_path}\n"
+                    f"  2. Go to Products sheet, row for product '{row['product_id']}'\n"
+                    f"  3. Fill in units_per_mix column with a positive integer\n"
+                    f"     (e.g., 415, 387, 520)\n"
+                    f"\n"
+                    f"{'='*70}\n"
+                )
+
             product = Product(
                 id=str(row["product_id"]),
                 name=str(row["name"]),

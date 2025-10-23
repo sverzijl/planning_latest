@@ -457,8 +457,8 @@ class TestExcelParserProducts:
             parser.parse_products()
 
         error_msg = str(exc_info.value)
-        assert "Products" in error_msg or "PRODUCTS" in error_msg.upper()
-        assert "sheet" in error_msg.lower()
+        assert "MISSING PRODUCTS SHEET" in error_msg
+        assert "REQUIRED ACTION" in error_msg
 
     def test_parse_products_missing_required_column(self, tmp_path):
         """Test that parser raises error when other required columns are missing."""
@@ -483,6 +483,33 @@ class TestExcelParserProducts:
 
         error_msg = str(exc_info.value)
         assert "name" in error_msg.lower()
+
+    def test_parse_products_empty_units_per_mix(self, tmp_path):
+        """Test that parser raises error when units_per_mix is empty/NaN."""
+        test_file = tmp_path / "test_products.xlsx"
+
+        # Product with empty units_per_mix
+        products_df = pd.DataFrame([
+            {
+                'product_id': 'G144',
+                'name': 'Gluten Free White',
+                'sku': 'G144',
+                'units_per_mix': None  # Empty/NaN value
+            }
+        ])
+
+        with pd.ExcelWriter(test_file, engine='openpyxl') as writer:
+            products_df.to_excel(writer, sheet_name='Products', index=False)
+
+        parser = ExcelParser(test_file)
+
+        with pytest.raises(ValueError) as exc_info:
+            parser.parse_products()
+
+        error_msg = str(exc_info.value)
+        assert "EMPTY units_per_mix VALUE" in error_msg
+        assert "REQUIRED ACTION" in error_msg
+        assert "G144" in error_msg  # Should mention the product ID
 
     def test_parse_products_from_real_network_config(self):
         """Test parsing products from actual Network_Config.xlsx file."""
