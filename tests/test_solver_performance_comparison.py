@@ -39,6 +39,7 @@ import time
 
 from src.parsers.multi_file_parser import MultiFileParser
 from src.optimization.unified_node_model import UnifiedNodeModel
+from tests.conftest import create_test_products
 from src.optimization.legacy_to_unified_converter import LegacyToUnifiedConverter
 from src.optimization.solver_config import SolverConfig
 
@@ -160,6 +161,7 @@ def test_solver_performance_1_week(parsed_data):
             nodes=nodes,
             routes=unified_routes,
             forecast=forecast,
+        products=products,
             labor_calendar=labor_calendar,
             cost_structure=cost_structure,
             start_date=planning_start_date,
@@ -258,6 +260,7 @@ def test_solver_performance_2_week(parsed_data):
             nodes=nodes,
             routes=unified_routes,
             forecast=forecast,
+        products=products,
             labor_calendar=labor_calendar,
             cost_structure=cost_structure,
             start_date=planning_start_date,
@@ -358,6 +361,7 @@ def test_solver_performance_4_week(parsed_data):
             nodes=nodes,
             routes=unified_routes,
             forecast=forecast,
+        products=products,
             labor_calendar=labor_calendar,
             cost_structure=cost_structure,
             start_date=planning_start_date,

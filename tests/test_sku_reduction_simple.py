@@ -16,6 +16,7 @@ from src.models.manufacturing import ManufacturingSite
 from src.models.forecast import Forecast, ForecastEntry
 from src.optimization.legacy_to_unified_converter import LegacyToUnifiedConverter
 from src.optimization.unified_node_model import UnifiedNodeModel
+from tests.conftest import create_test_products
 from src.optimization.solver_config import SolverConfig
 
 
@@ -147,10 +148,15 @@ def test_model_produces_only_demanded_skus(solver_name):
 
     # Create model with single-day horizon
     print(f"\nCreating model...")
+    # Create products for model (extract unique product IDs from forecast)
+    product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+    products = create_test_products(product_ids)
+
     model = UnifiedNodeModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
+        products=products,
         labor_calendar=labor_calendar,
         cost_structure=cost_structure,
         start_date=planning_start,

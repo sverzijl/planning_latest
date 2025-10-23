@@ -15,6 +15,7 @@ from pathlib import Path
 
 from src.parsers.multi_file_parser import MultiFileParser
 from src.optimization.unified_node_model import UnifiedNodeModel
+from tests.conftest import create_test_products
 from src.optimization.legacy_to_unified_converter import LegacyToUnifiedConverter
 from pyomo.environ import value
 
@@ -57,6 +58,7 @@ class TestStartTrackingIntegration:
             nodes=test_data['nodes'],
             routes=test_data['routes'],
             forecast=test_data['forecast'],
+        products=products,
             labor_calendar=test_data['labor_calendar'],
             cost_structure=test_data['costs'],
             start_date=date(2025, 10, 7),
@@ -81,6 +83,7 @@ class TestStartTrackingIntegration:
             nodes=test_data['nodes'],
             routes=test_data['routes'],
             forecast=test_data['forecast'],
+        products=products,
             labor_calendar=test_data['labor_calendar'],
             cost_structure=test_data['costs'],
             start_date=date(2025, 10, 7),
@@ -107,6 +110,7 @@ class TestStartTrackingIntegration:
             nodes=test_data['nodes'],
             routes=test_data['routes'],
             forecast=test_data['forecast'],
+        products=products,
             labor_calendar=test_data['labor_calendar'],
             cost_structure=test_data['costs'],
             start_date=date(2025, 10, 7),
@@ -135,6 +139,7 @@ class TestStartTrackingIntegration:
             nodes=test_data['nodes'],
             routes=test_data['routes'],
             forecast=test_data['forecast'],
+        products=products,
             labor_calendar=test_data['labor_calendar'],
             cost_structure=test_data['costs'],
             start_date=date(2025, 10, 7),
@@ -168,6 +173,7 @@ class TestStartTrackingIntegration:
             nodes=test_data['nodes'],
             routes=test_data['routes'],
             forecast=test_data['forecast'],
+        products=products,
             labor_calendar=test_data['labor_calendar'],
             cost_structure=test_data['costs'],
             start_date=date(2025, 10, 7),
@@ -215,6 +221,7 @@ class TestStartTrackingIntegration:
             nodes=test_data['nodes'],
             routes=test_data['routes'],
             forecast=test_data['forecast'],
+        products=products,
             labor_calendar=test_data['labor_calendar'],
             cost_structure=test_data['costs'],
             start_date=date(2025, 10, 7),
@@ -261,6 +268,7 @@ class TestStartTrackingIntegration:
             nodes=test_data['nodes'],
             routes=test_data['routes'],
             forecast=test_data['forecast'],
+        products=products,
             labor_calendar=test_data['labor_calendar'],
             cost_structure=test_data['costs'],
             start_date=date(2025, 10, 7),

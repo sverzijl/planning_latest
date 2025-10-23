@@ -11,6 +11,7 @@ from src.parsers.multi_file_parser import MultiFileParser
 from src.models.manufacturing import ManufacturingSite
 from src.optimization.legacy_to_unified_converter import LegacyToUnifiedConverter
 from src.optimization.unified_node_model import UnifiedNodeModel
+from tests.conftest import create_test_products
 
 
 def test_labor_cost_only_no_storage():
@@ -61,10 +62,15 @@ def test_labor_cost_only_no_storage():
     print()
 
     # Create model WITHOUT storage costs, shelf life, or truck constraints
+    # Create products for model (extract unique product IDs from forecast)
+    product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+    products = create_test_products(product_ids)
+
     model = UnifiedNodeModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
+        products=products,
         labor_calendar=labor_calendar,
         cost_structure=cost_structure,
         start_date=start_date,

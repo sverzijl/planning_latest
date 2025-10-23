@@ -116,3 +116,31 @@ def mock_solver_config():
         Mock SolverConfig object with create_solver() method
     """
     return create_mock_solver_config()
+
+
+def create_test_products(product_ids: list[str]) -> dict[str, Product]:
+    """
+    Create test Product objects with units_per_mix for UnifiedNodeModel tests.
+
+    This helper function simplifies test setup by creating Product objects
+    with realistic units_per_mix values (415 units/mix is the standard size).
+
+    Args:
+        product_ids: List of product IDs to create
+
+    Returns:
+        Dictionary mapping product IDs to Product objects
+
+    Example:
+        products = create_test_products(["P1", "P2"])
+        model = UnifiedNodeModel(..., products=products)
+    """
+    products = {}
+    for prod_id in product_ids:
+        products[prod_id] = Product(
+            id=prod_id,
+            name=f"Product {prod_id}",
+            sku=prod_id,
+            units_per_mix=415  # Default test value
+        )
+    return products

@@ -43,6 +43,7 @@ import time
 
 from src.parsers.multi_file_parser import MultiFileParser
 from src.optimization.unified_node_model import UnifiedNodeModel
+from tests.conftest import create_test_products
 from src.optimization.legacy_to_unified_converter import LegacyToUnifiedConverter
 from src.optimization.solver_config import SolverConfig
 
@@ -168,10 +169,15 @@ def test_highs_1_week_binary_variables(parsed_data):
     print(f"Planning horizon: {planning_start_date} to {planning_end_date} (7 days)")
 
     # Create model
+    # Create products for model (extract unique product IDs from forecast)
+    product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+    products = create_test_products(product_ids)
+
     model = UnifiedNodeModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
+        products=products,
         labor_calendar=labor_calendar,
         cost_structure=cost_structure,
         start_date=planning_start_date,
@@ -233,10 +239,15 @@ def test_highs_2_week_binary_variables(parsed_data):
     print(f"Planning horizon: {planning_start_date} to {planning_end_date} (14 days)")
 
     # Create model
+    # Create products for model (extract unique product IDs from forecast)
+    product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+    products = create_test_products(product_ids)
+
     model = UnifiedNodeModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
+        products=products,
         labor_calendar=labor_calendar,
         cost_structure=cost_structure,
         start_date=planning_start_date,
@@ -299,10 +310,15 @@ def test_highs_4_week_binary_variables(parsed_data):
     print(f"Expected performance: ~96s (vs CBC ~226s)")
 
     # Create model
+    # Create products for model (extract unique product IDs from forecast)
+    product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+    products = create_test_products(product_ids)
+
     model = UnifiedNodeModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
+        products=products,
         labor_calendar=labor_calendar,
         cost_structure=cost_structure,
         start_date=planning_start_date,
@@ -392,6 +408,7 @@ def test_highs_vs_cbc_performance(parsed_data):
             nodes=nodes,
             routes=unified_routes,
             forecast=forecast,
+        products=products,
             labor_calendar=labor_calendar,
             cost_structure=cost_structure,
             start_date=planning_start_date,
@@ -509,10 +526,15 @@ def test_highs_sku_reduction(parsed_data):
     print(f"Products with ZERO demand: 2 ({product_ids[3]}, {product_ids[4]})")
 
     # Create model
+    # Create products for model (extract unique product IDs from forecast)
+    product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+    products = create_test_products(product_ids)
+
     model = UnifiedNodeModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=sku_forecast,
+        products=products,
         labor_calendar=labor_calendar,
         cost_structure=cost_structure,
         start_date=planning_start,
@@ -595,6 +617,7 @@ def test_highs_warmstart_no_effect(parsed_data):
             nodes=nodes,
             routes=unified_routes,
             forecast=forecast,
+        products=products,
             labor_calendar=labor_calendar,
             cost_structure=cost_structure,
             start_date=planning_start_date,
@@ -684,10 +707,15 @@ def test_highs_solution_quality(parsed_data):
     print("="*80)
 
     # Create and solve model
+    # Create products for model (extract unique product IDs from forecast)
+    product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+    products = create_test_products(product_ids)
+
     model = UnifiedNodeModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
+        products=products,
         labor_calendar=labor_calendar,
         cost_structure=cost_structure,
         start_date=planning_start_date,

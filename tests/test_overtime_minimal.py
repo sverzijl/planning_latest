@@ -11,6 +11,7 @@ from src.models.cost_structure import CostStructure
 from src.models.unified_node import UnifiedNode, NodeCapabilities, StorageMode
 from src.models.unified_route import UnifiedRoute, TransportMode
 from src.optimization.unified_node_model import UnifiedNodeModel
+from tests.conftest import create_test_products
 
 
 def test_minimal_overtime_preference():
@@ -132,6 +133,7 @@ def test_minimal_overtime_preference():
         nodes=nodes,
         routes=routes,
         forecast=forecast,
+        products=products,
         labor_calendar=labor_calendar,
         cost_structure=cost_structure,
         start_date=start_date,

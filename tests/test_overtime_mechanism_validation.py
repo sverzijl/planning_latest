@@ -12,6 +12,7 @@ from src.models.cost_structure import CostStructure
 from src.models.unified_node import UnifiedNode, NodeCapabilities, StorageMode
 from src.models.unified_route import UnifiedRoute, TransportMode
 from src.optimization.unified_node_model import UnifiedNodeModel
+from tests.conftest import create_test_products
 
 
 def test_overtime_forced_by_capacity():
@@ -126,10 +127,15 @@ def test_overtime_forced_by_capacity():
     print("Expected: Spread across 2 weekdays with overtime")
     print()
 
+    # Create products for model (extract unique product IDs from forecast)
+    product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+    products = create_test_products(product_ids)
+
     model = UnifiedNodeModel(
         nodes=nodes,
         routes=routes,
         forecast=forecast,
+        products=products,
         labor_calendar=labor_calendar,
         cost_structure=cost_structure,
         start_date=start_date,
@@ -316,10 +322,15 @@ def test_overtime_forced_single_day():
     print("Expected: MUST produce Monday with 2h overtime")
     print()
 
+    # Create products for model (extract unique product IDs from forecast)
+    product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+    products = create_test_products(product_ids)
+
     model = UnifiedNodeModel(
         nodes=nodes,
         routes=routes,
         forecast=forecast,
+        products=products,
         labor_calendar=labor_calendar,
         cost_structure=cost_structure,
         start_date=start_date,

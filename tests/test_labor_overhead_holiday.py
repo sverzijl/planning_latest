@@ -15,6 +15,7 @@ from src.models.forecast import Forecast, ForecastEntry
 from src.models.labor_calendar import LaborCalendar, LaborDay
 from src.models.cost_structure import CostStructure
 from src.optimization.unified_node_model import UnifiedNodeModel
+from tests.conftest import create_test_products
 
 
 def create_public_holiday_test_setup(
@@ -152,6 +153,7 @@ def test_public_holiday_overhead_included():
         nodes=setup['nodes'],
         routes=setup['routes'],
         forecast=setup['forecast'],
+        products=products,
         labor_calendar=setup['labor_calendar'],
         cost_structure=setup['cost_structure'],
         start_date=setup['production_date'],
@@ -250,6 +252,7 @@ def test_public_holiday_overhead_below_minimum():
         nodes=setup['nodes'],
         routes=setup['routes'],
         forecast=setup['forecast'],
+        products=products,
         labor_calendar=setup['labor_calendar'],
         cost_structure=setup['cost_structure'],
         start_date=setup['production_date'],

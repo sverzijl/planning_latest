@@ -28,6 +28,7 @@ from pyomo.environ import value
 
 from src.parsers.multi_file_parser import MultiFileParser
 from src.optimization.unified_node_model import UnifiedNodeModel
+from tests.conftest import create_test_products
 from src.optimization.legacy_to_unified_converter import LegacyToUnifiedConverter
 from src.models.location import LocationType
 
@@ -82,6 +83,7 @@ def test_exact_user_scenario_oct16_4weeks():
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
+        products=products,
         labor_calendar=labor_calendar,
         cost_structure=costs,
         start_date=start_date,

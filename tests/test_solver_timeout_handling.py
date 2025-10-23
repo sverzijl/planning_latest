@@ -22,6 +22,7 @@ import time
 
 from src.parsers.multi_file_parser import MultiFileParser
 from src.optimization.unified_node_model import UnifiedNodeModel
+from tests.conftest import create_test_products
 from src.optimization.legacy_to_unified_converter import LegacyToUnifiedConverter
 
 
@@ -126,10 +127,15 @@ def test_solution_extraction_with_zero_holding_costs(minimal_data):
     print(f"✓ Holding costs are zero (pallet variables will be stale)")
 
     # Create model
+    # Create products for model (extract unique product IDs from forecast)
+    product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+    products = create_test_products(product_ids)
+
     model = UnifiedNodeModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
+        products=products,
         labor_calendar=labor_calendar,
         cost_structure=cost_structure,
         start_date=planning_start_date,
@@ -232,10 +238,15 @@ def test_timeout_with_partial_solution(minimal_data):
     print(f"Time limit: 5 seconds (intentionally short to force timeout)")
 
     # Create model
+    # Create products for model (extract unique product IDs from forecast)
+    product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+    products = create_test_products(product_ids)
+
     model = UnifiedNodeModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
+        products=products,
         labor_calendar=labor_calendar,
         cost_structure=cost_structure,
         start_date=planning_start_date,
@@ -334,10 +345,15 @@ def test_objective_extraction_priority(minimal_data):
     print("="*80)
 
     # Create model
+    # Create products for model (extract unique product IDs from forecast)
+    product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+    products = create_test_products(product_ids)
+
     model = UnifiedNodeModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
+        products=products,
         labor_calendar=labor_calendar,
         cost_structure=cost_structure,
         start_date=planning_start_date,

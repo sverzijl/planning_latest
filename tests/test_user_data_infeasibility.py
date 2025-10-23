@@ -12,6 +12,7 @@ from pathlib import Path
 
 from src.parsers.multi_file_parser import MultiFileParser
 from src.optimization.unified_node_model import UnifiedNodeModel
+from tests.conftest import create_test_products
 from src.optimization.legacy_to_unified_converter import LegacyToUnifiedConverter
 
 
@@ -142,10 +143,15 @@ def test_user_data_infeasibility_diagnosis():
     print("="*80)
     
     try:
+        # Create products for model (extract unique product IDs from forecast)
+        product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+        products = create_test_products(product_ids)
+
         model = UnifiedNodeModel(
             nodes=converted_data['nodes'],
             routes=converted_data['routes'],
             forecast=converted_data['forecast'],
+        products=products,
             labor_calendar=converted_data['labor_calendar'],
             cost_structure=converted_data['cost_structure'],
             start_date=start_date,

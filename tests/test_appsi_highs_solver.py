@@ -25,6 +25,7 @@ import time
 
 from src.parsers.multi_file_parser import MultiFileParser
 from src.optimization.unified_node_model import UnifiedNodeModel
+from tests.conftest import create_test_products
 from src.optimization.legacy_to_unified_converter import LegacyToUnifiedConverter
 
 
@@ -148,10 +149,15 @@ def test_appsi_highs_basic_solve(simple_data):
     # Create model
     model_start = time.time()
 
+    # Create products for model (extract unique product IDs from forecast)
+    product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+    products = create_test_products(product_ids)
+
     model = UnifiedNodeModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
+        products=products,
         labor_calendar=labor_calendar,
         cost_structure=cost_structure,
         start_date=planning_start_date,
@@ -252,10 +258,15 @@ def test_appsi_highs_with_warmstart(simple_data):
     print(f"Planning horizon: {planning_start_date} to {planning_end_date} (14 days)")
 
     # Create model
+    # Create products for model (extract unique product IDs from forecast)
+    product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+    products = create_test_products(product_ids)
+
     model = UnifiedNodeModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
+        products=products,
         labor_calendar=labor_calendar,
         cost_structure=cost_structure,
         start_date=planning_start_date,
@@ -349,6 +360,7 @@ def test_appsi_highs_performance_vs_legacy(simple_data):
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
+        products=products,
         labor_calendar=labor_calendar,
         cost_structure=cost_structure,
         start_date=planning_start_date,
@@ -380,6 +392,7 @@ def test_appsi_highs_performance_vs_legacy(simple_data):
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
+        products=products,
         labor_calendar=labor_calendar,
         cost_structure=cost_structure,
         start_date=planning_start_date,

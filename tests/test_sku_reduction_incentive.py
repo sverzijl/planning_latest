@@ -12,6 +12,7 @@ from src.models.manufacturing import ManufacturingSite
 from src.models.forecast import Forecast, ForecastEntry
 from src.optimization.legacy_to_unified_converter import LegacyToUnifiedConverter
 from src.optimization.unified_node_model import UnifiedNodeModel
+from tests.conftest import create_test_products
 
 
 def test_zero_demand_skus_not_produced():
@@ -84,10 +85,15 @@ def test_zero_demand_skus_not_produced():
     print(f"Expected: Produce only 3 SKUs (not 5)")
 
     # Create model with single-day horizon
+    # Create products for model (extract unique product IDs from forecast)
+    product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+    products = create_test_products(product_ids)
+
     model = UnifiedNodeModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
+        products=products,
         labor_calendar=labor_calendar,
         cost_structure=cost_structure,
         start_date=test_date,
@@ -199,10 +205,15 @@ def test_sku_reduction_cost_benefit():
     print(f"Testing with changeover tracking enabled")
 
     # Create and solve model
+    # Create products for model (extract unique product IDs from forecast)
+    product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+    products = create_test_products(product_ids)
+
     model = UnifiedNodeModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
+        products=products,
         labor_calendar=labor_calendar,
         cost_structure=cost_structure,
         start_date=test_date,
@@ -321,10 +332,15 @@ def test_overtime_triggers_sku_reduction():
     print(f"Scenario: High volume could trigger overtime with unnecessary SKUs")
     print(f"Expected: Produce only needed 3 SKUs to stay in regular hours")
 
+    # Create products for model (extract unique product IDs from forecast)
+    product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+    products = create_test_products(product_ids)
+
     model = UnifiedNodeModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
+        products=products,
         labor_calendar=labor_calendar,
         cost_structure=cost_structure,
         start_date=test_date,

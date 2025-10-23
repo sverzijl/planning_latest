@@ -11,6 +11,7 @@ Tests cover:
 import pytest
 from datetime import date, timedelta, time
 from src.optimization.unified_node_model import UnifiedNodeModel
+from tests.conftest import create_test_products
 from src.models.unified_node import UnifiedNode, NodeCapabilities, StorageMode
 from src.models.unified_route import UnifiedRoute, TransportMode
 from src.models.unified_truck_schedule import UnifiedTruckSchedule, DepartureType, DayOfWeek
@@ -239,10 +240,15 @@ class TestUnifiedNodeModelConditionalPalletTracking:
         )
 
         # Create model
+        # Create products for model (extract unique product IDs from forecast)
+        product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+        products = create_test_products(product_ids)
+
         model = UnifiedNodeModel(
             nodes=nodes,
             routes=routes,
             forecast=forecast,
+        products=products,
             labor_calendar=labor_calendar,
             cost_structure=costs,
             start_date=start_date,
@@ -301,10 +307,15 @@ class TestUnifiedNodeModelConditionalPalletTracking:
         )
 
         # Create model
+        # Create products for model (extract unique product IDs from forecast)
+        product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+        products = create_test_products(product_ids)
+
         model = UnifiedNodeModel(
             nodes=nodes,
             routes=routes,
             forecast=forecast,
+        products=products,
             labor_calendar=labor_calendar,
             cost_structure=costs,
             start_date=start_date,
@@ -363,10 +374,15 @@ class TestUnifiedNodeModelConditionalPalletTracking:
         )
 
         # Create model
+        # Create products for model (extract unique product IDs from forecast)
+        product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+        products = create_test_products(product_ids)
+
         model = UnifiedNodeModel(
             nodes=nodes,
             routes=routes,
             forecast=forecast,
+        products=products,
             labor_calendar=labor_calendar,
             cost_structure=costs,
             start_date=start_date,
@@ -426,10 +442,15 @@ class TestUnifiedNodeModelConditionalPalletTracking:
         )
 
         # Create model
+        # Create products for model (extract unique product IDs from forecast)
+        product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+        products = create_test_products(product_ids)
+
         model = UnifiedNodeModel(
             nodes=nodes,
             routes=routes,
             forecast=forecast,
+        products=products,
             labor_calendar=labor_calendar,
             cost_structure=costs,
             start_date=start_date,
@@ -492,10 +513,15 @@ class TestUnifiedNodeModelConditionalPalletTracking:
         assert frozen_fixed != ambient_fixed, "Fixed costs should be different"
 
         # Create model
+        # Create products for model (extract unique product IDs from forecast)
+        product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+        products = create_test_products(product_ids)
+
         model = UnifiedNodeModel(
             nodes=nodes,
             routes=routes,
             forecast=forecast,
+        products=products,
             labor_calendar=labor_calendar,
             cost_structure=costs,
             start_date=start_date,

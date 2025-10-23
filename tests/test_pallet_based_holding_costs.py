@@ -28,6 +28,7 @@ from src.models.forecast import Forecast, ForecastEntry
 from src.models.labor_calendar import LaborCalendar, LaborDay
 from src.models.cost_structure import CostStructure
 from src.optimization.unified_node_model import UnifiedNodeModel
+from tests.conftest import create_test_products
 from ui.utils.result_adapter import adapt_optimization_results
 
 
@@ -196,10 +197,15 @@ class TestHoldingCostCalculation:
         cost_structure_unit_based
     ):
         """Test that unit-based storage costs still work (backward compatibility)."""
+        # Create products for model (extract unique product IDs from forecast)
+        product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+        products = create_test_products(product_ids)
+
         model = UnifiedNodeModel(
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
+        products=products,
             labor_calendar=labor_calendar,
             cost_structure=cost_structure_unit_based,
             start_date=date(2025, 10, 1),
@@ -232,10 +238,15 @@ class TestHoldingCostCalculation:
             shortage_penalty_per_unit=200.0,
         )
 
+        # Create products for model (extract unique product IDs from forecast)
+        product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+        products = create_test_products(product_ids)
+
         model = UnifiedNodeModel(
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
+        products=products,
             labor_calendar=labor_calendar,
             cost_structure=mixed_costs,
             start_date=date(2025, 10, 1),
@@ -258,10 +269,15 @@ class TestHoldingCostCalculation:
         cost_structure_zero_holding
     ):
         """Test that zero storage costs skip pallet variable creation."""
+        # Create products for model (extract unique product IDs from forecast)
+        product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+        products = create_test_products(product_ids)
+
         model = UnifiedNodeModel(
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
+        products=products,
             labor_calendar=labor_calendar,
             cost_structure=cost_structure_zero_holding,
             start_date=date(2025, 10, 1),
@@ -304,10 +320,15 @@ class TestHoldingCostCalculation:
             cost_per_unit=0.3,
         )
 
+        # Create products for model (extract unique product IDs from forecast)
+        product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+        products = create_test_products(product_ids)
+
         model = UnifiedNodeModel(
             nodes=simple_network['nodes'] + [frozen_node],
             routes=simple_network['routes'] + [frozen_route],
             forecast=simple_forecast,
+        products=products,
             labor_calendar=labor_calendar,
             cost_structure=cost_structure_pallet_based,
             start_date=date(2025, 10, 1),
@@ -330,10 +351,15 @@ class TestHoldingCostCalculation:
         cost_structure_pallet_based
     ):
         """Test ambient/thawed inventory uses ambient storage rate."""
+        # Create products for model (extract unique product IDs from forecast)
+        product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+        products = create_test_products(product_ids)
+
         model = UnifiedNodeModel(
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
+        products=products,
             labor_calendar=labor_calendar,
             cost_structure=cost_structure_pallet_based,
             start_date=date(2025, 10, 1),
@@ -363,10 +389,15 @@ class TestHoldingCostIntegration:
         cost_structure_pallet_based
     ):
         """Test holding cost appears in objective function."""
+        # Create products for model (extract unique product IDs from forecast)
+        product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+        products = create_test_products(product_ids)
+
         model = UnifiedNodeModel(
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
+        products=products,
             labor_calendar=labor_calendar,
             cost_structure=cost_structure_pallet_based,
             start_date=date(2025, 10, 1),
@@ -394,10 +425,15 @@ class TestHoldingCostIntegration:
         cost_structure_pallet_based
     ):
         """Test that ceiling constraints are created."""
+        # Create products for model (extract unique product IDs from forecast)
+        product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+        products = create_test_products(product_ids)
+
         model = UnifiedNodeModel(
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
+        products=products,
             labor_calendar=labor_calendar,
             cost_structure=cost_structure_pallet_based,
             start_date=date(2025, 10, 1),
@@ -521,8 +557,6 @@ class TestBackwardCompatibility:
     def test_total_inventory_cost_alias_exists(self):
         """Test that total_inventory_cost alias exists for UI compatibility."""
         # Mock solution
-        from src.optimization.unified_node_model import UnifiedNodeModel
-
         # This will be tested via extract_solution() in integration tests
         # Here we just verify the field mapping exists
         pytest.skip("Tested in integration tests")
@@ -535,10 +569,15 @@ class TestBackwardCompatibility:
         cost_structure_zero_holding
     ):
         """Test that zero holding costs behave identically to pre-feature implementation."""
+        # Create products for model (extract unique product IDs from forecast)
+        product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+        products = create_test_products(product_ids)
+
         model = UnifiedNodeModel(
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
+        products=products,
             labor_calendar=labor_calendar,
             cost_structure=cost_structure_zero_holding,
             start_date=date(2025, 10, 1),
@@ -610,10 +649,15 @@ class TestHoldingCostOptimization:
         cost_structure_pallet_based
     ):
         """Test that solved model includes holding cost in solution."""
+        # Create products for model (extract unique product IDs from forecast)
+        product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+        products = create_test_products(product_ids)
+
         model = UnifiedNodeModel(
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
+        products=products,
             labor_calendar=labor_calendar,
             cost_structure=cost_structure_pallet_based,
             start_date=date(2025, 10, 1),
@@ -645,10 +689,15 @@ class TestHoldingCostOptimization:
         cost_structure_pallet_based
     ):
         """Test that result_adapter populates holding cost breakdown."""
+        # Create products for model (extract unique product IDs from forecast)
+        product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+        products = create_test_products(product_ids)
+
         model = UnifiedNodeModel(
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
+        products=products,
             labor_calendar=labor_calendar,
             cost_structure=cost_structure_pallet_based,
             start_date=date(2025, 10, 1),
@@ -676,10 +725,15 @@ class TestHoldingCostOptimization:
         cost_structure_pallet_based
     ):
         """Test holding cost is reasonable proportion of total cost."""
+        # Create products for model (extract unique product IDs from forecast)
+        product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+        products = create_test_products(product_ids)
+
         model = UnifiedNodeModel(
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
+        products=products,
             labor_calendar=labor_calendar,
             cost_structure=cost_structure_pallet_based,
             start_date=date(2025, 10, 1),
@@ -716,6 +770,7 @@ class TestHoldingCostOptimization:
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
+        products=products,
             labor_calendar=labor_calendar,
             cost_structure=cost_structure_zero_holding,
             start_date=date(2025, 10, 1),
@@ -732,6 +787,7 @@ class TestHoldingCostOptimization:
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
+        products=products,
             labor_calendar=labor_calendar,
             cost_structure=cost_structure_pallet_based,
             start_date=date(2025, 10, 1),

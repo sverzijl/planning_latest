@@ -12,6 +12,7 @@ from src.models.forecast import Forecast, ForecastEntry
 from src.models.labor_calendar import LaborCalendar, LaborDay
 from src.models.cost_structure import CostStructure
 from src.optimization.unified_node_model import UnifiedNodeModel
+from tests.conftest import create_test_products
 
 
 def test_minimal_case_single_breadroom_single_day_demand():
@@ -105,10 +106,15 @@ def test_minimal_case_single_breadroom_single_day_demand():
     )
 
     # Create model
+    # Create products for model (extract unique product IDs from forecast)
+    product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+    products = create_test_products(product_ids)
+
     model = UnifiedNodeModel(
         nodes=[manufacturing, breadroom],
         routes=[route],
         forecast=forecast,
+        products=products,
         labor_calendar=labor_calendar,
         cost_structure=cost_structure,
         start_date=day_1,
@@ -247,6 +253,10 @@ def test_minimal_with_multi_day_demand():
         production_cost_per_unit=5.0,
         shortage_penalty_per_unit=10000.0,
     )
+
+    # Create products for model (extract unique product IDs from forecast)
+    product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+    products = create_test_products(product_ids)
 
     model = UnifiedNodeModel(
         nodes=[manufacturing, breadroom], routes=[route],

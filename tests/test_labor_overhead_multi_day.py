@@ -15,6 +15,7 @@ from src.models.forecast import Forecast, ForecastEntry
 from src.models.labor_calendar import LaborCalendar, LaborDay
 from src.models.cost_structure import CostStructure
 from src.optimization.unified_node_model import UnifiedNodeModel
+from tests.conftest import create_test_products
 
 
 def create_multi_day_overhead_test_setup():
@@ -233,6 +234,7 @@ def test_multi_day_overhead_consistency():
         nodes=setup['nodes'],
         routes=setup['routes'],
         forecast=setup['forecast'],
+        products=products,
         labor_calendar=setup['labor_calendar'],
         cost_structure=setup['cost_structure'],
         start_date=setup['start_date'],
@@ -367,6 +369,7 @@ def test_multi_day_overhead_with_storage():
         nodes=setup['nodes'],
         routes=setup['routes'],
         forecast=setup['forecast'],
+        products=products,
         labor_calendar=setup['labor_calendar'],
         cost_structure=setup['cost_structure'],
         start_date=setup['start_date'],

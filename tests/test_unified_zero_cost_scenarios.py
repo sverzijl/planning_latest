@@ -12,6 +12,7 @@ from src.models.truck_schedule import TruckScheduleCollection
 from src.models.manufacturing import ManufacturingSite
 from src.optimization.legacy_to_unified_converter import LegacyToUnifiedConverter
 from src.optimization.unified_node_model import UnifiedNodeModel
+from tests.conftest import create_test_products
 
 
 @pytest.fixture
@@ -71,10 +72,15 @@ def test_zero_transport_costs_solution_extraction(base_model_data):
     print("TESTING ZERO TRANSPORT COSTS")
     print("=" * 80)
 
+    # Create products for model (extract unique product IDs from forecast)
+    product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+    products = create_test_products(product_ids)
+
     model = UnifiedNodeModel(
         nodes=base_model_data['nodes'],
         routes=base_model_data['routes'],
         forecast=base_model_data['forecast'],
+        products=products,
         labor_calendar=base_model_data['labor_calendar'],
         cost_structure=base_model_data['cost_structure'],
         start_date=base_model_data['start_date'],
@@ -124,10 +130,15 @@ def test_zero_storage_costs_solution_extraction(base_model_data):
     print("TESTING ZERO STORAGE COSTS")
     print("=" * 80)
 
+    # Create products for model (extract unique product IDs from forecast)
+    product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+    products = create_test_products(product_ids)
+
     model = UnifiedNodeModel(
         nodes=base_model_data['nodes'],
         routes=base_model_data['routes'],
         forecast=base_model_data['forecast'],
+        products=products,
         labor_calendar=base_model_data['labor_calendar'],
         cost_structure=base_model_data['cost_structure'],
         start_date=base_model_data['start_date'],
@@ -176,10 +187,15 @@ def test_mixed_zero_nonzero_costs(base_model_data):
     print("TESTING MIXED ZERO/NON-ZERO COSTS")
     print("=" * 80)
 
+    # Create products for model (extract unique product IDs from forecast)
+    product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+    products = create_test_products(product_ids)
+
     model = UnifiedNodeModel(
         nodes=base_model_data['nodes'],
         routes=base_model_data['routes'],
         forecast=base_model_data['forecast'],
+        products=products,
         labor_calendar=base_model_data['labor_calendar'],
         cost_structure=base_model_data['cost_structure'],
         start_date=base_model_data['start_date'],
@@ -220,10 +236,15 @@ def test_zero_production_cost(base_model_data):
     print("TESTING ZERO PRODUCTION COST")
     print("=" * 80)
 
+    # Create products for model (extract unique product IDs from forecast)
+    product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+    products = create_test_products(product_ids)
+
     model = UnifiedNodeModel(
         nodes=base_model_data['nodes'],
         routes=base_model_data['routes'],
         forecast=base_model_data['forecast'],
+        products=products,
         labor_calendar=base_model_data['labor_calendar'],
         cost_structure=base_model_data['cost_structure'],
         start_date=base_model_data['start_date'],

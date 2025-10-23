@@ -8,6 +8,7 @@ from src.models.forecast import Forecast, ForecastEntry
 from src.models.labor_calendar import LaborCalendar, LaborDay
 from src.models.cost_structure import CostStructure
 from src.optimization.unified_node_model import UnifiedNodeModel
+from tests.conftest import create_test_products
 from pyomo.environ import value
 
 
@@ -92,10 +93,15 @@ def test_freeze_transition_and_shelf_life_reset():
         shortage_penalty_per_unit=10000.0,
     )
 
+    # Create products for model (extract unique product IDs from forecast)
+    product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+    products = create_test_products(product_ids)
+
     model = UnifiedNodeModel(
         nodes=[mfg, frozen_storage, demand_node],
         routes=[r1, r2],
         forecast=forecast,
+        products=products,
         labor_calendar=labor_calendar,
         cost_structure=cost_structure,
         start_date=start_date,

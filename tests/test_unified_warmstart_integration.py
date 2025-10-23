@@ -16,6 +16,7 @@ import time
 
 from src.parsers.multi_file_parser import MultiFileParser
 from src.optimization.unified_node_model import UnifiedNodeModel
+from tests.conftest import create_test_products
 from src.optimization.legacy_to_unified_converter import LegacyToUnifiedConverter
 from src.optimization.warmstart_generator import generate_campaign_warmstart
 
@@ -183,10 +184,15 @@ class TestWarmstartGeneration:
     def test_generate_warmstart_method(self, small_test_data):
         """Test that _generate_warmstart() returns valid hints dictionary."""
         # Create model
+        # Create products for model (extract unique product IDs from forecast)
+        product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+        products = create_test_products(product_ids)
+
         model = UnifiedNodeModel(
             nodes=small_test_data['nodes'],
             routes=small_test_data['routes'],
             forecast=small_test_data['forecast'],
+        products=products,
             labor_calendar=small_test_data['labor_calendar'],
             cost_structure=small_test_data['cost_structure'],
             start_date=small_test_data['start_date'],
@@ -218,10 +224,15 @@ class TestWarmstartGeneration:
     def test_apply_warmstart_method(self, small_test_data):
         """Test that _apply_warmstart() sets variable values correctly."""
         # Create model
+        # Create products for model (extract unique product IDs from forecast)
+        product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+        products = create_test_products(product_ids)
+
         model = UnifiedNodeModel(
             nodes=small_test_data['nodes'],
             routes=small_test_data['routes'],
             forecast=small_test_data['forecast'],
+        products=products,
             labor_calendar=small_test_data['labor_calendar'],
             cost_structure=small_test_data['cost_structure'],
             start_date=small_test_data['start_date'],
@@ -265,10 +276,15 @@ class TestWarmstartSolveIntegration:
     def test_solve_with_warmstart_parameter(self, small_test_data):
         """Test that solve(use_warmstart=True) works without errors."""
         # Create model
+        # Create products for model (extract unique product IDs from forecast)
+        product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+        products = create_test_products(product_ids)
+
         model = UnifiedNodeModel(
             nodes=small_test_data['nodes'],
             routes=small_test_data['routes'],
             forecast=small_test_data['forecast'],
+        products=products,
             labor_calendar=small_test_data['labor_calendar'],
             cost_structure=small_test_data['cost_structure'],
             start_date=small_test_data['start_date'],
@@ -308,10 +324,15 @@ class TestWarmstartSolveIntegration:
     def test_solve_without_warmstart_still_works(self, small_test_data):
         """Test backward compatibility - solve() without warmstart still works."""
         # Create model
+        # Create products for model (extract unique product IDs from forecast)
+        product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+        products = create_test_products(product_ids)
+
         model = UnifiedNodeModel(
             nodes=small_test_data['nodes'],
             routes=small_test_data['routes'],
             forecast=small_test_data['forecast'],
+        products=products,
             labor_calendar=small_test_data['labor_calendar'],
             cost_structure=small_test_data['cost_structure'],
             start_date=small_test_data['start_date'],
@@ -343,10 +364,15 @@ class TestWarmstartSolveIntegration:
     def test_warmstart_custom_hints(self, small_test_data):
         """Test solve() with pre-generated custom warmstart_hints."""
         # Create model
+        # Create products for model (extract unique product IDs from forecast)
+        product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+        products = create_test_products(product_ids)
+
         model = UnifiedNodeModel(
             nodes=small_test_data['nodes'],
             routes=small_test_data['routes'],
             forecast=small_test_data['forecast'],
+        products=products,
             labor_calendar=small_test_data['labor_calendar'],
             cost_structure=small_test_data['cost_structure'],
             start_date=small_test_data['start_date'],
@@ -382,10 +408,15 @@ class TestWarmstartSolveIntegration:
     def test_warmstart_invalid_hints_graceful(self, small_test_data):
         """Test that invalid hints don't crash the solver."""
         # Create model
+        # Create products for model (extract unique product IDs from forecast)
+        product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+        products = create_test_products(product_ids)
+
         model = UnifiedNodeModel(
             nodes=small_test_data['nodes'],
             routes=small_test_data['routes'],
             forecast=small_test_data['forecast'],
+        products=products,
             labor_calendar=small_test_data['labor_calendar'],
             cost_structure=small_test_data['cost_structure'],
             start_date=small_test_data['start_date'],
@@ -420,10 +451,15 @@ class TestWarmstartSolveIntegration:
     def test_warmstart_partial_hints(self, small_test_data):
         """Test that partial hints (not all products) work correctly."""
         # Create model
+        # Create products for model (extract unique product IDs from forecast)
+        product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+        products = create_test_products(product_ids)
+
         model = UnifiedNodeModel(
             nodes=small_test_data['nodes'],
             routes=small_test_data['routes'],
             forecast=small_test_data['forecast'],
+        products=products,
             labor_calendar=small_test_data['labor_calendar'],
             cost_structure=small_test_data['cost_structure'],
             start_date=small_test_data['start_date'],
@@ -527,6 +563,7 @@ class TestWarmstartPerformance:
             nodes=nodes,
             routes=unified_routes,
             forecast=forecast,
+        products=products,
             labor_calendar=labor_calendar,
             cost_structure=cost_structure,
             start_date=start_date,
@@ -552,6 +589,7 @@ class TestWarmstartPerformance:
             nodes=nodes,
             routes=unified_routes,
             forecast=forecast,
+        products=products,
             labor_calendar=labor_calendar,
             cost_structure=cost_structure,
             start_date=start_date,
@@ -630,10 +668,15 @@ class TestWarmstartPerformance:
         start_date = date(2025, 10, 20)
         end_date = start_date + timedelta(days=27)  # 4 weeks
 
+        # Create products for model (extract unique product IDs from forecast)
+        product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+        products = create_test_products(product_ids)
+
         model = UnifiedNodeModel(
             nodes=nodes,
             routes=unified_routes,
             forecast=forecast,
+        products=products,
             labor_calendar=labor_calendar,
             cost_structure=cost_structure,
             start_date=start_date,
@@ -695,10 +738,15 @@ class TestWarmstartPerformance:
         start_date = date(2025, 10, 20)
         end_date = start_date + timedelta(days=27)  # 4 weeks
 
+        # Create products for model (extract unique product IDs from forecast)
+        product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+        products = create_test_products(product_ids)
+
         model = UnifiedNodeModel(
             nodes=nodes,
             routes=unified_routes,
             forecast=forecast,
+        products=products,
             labor_calendar=labor_calendar,
             cost_structure=cost_structure,
             start_date=start_date,

@@ -14,6 +14,7 @@ from src.models.forecast import Forecast, ForecastEntry
 from src.models.labor_calendar import LaborCalendar, LaborDay
 from src.models.cost_structure import CostStructure
 from src.optimization.unified_node_model import UnifiedNodeModel
+from tests.conftest import create_test_products
 
 
 class TestInventoryHoldingCosts:
@@ -117,10 +118,15 @@ class TestInventoryHoldingCosts:
     ):
         """Test that holding cost is included in the objective function."""
         # Setup optimization model
+        # Create products for model (extract unique product IDs from forecast)
+        product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+        products = create_test_products(product_ids)
+
         model = UnifiedNodeModel(
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
+        products=products,
             labor_calendar=labor_calendar,
             cost_structure=cost_structure_with_holding,
             start_date=date(2025, 10, 1),
@@ -172,10 +178,15 @@ class TestInventoryHoldingCosts:
             cost_per_unit=0.3,
         )
 
+        # Create products for model (extract unique product IDs from forecast)
+        product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+        products = create_test_products(product_ids)
+
         model = UnifiedNodeModel(
             nodes=simple_network['nodes'] + [frozen_node],
             routes=simple_network['routes'] + [frozen_route],
             forecast=simple_forecast,
+        products=products,
             labor_calendar=labor_calendar,
             cost_structure=cost_structure_with_holding,
             start_date=date(2025, 10, 1),
@@ -202,10 +213,15 @@ class TestInventoryHoldingCosts:
         cost_structure_with_holding
     ):
         """Test that ambient/thawed inventory uses ambient storage rate."""
+        # Create products for model (extract unique product IDs from forecast)
+        product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+        products = create_test_products(product_ids)
+
         model = UnifiedNodeModel(
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
+        products=products,
             labor_calendar=labor_calendar,
             cost_structure=cost_structure_with_holding,
             start_date=date(2025, 10, 1),
@@ -230,10 +246,15 @@ class TestInventoryHoldingCosts:
         # This test builds the model and verifies the solution structure
         # Actual solving requires a solver installation
 
+        # Create products for model (extract unique product IDs from forecast)
+        product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+        products = create_test_products(product_ids)
+
         model = UnifiedNodeModel(
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
+        products=products,
             labor_calendar=labor_calendar,
             cost_structure=cost_structure_with_holding,
             start_date=date(2025, 10, 1),
@@ -284,10 +305,15 @@ class TestInventoryHoldingCosts:
             shortage_penalty_per_unit=100.0,
         )
 
+        # Create products for model (extract unique product IDs from forecast)
+        product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+        products = create_test_products(product_ids)
+
         model = UnifiedNodeModel(
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
+        products=products,
             labor_calendar=labor_calendar,
             cost_structure=zero_cost_structure,
             start_date=date(2025, 10, 1),
@@ -311,10 +337,15 @@ class TestInventoryHoldingCosts:
         cost_structure_with_holding
     ):
         """Test that holding cost is calculated from cohort_inventory correctly."""
+        # Create products for model (extract unique product IDs from forecast)
+        product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+        products = create_test_products(product_ids)
+
         model = UnifiedNodeModel(
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
+        products=products,
             labor_calendar=labor_calendar,
             cost_structure=cost_structure_with_holding,
             start_date=date(2025, 10, 1),
@@ -348,10 +379,15 @@ class TestInventoryHoldingCosts:
         cost_structure_with_holding
     ):
         """Test that aggregated inventory mode uses ambient storage rate."""
+        # Create products for model (extract unique product IDs from forecast)
+        product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+        products = create_test_products(product_ids)
+
         model = UnifiedNodeModel(
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
+        products=products,
             labor_calendar=labor_calendar,
             cost_structure=cost_structure_with_holding,
             start_date=date(2025, 10, 1),
