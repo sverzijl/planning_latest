@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """
-Add units_per_mix column to Excel files for mix-based production feature.
+Add units_per_mix column to all Network Config Excel files for mix-based production feature.
 
 This script:
-1. Opens Network_Config.xlsx
-2. Adds a "Products" sheet if it doesn't exist
+1. Processes all three Network_Config files:
+   - Network_Config.xlsx (primary config)
+   - Network_Config_Unified.xlsx (unified model config)
+   - Network_Config_backup.xlsx (backup config)
+2. Adds a "Products" sheet to each file if it doesn't exist
 3. Populates products from forecast files
 4. Adds units_per_mix column with realistic values
-5. Saves the updated file
+5. Saves the updated files
 """
 
 import openpyxl
@@ -17,12 +20,19 @@ from pathlib import Path
 import pandas as pd
 
 # File paths
-NETWORK_CONFIG_PATH = Path("data/examples/Network_Config.xlsx")
+NETWORK_CONFIG_FILES = [
+    Path("data/examples/Network_Config.xlsx"),
+    Path("data/examples/Network_Config_Unified.xlsx"),
+    Path("data/examples/Network_Config_backup.xlsx"),
+]
 FORECAST_PATH = Path("data/examples/Gfree Forecast.xlsm")
 FORECAST_LATEST_PATH = Path("data/examples/Gluten Free Forecast - Latest.xlsm")
 
 # Realistic units_per_mix values for different products
 # These should reflect actual batch sizes from manufacturing
+# NOTE: We define all 5 products even though only 2 (G610, G142) are found in current forecast files.
+# This ensures the Network Config files are complete and ready for any product mix scenarios
+# that may be used in testing or production planning.
 PRODUCT_MIX_SIZES = {
     "G142": 415,
     "G144": 387,
@@ -166,54 +176,81 @@ def main():
     print(f"\nTotal unique products found: {len(all_products)}")
     print(f"Products: {sorted(all_products)}")
 
-    # Step 2: Update Network_Config.xlsx
-    print(f"\nStep 2: Updating {NETWORK_CONFIG_PATH}...")
+    # Step 2: Update all Network_Config files
+    print("\nStep 2: Updating Network_Config files...")
 
-    if not NETWORK_CONFIG_PATH.exists():
-        print(f"❌ Error: {NETWORK_CONFIG_PATH} not found!")
-        return
+    updated_files = []
+    skipped_files = []
 
-    # Load workbook
-    wb = load_workbook(NETWORK_CONFIG_PATH)
-    print(f"  Loaded workbook with sheets: {wb.sheetnames}")
+    for config_path in NETWORK_CONFIG_FILES:
+        print(f"\n  Processing: {config_path}")
 
-    # Create/update Products sheet
-    create_products_sheet(wb, all_products)
+        if not config_path.exists():
+            print(f"    ⚠️  Skipping (not found)")
+            skipped_files.append(config_path)
+            continue
 
-    # Save workbook
-    wb.save(NETWORK_CONFIG_PATH)
-    print(f"\n✅ Successfully updated {NETWORK_CONFIG_PATH}")
+        try:
+            # Load workbook
+            wb = load_workbook(config_path)
+            print(f"    Loaded workbook with sheets: {wb.sheetnames}")
+
+            # Create/update Products sheet
+            create_products_sheet(wb, all_products)
+
+            # Save workbook
+            wb.save(config_path)
+            print(f"    ✅ Successfully updated {config_path.name}")
+            updated_files.append(config_path)
+
+        except Exception as e:
+            print(f"    ❌ Error updating {config_path.name}: {e}")
+            skipped_files.append(config_path)
 
     # Step 3: Verify the changes
     print("\nStep 3: Verifying changes...")
-    wb_verify = load_workbook(NETWORK_CONFIG_PATH)
-    if "Products" in wb_verify.sheetnames:
-        ws = wb_verify["Products"]
-        print(f"  ✓ Products sheet exists")
-        print(f"  ✓ Contains {ws.max_row - 1} product rows")
 
-        # Check headers
-        headers = [cell.value for cell in ws[1]]
-        if "units_per_mix" in headers:
-            print(f"  ✓ units_per_mix column present at position {headers.index('units_per_mix') + 1}")
-        else:
-            print(f"  ❌ units_per_mix column NOT found!")
+    for config_path in updated_files:
+        print(f"\n  Verifying: {config_path.name}")
+        wb_verify = load_workbook(config_path)
 
-        # Display sample data
-        print("\n  Sample product data:")
-        for row_idx in range(2, min(7, ws.max_row + 1)):
-            product_id = ws.cell(row=row_idx, column=1).value
-            units_per_mix = ws.cell(row=row_idx, column=8).value
-            print(f"    {product_id}: {units_per_mix} units/mix")
+        if "Products" in wb_verify.sheetnames:
+            ws = wb_verify["Products"]
+            print(f"    ✓ Products sheet exists")
+            print(f"    ✓ Contains {ws.max_row - 1} product rows")
 
+            # Check headers
+            headers = [cell.value for cell in ws[1]]
+            if "units_per_mix" in headers:
+                print(f"    ✓ units_per_mix column present at position {headers.index('units_per_mix') + 1}")
+            else:
+                print(f"    ❌ units_per_mix column NOT found!")
+
+            # Display sample data
+            print(f"    Sample product data:")
+            for row_idx in range(2, min(5, ws.max_row + 1)):
+                product_id = ws.cell(row=row_idx, column=1).value
+                units_per_mix = ws.cell(row=row_idx, column=8).value
+                print(f"      {product_id}: {units_per_mix} units/mix")
+
+    # Summary
     print("\n" + "=" * 80)
     print("✅ COMPLETE - units_per_mix column added successfully!")
     print("=" * 80)
+    print(f"\nFiles updated: {len(updated_files)}")
+    for path in updated_files:
+        print(f"  ✓ {path.name}")
+
+    if skipped_files:
+        print(f"\nFiles skipped: {len(skipped_files)}")
+        for path in skipped_files:
+            print(f"  ⚠️  {path.name}")
+
     print("\nNext steps:")
-    print("1. Open Network_Config.xlsx in Excel to verify the Products sheet")
+    print("1. Open the updated Network_Config files in Excel to verify the Products sheet")
     print("2. Adjust units_per_mix values if needed (get actual batch sizes from manufacturing)")
     print("3. Run tests to verify the parser can read the new column")
-    print("4. Commit the updated file")
+    print("4. Commit the updated files")
 
 
 if __name__ == "__main__":
