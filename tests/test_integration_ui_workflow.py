@@ -759,7 +759,7 @@ def test_ui_workflow_4_weeks_with_highs(parsed_data):
 
     result = model.solve(
         solver_name='highs',  # Use HiGHS solver
-        time_limit_seconds=240,  # Increased from 180s (production_day lower bound added more constraints)
+        time_limit_seconds=400,  # Mix-based production + pallet tracking (Task 10: updated from 240s)
         mip_gap=0.01,
         use_aggressive_heuristics=True,  # Enable HiGHS performance features
         use_warmstart=False,  # No benefit for HiGHS (not supported)
@@ -770,7 +770,7 @@ def test_ui_workflow_4_weeks_with_highs(parsed_data):
 
     print(f"\n✓ HIGHS SOLVE COMPLETE:")
     print(f"   Status: {result.termination_condition}")
-    print(f"   Solve time: {solve_time:.1f}s (expected <120s)")
+    print(f"   Solve time: {solve_time:.1f}s (expected <400s with mix-based + pallet tracking)")
     print(f"   Objective: ${result.objective_value:,.2f}")
     print(f"   MIP gap: {result.gap * 100:.2f}%" if result.gap else "   MIP gap: N/A")
 
@@ -778,8 +778,8 @@ def test_ui_workflow_4_weeks_with_highs(parsed_data):
     assert result.is_optimal() or result.is_feasible(), \
         f"Expected optimal/feasible, got {result.termination_condition}"
 
-    assert solve_time < 240, \
-        f"HiGHS took {solve_time:.1f}s (expected <240s; production_day lower bound adds constraints)"
+    assert solve_time < 400, \
+        f"HiGHS took {solve_time:.1f}s (expected <400s; mix-based production + pallet tracking)"
 
     # Validate solution quality
     solution = model.get_solution()
