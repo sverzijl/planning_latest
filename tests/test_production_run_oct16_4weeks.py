@@ -112,6 +112,7 @@ def test_exact_user_scenario_oct16_4weeks():
     print(f"  is_feasible(): {result.is_feasible()}")
     print(f"  Objective: ${result.objective_value:,.2f}" if result.objective_value else "  Objective: None")
     print(f"  Solve time: {result.solve_time_seconds:.1f}s")
+    print(f"  MIP Gap: {result.gap * 100:.4f}%" if result.gap else "  MIP Gap: N/A (optimal or gap not reported)")
 
     # ISSUE #1: Check status mismatch
     print(f"\n" + "="*80)
@@ -183,6 +184,34 @@ def test_exact_user_scenario_oct16_4weeks():
                 if (manufacturing_node, prod, date_val) in pyomo_model.production
             )
             print(f"    total_production: {total_production:,.1f} units")
+
+            # Calculate production time and overhead separately to verify 4h minimum logic
+            production_rate = 1400.0  # units/hour
+            production_time_calc = total_production / production_rate if total_production > 0 else 0.0
+
+            # Estimate overhead (startup + shutdown + changeov ers)
+            startup_hours = 0.5
+            shutdown_hours = 0.5
+            changeover_hours = 1.0
+
+            # Count how many products are running
+            products_running = sum(
+                1 for prod in pyomo_model.products
+                if (manufacturing_node, prod, date_val) in pyomo_model.product_produced
+                and value(pyomo_model.product_produced[manufacturing_node, prod, date_val]) > 0.5
+            )
+
+            overhead_calc = 0.0
+            if products_running > 0:
+                overhead_calc = startup_hours + shutdown_hours + (changeover_hours * products_running)
+
+            total_hours_calc = production_time_calc + overhead_calc
+
+            print(f"    Calculated breakdown:")
+            print(f"      Production time: {production_time_calc:.4f}h ({total_production:,.0f} units / {production_rate} per hour)")
+            print(f"      Overhead time: {overhead_calc:.4f}h ({products_running} SKUs × {changeover_hours}h + startup/shutdown)")
+            print(f"      Total needed: {total_hours_calc:.4f}h")
+            print(f"      4h minimum check: max({total_hours_calc:.4f}h, 4.0h) = {max(total_hours_calc, 4.0):.4f}h")
 
             # Check production_day variable value (the key to Big-M constraint)
             if (manufacturing_node, date_val) in pyomo_model.production_day:
