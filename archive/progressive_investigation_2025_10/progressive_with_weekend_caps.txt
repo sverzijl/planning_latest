@@ -1,0 +1,288 @@
+/home/sverzijl/planning_latest/src/optimization/unified_node_model.py:300: UserWarning: Zero cost parameters detected: All route transport costs are 0, ambient storage costs are 0. This may cause solver to leave some variables uninitialized (valid behavior). Consider using small non-zero costs (e.g., 0.0001) if you encounter solution extraction issues.
+  warnings.warn(warning_msg, UserWarning)
+================================================================================
+PROGRESSIVE SOLUTION ANALYSIS
+================================================================================
+
+Loading data...
+Data loaded: 5 products, 84 days
+
+================================================================================
+SOLVING WITH PROGRESSIVE OPTIMIZATION
+================================================================================
+
+Unified Model Data Summary:
+  Nodes: 11
+    Manufacturing: 1
+    Demand: 9
+    With truck constraints: 1
+  Routes: 10
+  Truck schedules: 11
+  Planning horizon: 2025-10-16 to 2026-01-07 (84 days)
+  Products: 5
+  Demand entries: 3780
+
+Building Unified Node Model...
+  Sets defined: 11 nodes, 5 products, 84 dates, 10 routes
+  Production dates for cohorts: 84 in horizon + 0 from initial inventory
+  Cohort indices: 75,600 cohorts
+  Shipment cohorts by origin node:
+    6104: 34860
+    6122: 69305
+    6125: 52290
+    Lineage: 15015
+  Shipment cohort indices: 171,470
+  Demand cohort indices: 51,975
+  🚛 Truck pallet tracking enabled: 5,040 integer pallet variables
+  Changeover tracking: 84 production days, 420 product indicators (VARIABLE (binary decision))
+  Start tracking: 420 start indicators (binary)
+  Labor cost variables: 84 labor hour variables added
+  Variables created successfully
+  Adding core constraints...
+  Changeover tracking constraints added (1,344 constraints)
+  Big-M: Using max_mixes per product (tighter than max_production)
+  Labor cost constraints added (84 node-date pairs, 756 constraints)
+  Adding storage shipment delay constraint for 3 nodes: ['6104', '6125', 'Lineage']
+    Added 243 storage delay constraints
+  ✓ Added truck pallet ceiling constraints: 5,040 constraints
+  Hybrid pallet formulation (MIP optimization):
+    Small cohorts (integer 0-10): 17,850
+    Domain reduced: 62 → 10 (84% reduction)
+  Pallet tracking enabled for states: ['frozen']
+    - Pallet integer variables: 17,850
+    - Domain per variable: 0-10 (vs 0-62 full formulation)
+    - Unit-tracked states: ['ambient', 'thawed']
+  Holding cost enabled: 75,600 total cohorts (25,200 pallet-tracked)
+
+  Staleness penalty enabled: $5.0000 per unit per age ratio
+  Staleness penalty calculation: 51,975 demand cohorts
+  Formula: (age_days / 17) × $5.0000 × demand_satisfied
+  Changeover cost enabled: $38.40 per start
+  Core constraints added
+  Truck constraints added (generalized for any node)
+  Model complete and ready to solve
+
+======================================================================
+PROGRESSIVE HORIZON OPTIMIZATION
+======================================================================
+Total phases: 4
+Solver: appsi_highs
+======================================================================
+
+======================================================================
+PHASE 1/4: Strategic
+======================================================================
+  Horizon: 12 weeks
+  MIP Gap: 40.0%
+
+  Phase 1 complete:
+    Objective: $10,207,148.97
+    Solve time: 187.9s
+    Status: maxTimeLimit
+    Frozen inventory strategy learned:
+      Week 11: 0 units
+      Week 7: 0 units
+      Week 6: 0 units
+      Week 10: 0 units
+      ... (+ 8 more weeks)
+
+======================================================================
+PHASE 2/4: Tactical
+======================================================================
+  Horizon: 8 weeks
+  MIP Gap: 15.0%
+  Bound tolerance: ±10%
+  Fixing beyond week: 8
+
+  Applying bound tightening...
+    Bounds applied to 140 production variables
+    Fixed 140 binary variables
+
+  Phase 2 complete:
+    Objective: $10,207,148.97
+    Solve time: 155.3s
+    Status: maxTimeLimit
+
+======================================================================
+PHASE 3/4: Operational
+======================================================================
+  Horizon: 4 weeks
+  MIP Gap: 3.0%
+  Bound tolerance: ±5%
+  Fixing beyond week: 4
+
+  Applying bound tightening...
+    Bounds applied to 280 production variables
+    Fixed 280 binary variables
+
+  Phase 3 complete:
+    Objective: $10,207,148.97
+    Solve time: 157.1s
+    Status: maxTimeLimit
+
+======================================================================
+PHASE 4/4: Commitment
+======================================================================
+  Horizon: 1 weeks
+  MIP Gap: 0.5%
+  Bound tolerance: ±2%
+  Fixing beyond week: 1
+
+  Applying bound tightening...
+    Bounds applied to 385 production variables
+    Fixed 385 binary variables
+
+  Phase 4 complete:
+    Objective: $9,395,137.41
+    Solve time: 58.2s
+    Status: optimal
+
+======================================================================
+PROGRESSIVE OPTIMIZATION COMPLETE
+======================================================================
+  Final objective: $9,395,137.41
+  Total solve time: 576.7s
+  Phases completed: 4
+======================================================================
+
+
+Progressive solve complete:
+  Objective: $9,395,137.41
+  Time: 576.7s
+  Status: optimal
+
+================================================================================
+ANALYZING PROGRESSIVE SOLUTION
+================================================================================
+
+================================================================================
+MANUFACTURING ANALYSIS: Progressive Solution
+================================================================================
+
+Week 1:
+  Total production: 117,860 units
+  Production days: 7/7
+  Avg daily production: 16,837 units/day
+  Total labor hours: 96.2 hours
+  Total changeovers: 34 SKU switches
+  Frozen inventory (avg): 0 units
+
+Week 2:
+  Total production: 0 units
+  Production days: 0/7
+  Avg daily production: 0 units/day
+  Total labor hours: 0.0 hours
+  Total changeovers: 0 SKU switches
+  Frozen inventory (avg): 0 units
+
+================================================================================
+WEEK 1 DAILY BREAKDOWN
+================================================================================
+
+2025-10-16 (Thursday):
+  Total: 10,790 units, Labor: 13.7h, Changeovers: 4
+  Products:
+    HELGAS GFREE MIXED GRAIN 500G: 3,735 units
+    HELGAS GFREE TRAD WHITE 470G: 4,150 units
+    HELGAS GFREE WHOLEM 500G: 1,660 units
+    WONDER GFREE WHITE 470G: 1,245 units
+
+2025-10-17 (Friday):
+  Total: 17,845 units, Labor: 13.7h, Changeovers: 5
+  Products:
+    HELGAS GFREE MIXED GRAIN 500G: 4,150 units
+    HELGAS GFREE TRAD WHITE 470G: 4,150 units
+    HELGAS GFREE WHOLEM 500G: 7,055 units
+    WONDER GFREE WHITE 470G: 1,660 units
+    WONDER GFREE WHOLEM 500G: 830 units
+
+2025-10-18 (Saturday):
+  Total: 17,845 units, Labor: 13.7h, Changeovers: 5
+  Products:
+    HELGAS GFREE MIXED GRAIN 500G: 3,735 units
+    HELGAS GFREE TRAD WHITE 470G: 3,320 units
+    HELGAS GFREE WHOLEM 500G: 3,735 units
+    WONDER GFREE WHITE 470G: 3,735 units
+    WONDER GFREE WHOLEM 500G: 3,320 units
+
+2025-10-19 (Sunday):
+  Total: 17,845 units, Labor: 13.7h, Changeovers: 5
+  Products:
+    HELGAS GFREE MIXED GRAIN 500G: 3,735 units
+    HELGAS GFREE TRAD WHITE 470G: 3,735 units
+    HELGAS GFREE WHOLEM 500G: 3,735 units
+    WONDER GFREE WHITE 470G: 3,320 units
+    WONDER GFREE WHOLEM 500G: 3,320 units
+
+2025-10-20 (Monday):
+  Total: 17,845 units, Labor: 13.7h, Changeovers: 5
+  Products:
+    HELGAS GFREE MIXED GRAIN 500G: 3,735 units
+    HELGAS GFREE TRAD WHITE 470G: 4,150 units
+    HELGAS GFREE WHOLEM 500G: 4,150 units
+    WONDER GFREE WHITE 470G: 3,735 units
+    WONDER GFREE WHOLEM 500G: 2,075 units
+
+2025-10-21 (Tuesday):
+  Total: 17,845 units, Labor: 13.7h, Changeovers: 5
+  Products:
+    HELGAS GFREE MIXED GRAIN 500G: 3,735 units
+    HELGAS GFREE TRAD WHITE 470G: 4,150 units
+    HELGAS GFREE WHOLEM 500G: 4,150 units
+    WONDER GFREE WHITE 470G: 3,320 units
+    WONDER GFREE WHOLEM 500G: 2,490 units
+
+2025-10-22 (Wednesday):
+  Total: 17,845 units, Labor: 13.7h, Changeovers: 5
+  Products:
+    HELGAS GFREE MIXED GRAIN 500G: 3,735 units
+    HELGAS GFREE TRAD WHITE 470G: 4,150 units
+    HELGAS GFREE WHOLEM 500G: 4,150 units
+    WONDER GFREE WHITE 470G: 3,320 units
+    WONDER GFREE WHOLEM 500G: 2,490 units
+
+================================================================================
+WEEK 2 DAILY BREAKDOWN
+================================================================================
+
+================================================================================
+MANUFACTURING SENSIBILITY CHECKS
+================================================================================
+
+✓ Production Smoothness:
+    Coefficient of variation: 0.15
+    ✅ PASS: Production is reasonably smooth
+
+✓ Weekend Production:
+    Weekday: 82,170 units
+    Weekend: 35,690 units
+    ❌ CONCERN: Significant weekend production (expensive!)
+
+✓ Daily Changeovers:
+    Average: 2.4 SKU switches/day
+    ✅ PASS: Reasonable changeover frequency
+
+✓ Capacity Utilization (Week 1):
+    Production: 117,860 units
+    Capacity: 84,000 units/week (regular hours)
+    Utilization: 140.3%
+    ⚠️  WARNING: High utilization (tight capacity)
+
+================================================================================
+SENSIBILITY SUMMARY
+================================================================================
+✅ Checks passed: 2
+   - Production is smooth (low variance)
+   - Reasonable changeovers (<= 3/day)
+
+⚠️  Warnings: 1
+   - High capacity utilization (>95%)
+
+❌ Concerns: 1
+   - Excessive weekend production
+
+⚠️  OVERALL: Solution has concerns - review details above
+
+📊 Results saved to: progressive_analysis_results.json
+
+⚠️  CONCLUSION: Review concerns before proceeding

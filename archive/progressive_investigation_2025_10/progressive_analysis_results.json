@@ -1,0 +1,37 @@
+{
+  "progressive": {
+    "objective": 9395137.412125807,
+    "solve_time": 576.7125749588013,
+    "weekly_summary": {
+      "1": {
+        "total_production": 117860.0,
+        "total_labor_hours": 96.18571428571428,
+        "total_changeovers": 34,
+        "avg_daily_production": 16837.14285714286,
+        "production_days": 7
+      },
+      "2": {
+        "total_production": 0,
+        "total_labor_hours": 0.0,
+        "total_changeovers": 0,
+        "avg_daily_production": 0.0,
+        "production_days": 0
+      }
+    },
+    "frozen_strategy": {
+      "1": 0.0,
+      "2": 0.0,
+      "3": 0.0,
+      "4": 0.0,
+      "5": 0.0,
+      "6": 0.0,
+      "7": 0.0,
+      "8": 0.0,
+      "9": 0.0,
+      "10": 0.0,
+      "11": 0.0,
+      "12": 0.0
+    },
+    "is_sensible": false
+  }
+}

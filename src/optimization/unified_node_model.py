@@ -48,6 +48,7 @@ from pyomo.environ import (
     Expression,
     value,
     quicksum,
+    TerminationCondition,
 )
 
 from src.models.unified_node import UnifiedNode, StorageMode
@@ -71,6 +72,7 @@ class UnifiedNodeModel(BaseOptimizationModel):
     FROZEN_SHELF_LIFE = 120  # days
     AMBIENT_SHELF_LIFE = 17  # days
     THAWED_SHELF_LIFE = 14  # days (after thawing frozen product)
+    MINIMUM_ACCEPTABLE_SHELF_LIFE_DAYS = 7  # Breadroom policy: discard if <7 days remaining
 
     # Packaging constants
     UNITS_PER_CASE = 10.0
@@ -98,10 +100,12 @@ class UnifiedNodeModel(BaseOptimizationModel):
         allow_shortages: bool = False,
         enforce_shelf_life: bool = True,
         force_all_skus_daily: bool = False,
+        filter_shipments_by_freshness: bool = True,
         force_sku_pattern: Optional[Dict[Tuple[str, str, Date], bool]] = None,
         bigm_overrides: Optional[Dict[Tuple[str, str, Date], float]] = None,
         use_hybrid_pallet_formulation: bool = True,
         pallet_hybrid_threshold: int = 3200,
+        use_truck_pallet_tracking: bool = True,
     ):
         """Initialize unified node model.
 
@@ -135,6 +139,11 @@ class UnifiedNodeModel(BaseOptimizationModel):
                            Allows tighter Big-M for small-volume SKUs, making them
                            easier to skip while still allowing production if needed.
                            More flexible than force_sku_pattern (doesn't force to 0).
+            use_truck_pallet_tracking: Enforce integer pallet-level truck loading (default: True)
+                                      When True, adds integer variables for pallet counts per product
+                                      on each truck, enforcing ceiling rounding (50 units = 1 pallet).
+                                      Adds ~1,740 integer variables for 4-week horizon.
+                                      When False, uses continuous unit-based truck capacity (faster solve).
         """
         self.nodes_list = nodes
         self.nodes: Dict[str, UnifiedNode] = {n.id: n for n in nodes}
@@ -151,11 +160,13 @@ class UnifiedNodeModel(BaseOptimizationModel):
         self.use_batch_tracking = use_batch_tracking
         self.allow_shortages = allow_shortages
         self.enforce_shelf_life = enforce_shelf_life
+        self.filter_shipments_by_freshness = filter_shipments_by_freshness
         self.force_all_skus_daily = force_all_skus_daily
         self.force_sku_pattern = force_sku_pattern
         self.bigm_overrides = bigm_overrides or {}
         self.use_hybrid_pallet_formulation = use_hybrid_pallet_formulation
         self.pallet_hybrid_threshold = pallet_hybrid_threshold
+        self.use_truck_pallet_tracking = use_truck_pallet_tracking
 
         # Initialize parent class (sets up solver_config)
         super().__init__()
@@ -693,19 +704,17 @@ class UnifiedNodeModel(BaseOptimizationModel):
                 doc="Quantity loaded on truck to specific destination by product and delivery date (in units)"
             )
 
-            # TODO (Phase 4): Add truck_pallet_load integer variables for pallet-level capacity
-            # ATTEMPTED WITH FIXES:
-            #   - Tried bounds=(0, 44): Gap=100% after 300s (poor LP relaxation)
-            #   - Tried no bounds: Gap=100% after 195s (still intractable)
-            # ROOT CAUSE: ~20,000 integer variables (18,675 inventory + 1,740 truck) too complex for CBC
-            # CONCLUSION: Requires commercial solver (Gurobi/CPLEX) or alternative formulation
-            # Current: Unit-based truck capacity (acceptable approximation)
-            #
-            # model.truck_pallet_load = Var(
-            #     truck_load_index,
-            #     within=NonNegativeIntegers,
-            #     doc="Pallet count loaded on truck (rounded up, partial pallets count as full)"
-            # )
+            # Add truck pallet integer variables if enabled
+            if self.use_truck_pallet_tracking:
+                model.truck_pallet_load = Var(
+                    truck_load_index,
+                    within=NonNegativeIntegers,
+                    bounds=(0, int(self.PALLETS_PER_TRUCK)),  # Max 44 pallets per product per truck
+                    doc="Integer pallet count loaded on truck (enforces ceiling rounding: 50 units = 1 pallet)"
+                )
+                print(f"  🚛 Truck pallet tracking enabled: {len(truck_load_index):,} integer pallet variables")
+            else:
+                print(f"  🚛 Truck pallet tracking disabled: using continuous unit-based capacity")
 
         # Changeover tracking variables (for startup/shutdown/changeover overhead)
         # These binary and integer variables track production days and product counts
@@ -985,6 +994,39 @@ class UnifiedNodeModel(BaseOptimizationModel):
                     for prod_date in all_prod_dates:
                         # Production must occur before or on departure
                         if prod_date <= departure_date:
+
+                            # SHELF LIFE FILTERING: Skip shipments that can't meet 7-day minimum at breadrooms
+                            # Only filter if destination has demand (is a breadroom)
+                            # Can be disabled for performance testing
+                            if self.filter_shipments_by_freshness and dest_node.has_demand_capability():
+                                age_at_arrival = (delivery_date - prod_date).days
+
+                                # Determine shelf life based on arrival state
+                                # CRITICAL: Handle state transitions!
+                                if arrival_state == 'ambient':
+                                    # Check if this is a THAW event (frozen → ambient)
+                                    # This happens when frozen product arrives at ambient node (e.g., 6130)
+                                    if route.transport_mode == TransportMode.FROZEN and dest_node.supports_ambient_storage():
+                                        # THAWING: Shelf life RESETS to 14 days (fresh start!)
+                                        # Age at arrival doesn't matter - it's the thawing event
+                                        remaining_shelf_life = self.THAWED_SHELF_LIFE  # 14 days fresh
+                                    else:
+                                        # Normal ambient shipment (no thaw)
+                                        # Use minimum shelf life (handles both 17d ambient and 14d thawed)
+                                        shelf_life_at_dest = min(self.AMBIENT_SHELF_LIFE, self.THAWED_SHELF_LIFE)
+                                        remaining_shelf_life = shelf_life_at_dest - age_at_arrival
+                                elif arrival_state == 'frozen':
+                                    # Frozen arrival at frozen node (e.g., Lineage)
+                                    shelf_life_at_dest = self.FROZEN_SHELF_LIFE
+                                    remaining_shelf_life = shelf_life_at_dest - age_at_arrival
+                                else:
+                                    # Shouldn't happen but be safe
+                                    remaining_shelf_life = 14  # Conservative
+
+                                # Skip if won't meet 7-day minimum at breadroom
+                                if remaining_shelf_life < self.MINIMUM_ACCEPTABLE_SHELF_LIFE_DAYS:
+                                    continue  # Too old on arrival - skip this shipment cohort
+
                             # Check if cohort could exist at origin on departure date
                             # (Simplified reachability - full logic in Phase 5)
                             shipments.add((
@@ -1035,18 +1077,23 @@ class UnifiedNodeModel(BaseOptimizationModel):
                 if prod_date <= demand_date:
                     age_days = (demand_date - prod_date).days
 
-                    # Check shelf life
+                    # Check shelf life WITH minimum freshness policy
                     # CRITICAL: Use the MINIMUM shelf life across all possible inventory states
                     # at this node, since demand_from_cohort can draw from ANY state
+                    # BREADROOM POLICY: Discard stock with <7 days remaining
                     node = self.nodes[node_id]
                     if node.supports_ambient_storage():
                         # Ambient nodes can have both 'ambient' (17d) and 'thawed' (14d) inventory
                         # Use the minimum to ensure all cohorts are usable
                         shelf_life = min(self.AMBIENT_SHELF_LIFE, self.THAWED_SHELF_LIFE)
-                        if age_days <= shelf_life:
+                        # Maximum acceptable age = shelf_life - minimum_days_remaining
+                        # e.g., 14 days shelf life - 7 days minimum = 7 days max age
+                        max_acceptable_age = shelf_life - self.MINIMUM_ACCEPTABLE_SHELF_LIFE_DAYS
+                        if age_days <= max_acceptable_age:
                             demand_cohorts.add((node_id, prod, prod_date, demand_date))
                     elif node.supports_frozen_storage():
                         # Frozen nodes use frozen shelf life
+                        # (No minimum freshness for frozen - they thaw at destination)
                         shelf_life = self.FROZEN_SHELF_LIFE
                         if age_days <= shelf_life:
                             demand_cohorts.add((node_id, prod, prod_date, demand_date))
@@ -2609,42 +2656,47 @@ class UnifiedNodeModel(BaseOptimizationModel):
             doc="Truck availability by day of week"
         )
 
-        # TODO (Phase 4): Add truck pallet ceiling constraints
-        # Attempted but confirmed intractable for CBC
-        # Even with improved bounds (no per-variable limits), CBC cannot solve in <240s
-        # Gap remains 100% - no integer-feasible solution found
-        # Requires commercial solver or alternative formulation
-        #
-        # def truck_pallet_ceiling_rule(model, truck_idx, dest, prod, delivery_date):
-        #     load_units = model.truck_load[truck_idx, dest, prod, delivery_date]
-        #     load_pallets = model.truck_pallet_load[truck_idx, dest, prod, delivery_date]
-        #     return load_pallets * self.UNITS_PER_PALLET >= load_units
-        #
-        # model.truck_pallet_ceiling_con = Constraint(...)
+        # Add truck pallet ceiling constraints if pallet tracking is enabled
+        if self.use_truck_pallet_tracking:
+            def truck_pallet_ceiling_rule(model, truck_idx, dest, prod, delivery_date):
+                """Enforce ceiling rounding for truck loading.
 
-        # Constraint: Truck capacity (UNIT-BASED)
+                Partial pallets occupy full pallet space: 50 units = 1 pallet, 350 units = 2 pallets.
+                Constraint: truck_pallet_load * 320 >= truck_load (in units)
+
+                Cost minimization drives truck_pallet_load to minimum feasible value (ceiling).
+                """
+                load_units = model.truck_load[truck_idx, dest, prod, delivery_date]
+                load_pallets = model.truck_pallet_load[truck_idx, dest, prod, delivery_date]
+                return load_pallets * self.UNITS_PER_PALLET >= load_units
+
+            model.truck_pallet_ceiling_con = Constraint(
+                model.truck_load.index_set(),
+                rule=truck_pallet_ceiling_rule,
+                doc="Enforce integer pallet ceiling rounding for truck loading"
+            )
+            print(f"  ✓ Added truck pallet ceiling constraints: {len(model.truck_load):,} constraints")
+
+        # Constraint: Truck capacity (PALLET-BASED if tracking enabled, otherwise UNIT-BASED)
         # CRITICAL: For trucks with intermediate stops, we need to ensure capacity
         # is shared across ALL deliveries from a SINGLE DEPARTURE, not across a delivery date
-        #
-        # NOTE: Pallet-level enforcement attempted but confirmed intractable for CBC
-        # Multiple approaches tested:
-        #   1. bounds=(0, 44): Gap=100% after 300s (poor LP relaxation - 220 theoretical vs 44 actual)
-        #   2. No bounds: Gap=100% after 195s (problem too complex even with good LP)
-        # ROOT CAUSE: ~20,734 integer/binary variables exceed CBC's practical limits
-        # SOLUTION: Use unit-based capacity (acceptable approximation) OR upgrade to commercial solver
         def truck_capacity_rule(model, truck_idx, departure_date):
-            """Total load cannot exceed truck capacity (in units).
+            """Total load cannot exceed truck capacity.
 
             For trucks with intermediate stops, different destinations receive on
             different dates from the SAME physical departure. We need to sum loads
             across ALL deliveries originating from this departure date.
+
+            Uses pallet-based summation if use_truck_pallet_tracking=True,
+            otherwise uses unit-based summation.
 
             Args:
                 truck_idx: Truck index
                 departure_date: Date truck departs (not delivery date!)
 
             Returns:
-                Constraint enforcing: total_load_units <= truck.capacity * truck_used
+                Constraint enforcing: total_load_pallets <= 44 * truck_used (if pallet tracking)
+                                 OR: total_load_units <= truck.capacity * truck_used (otherwise)
             """
 
             truck = self.truck_by_index[truck_idx]
@@ -2654,7 +2706,7 @@ class UnifiedNodeModel(BaseOptimizationModel):
             if truck.has_intermediate_stops():
                 truck_destinations.extend(truck.intermediate_stops)
 
-            # Sum the load in UNITS across all destinations
+            # Sum the load across all destinations
             total_load = 0
 
             for dest in truck_destinations:
@@ -2673,19 +2725,30 @@ class UnifiedNodeModel(BaseOptimizationModel):
                 if delivery_date not in model.dates:
                     continue  # Delivery outside planning horizon
 
-                # Sum load (in units) for this destination on its delivery date
+                # Sum load for this destination on its delivery date
                 for prod in model.products:
                     if (truck_idx, dest, prod, delivery_date) in model.truck_load:
-                        total_load += model.truck_load[truck_idx, dest, prod, delivery_date]
+                        if self.use_truck_pallet_tracking:
+                            # Sum PALLETS (integer pallet counts)
+                            total_load += model.truck_pallet_load[truck_idx, dest, prod, delivery_date]
+                        else:
+                            # Sum UNITS (continuous quantities)
+                            total_load += model.truck_load[truck_idx, dest, prod, delivery_date]
 
-            # Total load from this departure cannot exceed truck capacity (in units)
-            return total_load <= truck.capacity * model.truck_used[truck_idx, departure_date]
+            # Total load from this departure cannot exceed truck capacity
+            if self.use_truck_pallet_tracking:
+                # Pallet-based: total pallets <= 44 pallets per truck
+                return total_load <= self.PALLETS_PER_TRUCK * model.truck_used[truck_idx, departure_date]
+            else:
+                # Unit-based: total units <= 14,080 units per truck
+                return total_load <= truck.capacity * model.truck_used[truck_idx, departure_date]
 
+        constraint_desc = "pallet-based" if self.use_truck_pallet_tracking else "unit-based"
         model.truck_capacity_con = Constraint(
             model.trucks,
             model.dates,
             rule=truck_capacity_rule,
-            doc="Truck capacity constraint (unit-based - pallet-level deferred)"
+            doc=f"Truck capacity constraint ({constraint_desc})"
         )
 
     def _add_production_capacity_constraints(self, model: ConcreteModel) -> None:
@@ -2749,10 +2812,11 @@ class UnifiedNodeModel(BaseOptimizationModel):
                 # Fixed days (weekdays): Hard capacity limit (regular + overtime hours)
                 labor_hours = labor_day.fixed_hours + (labor_day.overtime_hours if hasattr(labor_day, 'overtime_hours') else 0)
             else:
-                # Non-fixed days (weekends/holidays): No capacity limit
-                # Unlimited hours available at premium rate - cost model discourages use
-                # The 4h minimum_hours is for payment calculation (cost constraint), not capacity
-                return Constraint.Skip  # Don't enforce production capacity on non-fixed days
+                # Non-fixed days (weekends/holidays): SAME capacity limit as weekdays
+                # Physical constraint: Can't work more than ~14h regardless of day type
+                # Premium rate (cost constraint) still applies, but capacity is bounded
+                # CRITICAL: This bounds the search space for MIP solver performance
+                labor_hours = 14.0  # Same max hours as weekday (12h regular + 2h OT equivalent)
 
             # Calculate production time needed
             total_production = sum(

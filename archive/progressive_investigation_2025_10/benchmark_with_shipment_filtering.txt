@@ -1,0 +1,377 @@
+/home/sverzijl/planning_latest/src/optimization/unified_node_model.py:301: UserWarning: Zero cost parameters detected: All route transport costs are 0, ambient storage costs are 0. This may cause solver to leave some variables uninitialized (valid behavior). Consider using small non-zero costs (e.g., 0.0001) if you encounter solution extraction issues.
+  warnings.warn(warning_msg, UserWarning)
+================================================================================
+SOLVE TIME SCALING BENCHMARK
+================================================================================
+
+Purpose: Determine realistic time limits for progressive phases
+Weekend capacity: NOW BOUNDED at 14h (to match weekdays)
+
+================================================================================
+BENCHMARK: 1-week horizon, 2% gap, 180s limit
+================================================================================
+Date range: 2025-10-16 to 2025-10-22
+
+Unified Model Data Summary:
+  Nodes: 11
+    Manufacturing: 1
+    Demand: 9
+    With truck constraints: 1
+  Routes: 10
+  Truck schedules: 11
+  Planning horizon: 2025-10-16 to 2025-10-22 (7 days)
+  Products: 5
+  Demand entries: 315
+
+Solving...
+
+Building Unified Node Model...
+  Sets defined: 11 nodes, 5 products, 7 dates, 10 routes
+  Production dates for cohorts: 7 in horizon + 0 from initial inventory
+  Cohort indices: 1,540 cohorts
+  Shipment cohorts by origin node:
+    6104: 210
+    6122: 390
+    6125: 315
+  Shipment cohort indices: 915
+  Demand cohort indices: 1,260
+  🚛 Truck pallet tracking enabled: 420 integer pallet variables
+  Changeover tracking: 7 production days, 35 product indicators (VARIABLE (binary decision))
+  Start tracking: 35 start indicators (binary)
+  Labor cost variables: 7 labor hour variables added
+  Variables created successfully
+  Adding core constraints...
+  Changeover tracking constraints added (112 constraints)
+  Big-M: Using max_mixes per product (tighter than max_production)
+  Labor cost constraints added (7 node-date pairs, 63 constraints)
+  Adding storage shipment delay constraint for 3 nodes: ['6104', '6125', 'Lineage']
+    Added 12 storage delay constraints
+  ✓ Added truck pallet ceiling constraints: 420 constraints
+  Hybrid pallet formulation (MIP optimization):
+    Small cohorts (integer 0-10): 140
+    Domain reduced: 62 → 10 (84% reduction)
+  Pallet tracking enabled for states: ['frozen']
+    - Pallet integer variables: 140
+    - Domain per variable: 0-10 (vs 0-62 full formulation)
+    - Unit-tracked states: ['ambient', 'thawed']
+  Holding cost enabled: 1,540 total cohorts (513 pallet-tracked)
+
+  Staleness penalty enabled: $5.0000 per unit per age ratio
+  Staleness penalty calculation: 1,260 demand cohorts
+  Formula: (age_days / 17) × $5.0000 × demand_satisfied
+  Changeover cost enabled: $38.40 per start
+  Core constraints added
+  Truck constraints added (generalized for any node)
+  Model complete and ready to solve
+/home/sverzijl/planning_latest/src/optimization/unified_node_model.py:301: UserWarning: Zero cost parameters detected: All route transport costs are 0, ambient storage costs are 0. This may cause solver to leave some variables uninitialized (valid behavior). Consider using small non-zero costs (e.g., 0.0001) if you encounter solution extraction issues.
+  warnings.warn(warning_msg, UserWarning)
+
+Results:
+  Status: TerminationCondition.optimal
+  Objective: $554,486.50
+  Solve time: 2.2s
+  Success: True
+  Final gap: 1.38%
+
+================================================================================
+BENCHMARK: 2-week horizon, 2% gap, 300s limit
+================================================================================
+Date range: 2025-10-16 to 2025-10-29
+
+Unified Model Data Summary:
+  Nodes: 11
+    Manufacturing: 1
+    Demand: 9
+    With truck constraints: 1
+  Routes: 10
+  Truck schedules: 11
+  Planning horizon: 2025-10-16 to 2025-10-29 (14 days)
+  Products: 5
+  Demand entries: 630
+
+Solving...
+
+Building Unified Node Model...
+  Sets defined: 11 nodes, 5 products, 14 dates, 10 routes
+  Production dates for cohorts: 14 in horizon + 0 from initial inventory
+  Cohort indices: 5,775 cohorts
+  Shipment cohorts by origin node:
+    6104: 700
+    6122: 1440
+    6125: 1050
+    Lineage: 140
+  Shipment cohort indices: 3,330
+  Demand cohort indices: 3,780
+  🚛 Truck pallet tracking enabled: 840 integer pallet variables
+  Changeover tracking: 14 production days, 70 product indicators (VARIABLE (binary decision))
+  Start tracking: 70 start indicators (binary)
+  Labor cost variables: 14 labor hour variables added
+  Variables created successfully
+  Adding core constraints...
+  Changeover tracking constraints added (224 constraints)
+  Big-M: Using max_mixes per product (tighter than max_production)
+  Labor cost constraints added (14 node-date pairs, 126 constraints)
+  Adding storage shipment delay constraint for 3 nodes: ['6104', '6125', 'Lineage']
+    Added 33 storage delay constraints
+  ✓ Added truck pallet ceiling constraints: 840 constraints
+  Hybrid pallet formulation (MIP optimization):
+    Small cohorts (integer 0-10): 525
+    Domain reduced: 62 → 10 (84% reduction)
+  Pallet tracking enabled for states: ['frozen']
+    - Pallet integer variables: 525
+    - Domain per variable: 0-10 (vs 0-62 full formulation)
+    - Unit-tracked states: ['ambient', 'thawed']
+  Holding cost enabled: 5,775 total cohorts (1,925 pallet-tracked)
+
+  Staleness penalty enabled: $5.0000 per unit per age ratio
+  Staleness penalty calculation: 3,780 demand cohorts
+  Formula: (age_days / 17) × $5.0000 × demand_satisfied
+  Changeover cost enabled: $38.40 per start
+  Core constraints added
+  Truck constraints added (generalized for any node)
+  Model complete and ready to solve
+
+Results:
+  Status: TerminationCondition.optimal
+  Objective: $773,489.18
+  Solve time: 31.0s
+  Success: True
+  Final gap: 1.36%
+
+================================================================================
+BENCHMARK: 4-week horizon, 2% gap, 400s limit
+================================================================================
+Date range: 2025-10-16 to 2025-11-12
+
+Unified Model Data Summary:
+  Nodes: 11
+    Manufacturing: 1
+    Demand: 9
+    With truck constraints: 1
+  Routes: 10
+  Truck schedules: 11
+  Planning horizon: 2025-10-16 to 2025-11-12 (28 days)
+  Products: 5
+  Demand entries: 1260
+
+Solving...
+
+Building Unified Node Model...
+  Sets defined: 11 nodes, 5 products, 28 dates, 10 routes
+  Production dates for cohorts: 28 in horizon + 0 from initial inventory
+  Cohort indices: 17,780 cohorts
+  Shipment cohorts by origin node:
+    6104: 1680
+    6122: 4275
+    6125: 2520
+    Lineage: 1155
+  Shipment cohort indices: 9,630
+  Demand cohort indices: 8,820
+  🚛 Truck pallet tracking enabled: 1,680 integer pallet variables
+  Changeover tracking: 28 production days, 140 product indicators (VARIABLE (binary decision))
+  Start tracking: 140 start indicators (binary)
+  Labor cost variables: 28 labor hour variables added
+  Variables created successfully
+  Adding core constraints...
+  Changeover tracking constraints added (448 constraints)
+  Big-M: Using max_mixes per product (tighter than max_production)
+  Labor cost constraints added (28 node-date pairs, 252 constraints)
+  Adding storage shipment delay constraint for 3 nodes: ['6104', '6125', 'Lineage']
+    Added 75 storage delay constraints
+  ✓ Added truck pallet ceiling constraints: 1,680 constraints
+  Hybrid pallet formulation (MIP optimization):
+    Small cohorts (integer 0-10): 2,030
+    Domain reduced: 62 → 10 (84% reduction)
+  Pallet tracking enabled for states: ['frozen']
+    - Pallet integer variables: 2,030
+    - Domain per variable: 0-10 (vs 0-62 full formulation)
+    - Unit-tracked states: ['ambient', 'thawed']
+  Holding cost enabled: 17,780 total cohorts (5,926 pallet-tracked)
+
+  Staleness penalty enabled: $5.0000 per unit per age ratio
+  Staleness penalty calculation: 8,820 demand cohorts
+  Formula: (age_days / 17) × $5.0000 × demand_satisfied
+  Changeover cost enabled: $38.40 per start
+  Core constraints added
+  Truck constraints added (generalized for any node)
+  Model complete and ready to solve
+
+Results:
+  Status: TerminationCondition.optimal
+  Objective: $1,218,373.90
+  Solve time: 179.2s
+  Success: True
+  Final gap: 0.93%
+
+================================================================================
+BENCHMARK: 8-week horizon, 10% gap, 500s limit
+================================================================================
+Date range: 2025-10-16 to 2025-12-10
+
+Unified Model Data Summary:
+  Nodes: 11
+    Manufacturing: 1
+    Demand: 9
+    With truck constraints: 1
+  Routes: 10
+  Truck schedules: 11
+  Planning horizon: 2025-10-16 to 2025-12-10 (56 days)
+  Products: 5
+  Demand entries: 2520
+
+Solving...
+
+Building Unified Node Model...
+  Sets defined: 11 nodes, 5 products, 56 dates, 10 routes
+  Production dates for cohorts: 56 in horizon + 0 from initial inventory
+  Cohort indices: 44,730 cohorts
+  Shipment cohorts by origin node:
+    6104: 3640
+    6122: 12885
+    6125: 5460
+    Lineage: 6125
+  Shipment cohort indices: 28,110
+  Demand cohort indices: 18,900
+  🚛 Truck pallet tracking enabled: 3,360 integer pallet variables
+  Changeover tracking: 56 production days, 280 product indicators (VARIABLE (binary decision))
+  Start tracking: 280 start indicators (binary)
+  Labor cost variables: 56 labor hour variables added
+  Variables created successfully
+  Adding core constraints...
+  Changeover tracking constraints added (896 constraints)
+  Big-M: Using max_mixes per product (tighter than max_production)
+  Labor cost constraints added (56 node-date pairs, 504 constraints)
+  Adding storage shipment delay constraint for 3 nodes: ['6104', '6125', 'Lineage']
+    Added 159 storage delay constraints
+  ✓ Added truck pallet ceiling constraints: 3,360 constraints
+  Hybrid pallet formulation (MIP optimization):
+    Small cohorts (integer 0-10): 7,980
+    Domain reduced: 62 → 10 (84% reduction)
+  Pallet tracking enabled for states: ['frozen']
+    - Pallet integer variables: 7,980
+    - Domain per variable: 0-10 (vs 0-62 full formulation)
+    - Unit-tracked states: ['ambient', 'thawed']
+  Holding cost enabled: 44,730 total cohorts (14,910 pallet-tracked)
+
+  Staleness penalty enabled: $5.0000 per unit per age ratio
+  Staleness penalty calculation: 18,900 demand cohorts
+  Formula: (age_days / 17) × $5.0000 × demand_satisfied
+  Changeover cost enabled: $38.40 per start
+  Core constraints added
+  Truck constraints added (generalized for any node)
+  Model complete and ready to solve
+
+Results:
+  Status: TerminationCondition.optimal
+  Objective: $2,144,844.30
+  Solve time: 194.9s
+  Success: True
+  Final gap: 3.39%
+
+================================================================================
+BENCHMARK: 12-week horizon, 40% gap, 600s limit
+================================================================================
+Date range: 2025-10-16 to 2026-01-07
+
+Unified Model Data Summary:
+  Nodes: 11
+    Manufacturing: 1
+    Demand: 9
+    With truck constraints: 1
+  Routes: 10
+  Truck schedules: 11
+  Planning horizon: 2025-10-16 to 2026-01-07 (84 days)
+  Products: 5
+  Demand entries: 3780
+
+Solving...
+
+Building Unified Node Model...
+  Sets defined: 11 nodes, 5 products, 84 dates, 10 routes
+  Production dates for cohorts: 84 in horizon + 0 from initial inventory
+  Cohort indices: 75,600 cohorts
+  Shipment cohorts by origin node:
+    6104: 5600
+    6122: 25415
+    6125: 8400
+    Lineage: 15015
+  Shipment cohort indices: 54,430
+  Demand cohort indices: 28,980
+  🚛 Truck pallet tracking enabled: 5,040 integer pallet variables
+  Changeover tracking: 84 production days, 420 product indicators (VARIABLE (binary decision))
+  Start tracking: 420 start indicators (binary)
+  Labor cost variables: 84 labor hour variables added
+  Variables created successfully
+  Adding core constraints...
+  Changeover tracking constraints added (1,344 constraints)
+  Big-M: Using max_mixes per product (tighter than max_production)
+  Labor cost constraints added (84 node-date pairs, 756 constraints)
+  Adding storage shipment delay constraint for 3 nodes: ['6104', '6125', 'Lineage']
+    Added 243 storage delay constraints
+  ✓ Added truck pallet ceiling constraints: 5,040 constraints
+  Hybrid pallet formulation (MIP optimization):
+    Small cohorts (integer 0-10): 17,850
+    Domain reduced: 62 → 10 (84% reduction)
+  Pallet tracking enabled for states: ['frozen']
+    - Pallet integer variables: 17,850
+    - Domain per variable: 0-10 (vs 0-62 full formulation)
+    - Unit-tracked states: ['ambient', 'thawed']
+  Holding cost enabled: 75,600 total cohorts (25,200 pallet-tracked)
+
+  Staleness penalty enabled: $5.0000 per unit per age ratio
+  Staleness penalty calculation: 28,980 demand cohorts
+  Formula: (age_days / 17) × $5.0000 × demand_satisfied
+  Changeover cost enabled: $38.40 per start
+  Core constraints added
+  Truck constraints added (generalized for any node)
+  Model complete and ready to solve
+WARNING: Loading a feasible but suboptimal solution. Please set
+load_solution=False and check results.termination_condition and
+results.found_feasible_solution() before loading a solution.
+
+Results:
+  Status: TerminationCondition.maxTimeLimit
+  Objective: $10,207,148.97
+  Solve time: 645.8s
+  Success: True
+  Final gap: 70.49%
+
+================================================================================
+SCALING SUMMARY
+================================================================================
+
+ 1 weeks @   2% gap:
+  ✓ Time:    2.2s ✓
+     Objective: $554,486.50
+     Status: TerminationCondition.optimal
+
+ 2 weeks @   2% gap:
+  ✓ Time:   31.0s ✓
+     Objective: $773,489.18
+     Status: TerminationCondition.optimal
+
+ 4 weeks @   2% gap:
+  ✓ Time:  179.2s ✓
+     Objective: $1,218,373.90
+     Status: TerminationCondition.optimal
+
+ 8 weeks @  10% gap:
+  ✓ Time:  194.9s ✓
+     Objective: $2,144,844.30
+     Status: TerminationCondition.optimal
+
+12 weeks @  40% gap:
+  ✓ Time:  645.8s ⏱
+     Objective: $10,207,148.97
+     Status: TerminationCondition.maxTimeLimit
+
+================================================================================
+RECOMMENDED PROGRESSIVE TIME LIMITS
+================================================================================
+
+Phase 1 (12w, 40% gap): 968s (actual: 646s + 50% buffer)
+Phase 2 (8w, 15% gap):  292s (actual: 195s + 50% buffer)
+Phase 3 (4w, 3% gap):   268s (actual: 179s + 50% buffer)
+Phase 4 (1w, 0.5% gap): 3s (actual: 2s + 50% buffer)
+
+================================================================================
