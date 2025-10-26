@@ -54,6 +54,9 @@ class LegacyToUnifiedConverter:
             capabilities=NodeCapabilities(
                 can_manufacture=True,
                 production_rate_per_hour=manufacturing_site.production_rate,
+                daily_startup_hours=getattr(manufacturing_site, 'daily_startup_hours', 0.5),
+                daily_shutdown_hours=getattr(manufacturing_site, 'daily_shutdown_hours', 0.5),
+                default_changeover_hours=getattr(manufacturing_site, 'default_changeover_hours', 1.0),
                 can_store=True,
                 storage_mode=self._convert_storage_mode(manufacturing_site.storage_mode),
                 has_demand=False,  # Manufacturing site doesn't have customer demand

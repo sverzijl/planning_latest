@@ -2908,7 +2908,7 @@ class UnifiedNodeModel(BaseOptimizationModel):
                 shutdown_hours = node.capabilities.daily_shutdown_hours or 0.5
                 changeover_hours = node.capabilities.default_changeover_hours or 1.0
 
-                # Count number of product starts (0→1 transitions = changeovers)
+                # Count number of product starts (0→1 transitions)
                 num_starts = sum(
                     model.product_start[node_id, prod, date]
                     for prod in model.products
@@ -2916,15 +2916,17 @@ class UnifiedNodeModel(BaseOptimizationModel):
                 )
 
                 # Overhead calculation using start tracking:
-                # overhead = (startup + shutdown) * production_day + changeover * num_starts
+                # overhead = (startup + shutdown) * production_day + changeover * (num_starts - 1)
                 #
-                # This correctly calculates:
+                # Changeover represents switching BETWEEN products, so:
                 #   - 0 products: 0 overhead (production_day=0, num_starts=0)
-                #   - 1 product:  startup + shutdown + changeover (production_day=1, num_starts=1)
-                #   - N products: startup + shutdown + N*changeover (production_day=1, num_starts=N)
+                #   - 1 product:  startup + shutdown (production_day=1, num_starts=1, 0 changeovers)
+                #   - 2 products: startup + shutdown + 1×changeover (production_day=1, num_starts=2, 1 changeover)
+                #   - N products: startup + shutdown + (N-1)×changeover (N-1 transitions between products)
+                num_changeovers = max(num_starts - 1, 0)  # At least 0
                 overhead_time = (
                     (startup_hours + shutdown_hours) * model.production_day[node_id, date] +
-                    changeover_hours * num_starts
+                    changeover_hours * num_changeovers
                 )
 
                 # Total time constraint: production time + overhead <= available hours
@@ -3151,16 +3153,22 @@ class UnifiedNodeModel(BaseOptimizationModel):
                 shutdown_hours = node.capabilities.daily_shutdown_hours or 0.5
                 changeover_hours = node.capabilities.default_changeover_hours or 1.0
 
-                # Count number of product starts (changeovers)
+                # Count number of product starts
                 num_starts = sum(
                     model.product_start[node_id, prod, date]
                     for prod in model.products
                     if (node_id, prod, date) in model.product_start
                 )
 
+                # Changeover represents switching BETWEEN products:
+                # - 1 product: 0 changeovers (startup + shutdown only)
+                # - 2 products: 1 changeover (from product 1 to 2)
+                # - N products: N-1 changeovers (transitions between products)
+                num_changeovers = max(num_starts - 1, 0)
+
                 overhead_time = (
                     (startup_hours + shutdown_hours) * model.production_day[node_id, date] +
-                    changeover_hours * num_starts
+                    changeover_hours * num_changeovers
                 )
 
                 # Link labor_hours_used to production + overhead
