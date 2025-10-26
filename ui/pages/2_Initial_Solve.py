@@ -242,7 +242,7 @@ with tab3:
         st.divider()
 
         # Run solve button
-        if st.button("🚀 Run Initial Solve", type="primary", use_container_width=True):
+        if st.button("🚀 Run Initial Solve", type="primary", width="stretch"):
             with st.spinner("Building optimization model..."):
                 try:
                     # Create workflow config
@@ -437,7 +437,7 @@ with tab5:
                 - Cost breakdown
                 """
             )
-            if st.button("📊 Export to Excel", use_container_width=True):
+            if st.button("📊 Export to Excel", width="stretch"):
                 st.info("🚧 Excel export coming in Phase C")
 
         with col2:
@@ -450,7 +450,7 @@ with tab5:
                 - Print-ready format
                 """
             )
-            if st.button("📄 Generate PDF", use_container_width=True):
+            if st.button("📄 Generate PDF", width="stretch"):
                 st.info("🚧 PDF export coming in Phase C")
 
         with col3:
@@ -463,7 +463,7 @@ with tab5:
                 - Deviation tracking
                 """
             )
-            if st.button("📈 Open Dashboard", use_container_width=True):
+            if st.button("📈 Open Dashboard", width="stretch"):
                 st.info("🚧 Interactive dashboard coming in Phase C")
 
         st.divider()

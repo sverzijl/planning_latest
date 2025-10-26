@@ -204,19 +204,19 @@ if session_state.is_data_uploaded():
 
         col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
-            if st.button("📦 Production Schedule", use_container_width=True):
+            if st.button("📦 Production Schedule", width="stretch"):
                 st.switch_page("pages/3_Results.py")
         with col2:
-            if st.button("🚚 Distribution Plan", use_container_width=True):
+            if st.button("🚚 Distribution Plan", width="stretch"):
                 st.switch_page("pages/3_Results.py")
         with col3:
-            if st.button("💰 Cost Analysis", use_container_width=True):
+            if st.button("💰 Cost Analysis", width="stretch"):
                 st.switch_page("pages/3_Results.py")
         with col4:
-            if st.button("⚡ Optimization", use_container_width=True):
+            if st.button("⚡ Optimization", width="stretch"):
                 st.switch_page("pages/2_Planning.py")
         with col5:
-            if st.button("🔄 Re-run Planning", use_container_width=True):
+            if st.button("🔄 Re-run Planning", width="stretch"):
                 st.switch_page("pages/2_Planning.py")
 
     else:
@@ -231,10 +231,10 @@ if session_state.is_data_uploaded():
 
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("🚀 Run Planning Workflow (Heuristic)", type="primary", use_container_width=True):
+            if st.button("🚀 Run Planning Workflow (Heuristic)", type="primary", width="stretch"):
                 st.switch_page("pages/2_Planning.py")
         with col2:
-            if st.button("⚡ Run Optimization (Optimal)", type="primary", use_container_width=True):
+            if st.button("⚡ Run Optimization (Optimal)", type="primary", width="stretch"):
                 st.switch_page("pages/2_Planning.py")
 
 else:
@@ -250,7 +250,7 @@ else:
     """, unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
 
-    if st.button("📤 Upload Data", type="primary", use_container_width=True):
+    if st.button("📤 Upload Data", type="primary", width="stretch"):
         st.switch_page("pages/1_Data.py")
 
     st.divider()
@@ -306,7 +306,7 @@ with col1:
         </div>
     </div>
     """, unsafe_allow_html=True)
-    if st.button("▶️ Run Initial Solve", use_container_width=True, type="primary"):
+    if st.button("▶️ Run Initial Solve", width="stretch", type="primary"):
         st.switch_page("pages/2_Initial_Solve.py")
 
 with col2:
@@ -331,7 +331,7 @@ with col2:
         </div>
     </div>
     """, unsafe_allow_html=True)
-    if st.button("▶️ Run Weekly Solve", use_container_width=True):
+    if st.button("▶️ Run Weekly Solve", width="stretch"):
         st.switch_page("pages/3_Weekly_Solve.py")
 
 with col3:
@@ -356,7 +356,7 @@ with col3:
         </div>
     </div>
     """, unsafe_allow_html=True)
-    if st.button("▶️ Run Daily Solve", use_container_width=True):
+    if st.button("▶️ Run Daily Solve", width="stretch"):
         st.switch_page("pages/4_Daily_Solve.py")
 
 # Show last solve status if available
@@ -390,7 +390,7 @@ with col1:
         <div class="caption-text">Upload files, view data summaries, and edit forecasts</div>
     </div>
     """, unsafe_allow_html=True)
-    if st.button("Go to Data Management", use_container_width=True, key="nav_data"):
+    if st.button("Go to Data Management", width="stretch", key="nav_data"):
         st.switch_page("pages/1_Data.py")
 
 with col2:
@@ -401,7 +401,7 @@ with col2:
         <div class="caption-text">Run heuristic planning, optimization, or manage scenarios</div>
     </div>
     """, unsafe_allow_html=True)
-    if st.button("Go to Planning", use_container_width=True, key="nav_planning"):
+    if st.button("Go to Planning", width="stretch", key="nav_planning"):
         st.switch_page("pages/2_Planning.py")
 
 with col3:
@@ -412,7 +412,7 @@ with col3:
         <div class="caption-text">View production, distribution, costs, and comparisons</div>
     </div>
     """, unsafe_allow_html=True)
-    if st.button("Go to Results", use_container_width=True, key="nav_results"):
+    if st.button("Go to Results", width="stretch", key="nav_results"):
         st.switch_page("pages/3_Results.py")
 
 col1, col2, col3 = st.columns(3)
@@ -425,7 +425,7 @@ with col1:
         <div class="caption-text">Visualize network graph and analyze routes</div>
     </div>
     """, unsafe_allow_html=True)
-    if st.button("Go to Network Analysis", use_container_width=True, key="nav_network"):
+    if st.button("Go to Network Analysis", width="stretch", key="nav_network"):
         st.switch_page("pages/4_Network.py")
 
 with col2:
@@ -436,7 +436,7 @@ with col2:
         <div class="caption-text">Configure application preferences</div>
     </div>
     """, unsafe_allow_html=True)
-    if st.button("Go to Settings", use_container_width=True, key="nav_settings"):
+    if st.button("Go to Settings", width="stretch", key="nav_settings"):
         st.switch_page("pages/5_Settings.py")
 
 with col3:
