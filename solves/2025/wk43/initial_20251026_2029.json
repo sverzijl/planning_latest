@@ -1,0 +1,39 @@
+{
+  "workflow_type": "initial",
+  "solve_timestamp": "2025-10-26T20:29:13.242116",
+  "success": true,
+  "solve_time_seconds": 832.714827,
+  "objective_value": 255245.54648679923,
+  "mip_gap": 0.00956996354272062,
+  "solver_status": null,
+  "solver_message": "TerminationCondition.optimal",
+  "metadata": {
+    "workflow_type": "initial",
+    "planning_horizon_weeks": 4,
+    "planning_start_date": "2025-10-27",
+    "planning_end_date": "2025-11-23",
+    "solver_name": "appsi_highs",
+    "used_warmstart": false,
+    "num_locations": 11,
+    "num_routes": 10,
+    "num_products": 5,
+    "num_forecast_entries": 20295
+  },
+  "error_message": null,
+  "solution_data": {
+    "success": true,
+    "objective_value": 255245.54648679923,
+    "solver_status": null,
+    "termination_condition": "TerminationCondition.optimal",
+    "solve_time_seconds": 824.2836058139801,
+    "solver_name": "appsi_highs",
+    "gap": 0.00956996354272062,
+    "num_variables": 45546,
+    "num_constraints": 34763,
+    "num_integer_vars": 4634,
+    "infeasibility_message": "Warning: Solution extraction failed: 'UnifiedNodeModel' object has no attribute 'dates'. Solve was successful but solution data unavailable.",
+    "metadata": {
+      "solution_extraction_failed": true
+    }
+  }
+}
