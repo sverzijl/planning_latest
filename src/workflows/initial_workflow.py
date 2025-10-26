@@ -92,7 +92,8 @@ class InitialWorkflow(BaseWorkflow):
         )
 
         # Validate forecast coverage
-        forecast_dates = {f.forecast_date for f in self.forecast}
+        forecast_entries = self.forecast.entries if hasattr(self.forecast, 'entries') else self.forecast
+        forecast_dates = {f.forecast_date for f in forecast_entries}
         required_dates = {
             planning_start_date + timedelta(days=i)
             for i in range(horizon_days)

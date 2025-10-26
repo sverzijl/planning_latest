@@ -312,24 +312,65 @@ class BaseWorkflow(ABC):
             input_data: Prepared input data from prepare_input_data()
         """
         from ..optimization.unified_node_model import UnifiedNodeModel
+        from ..optimization.legacy_to_unified_converter import LegacyToUnifiedConverter
 
-        self.model = UnifiedNodeModel(
+        # Convert legacy data structures to unified format
+        converter = LegacyToUnifiedConverter()
+
+        # Get manufacturing site (should be first location with is_manufacturing=True)
+        manufacturing_site = None
+        for loc in self.locations:
+            if hasattr(loc, 'is_manufacturing') and loc.is_manufacturing:
+                manufacturing_site = loc
+                break
+
+        if manufacturing_site is None:
+            # Fallback: find location with ID 6122
+            manufacturing_site = next((loc for loc in self.locations if loc.location_id == "6122"), None)
+
+        if manufacturing_site is None:
+            raise ValueError("No manufacturing site found in locations")
+
+        # Get truck schedules list
+        truck_schedules_list = self.truck_schedules.schedules if hasattr(self.truck_schedules, 'schedules') else self.truck_schedules
+
+        # Convert to unified format
+        nodes, unified_routes, unified_trucks = converter.convert_all(
+            manufacturing_site=manufacturing_site,
             locations=self.locations,
             routes=self.routes,
-            products=self.products,
-            forecast=self.forecast,
-            planning_start_date=input_data["planning_start_date"],
-            planning_end_date=input_data["planning_end_date"],
-            labor_calendar=self.labor_calendar,
-            truck_schedules=self.truck_schedules,
-            cost_structure=self.cost_structure,
-            initial_inventory=self.initial_inventory,
-            allow_shortages=self.config.allow_shortages,
-            track_batches=self.config.track_batches,
-            use_pallet_costs=self.config.use_pallet_costs,
+            truck_schedules=truck_schedules_list,
+            forecast=self.forecast
         )
 
-        self.model.build()
+        # Convert products list to dict
+        products_dict = {p.product_id: p for p in self.products} if isinstance(self.products, list) else self.products
+
+        # Get initial inventory dict
+        initial_inventory_dict = {}
+        if self.initial_inventory:
+            if hasattr(self.initial_inventory, 'to_optimization_dict'):
+                initial_inventory_dict = self.initial_inventory.to_optimization_dict()
+            elif isinstance(self.initial_inventory, dict):
+                initial_inventory_dict = self.initial_inventory
+
+        # Build model
+        self.model = UnifiedNodeModel(
+            nodes=nodes,
+            routes=unified_routes,
+            forecast=self.forecast,
+            labor_calendar=self.labor_calendar,
+            cost_structure=self.cost_structure,
+            products=products_dict,
+            start_date=input_data["planning_start_date"],
+            end_date=input_data["planning_end_date"],
+            truck_schedules=unified_trucks,
+            initial_inventory=initial_inventory_dict,
+            use_batch_tracking=self.config.track_batches,
+            allow_shortages=self.config.allow_shortages,
+            use_hybrid_pallet_formulation=self.config.use_pallet_costs,
+        )
+
         logger.info("Model built successfully")
 
     def _apply_warmstart(self) -> None:

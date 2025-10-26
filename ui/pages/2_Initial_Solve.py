@@ -271,7 +271,7 @@ with tab3:
                         locations=st.session_state.locations,
                         routes=st.session_state.routes,
                         products=products,
-                        forecast=st.session_state.forecast.entries,  # Pass list of entries
+                        forecast=st.session_state.forecast,  # Pass Forecast object
                         labor_calendar=st.session_state.labor_calendar,
                         truck_schedules=truck_schedules,
                         cost_structure=st.session_state.cost_structure,
