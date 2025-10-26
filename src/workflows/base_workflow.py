@@ -396,7 +396,7 @@ class BaseWorkflow(ABC):
 
         solution = self.model.solve(
             solver_name=self.config.solver_name,
-            time_limit=self.config.solve_time_limit,
+            time_limit_seconds=self.config.solve_time_limit,
             mip_gap=self.config.mip_gap_tolerance,
         )
 
