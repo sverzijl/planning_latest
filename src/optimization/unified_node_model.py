@@ -1972,6 +1972,20 @@ class UnifiedNodeModel(BaseOptimizationModel):
         self.route_arrival_state = route_arrival_states
 
         # Extract total cost from objective
+        # Extract staleness cost (if batch tracking enabled)
+        total_staleness_cost = 0.0
+        if hasattr(model, 'demand_from_cohort'):
+            staleness_weight = self.cost_structure.freshness_incentive_weight
+            if staleness_weight > 0:
+                for (node_id, prod, prod_date, demand_date) in model.demand_from_cohort:
+                    demand_qty = value(model.demand_from_cohort[node_id, prod, prod_date, demand_date])
+                    if demand_qty > 0:
+                        age_days = (demand_date - prod_date).days
+                        age_ratio = age_days / 17.0  # Normalized by ambient shelf life
+                        total_staleness_cost += staleness_weight * age_ratio * demand_qty
+
+        solution['total_staleness_cost'] = total_staleness_cost
+
         # PYOMO BEST PRACTICE: Always use component sum instead of extracting from model.obj
         # Extracting from model.obj can print thousands of error messages when variables
         # have zero costs and aren't initialized by the solver (valid MIP behavior).
@@ -1981,7 +1995,9 @@ class UnifiedNodeModel(BaseOptimizationModel):
             solution.get('total_labor_cost', 0.0) +
             solution.get('total_transport_cost', 0.0) +
             solution.get('total_holding_cost', 0.0) +
-            solution.get('total_shortage_cost', 0.0)
+            solution.get('total_shortage_cost', 0.0) +
+            solution.get('total_changeover_cost', 0.0) +
+            solution.get('total_staleness_cost', 0.0)
         )
 
         return solution
