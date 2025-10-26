@@ -1,0 +1,13 @@
+{
+  "workflow_type": "initial",
+  "solve_timestamp": "2025-10-27T07:06:08.660629",
+  "success": false,
+  "solve_time_seconds": null,
+  "objective_value": null,
+  "mip_gap": null,
+  "solver_status": null,
+  "solver_message": null,
+  "metadata": {},
+  "error_message": "Cannot convert non-constant Pyomo expression (product_start['6122',HELGAS GFREE WHOLEM 500G,2025-10-28] + product_start['6122',HELGAS GFREE MIXED GRAIN 500G,2025-10-28] + product_start['6122',WONDER GFREE WHOLEM 500G,2025-10-28] + product_start['6122',WONDER GFREE WHITE 470G,2025-10-28] + product_start['6122',HELGAS GFREE TRAD WHITE 470G,2025-10-28] - 1  <  0) to bool.\nThis error is usually caused by using a Var, unit, or mutable Param in a\nBoolean context such as an \"if\" statement, or when checking container\nmembership or equality. For example,\n    >>> m.x = Var()\n    >>> if m.x >= 1:\n    ...     pass\nand\n    >>> m.y = Var()\n    >>> if m.y in [m.x, m.y]:\n    ...     pass\nwould both cause this exception.",
+  "solution_data": null
+}

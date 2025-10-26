@@ -1,0 +1,13 @@
+{
+  "workflow_type": "initial",
+  "solve_timestamp": "2025-10-27T07:16:58.395777",
+  "success": false,
+  "solve_time_seconds": null,
+  "objective_value": null,
+  "mip_gap": null,
+  "solver_status": null,
+  "solver_message": null,
+  "metadata": {},
+  "error_message": "Solver pyomo.contrib.appsi.solvers.highs.Highs is not available (NotFound).",
+  "solution_data": null
+}
