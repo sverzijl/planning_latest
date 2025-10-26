@@ -1,0 +1,13 @@
+{
+  "workflow_type": "initial",
+  "solve_timestamp": "2025-10-26T16:27:45.785290",
+  "success": false,
+  "solve_time_seconds": null,
+  "objective_value": null,
+  "mip_gap": null,
+  "solver_status": null,
+  "solver_message": null,
+  "metadata": {},
+  "error_message": "UnifiedNodeModel.solve() got an unexpected keyword argument 'time_limit'",
+  "solution_data": null
+}

@@ -1,0 +1,13 @@
+{
+  "workflow_type": "initial",
+  "solve_timestamp": "2025-10-26T16:11:53.398883",
+  "success": false,
+  "solve_time_seconds": null,
+  "objective_value": null,
+  "mip_gap": null,
+  "solver_status": null,
+  "solver_message": null,
+  "metadata": {},
+  "error_message": "'ForecastEntry' object has no attribute 'date'",
+  "solution_data": null
+}

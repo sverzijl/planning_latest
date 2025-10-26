@@ -1,0 +1,13 @@
+{
+  "workflow_type": "initial",
+  "solve_timestamp": "2025-10-26T17:02:04.964908",
+  "success": false,
+  "solve_time_seconds": null,
+  "objective_value": null,
+  "mip_gap": null,
+  "solver_status": null,
+  "solver_message": null,
+  "metadata": {},
+  "error_message": "object of type 'Forecast' has no len()",
+  "solution_data": null
+}

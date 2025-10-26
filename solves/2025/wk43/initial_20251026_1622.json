@@ -1,0 +1,13 @@
+{
+  "workflow_type": "initial",
+  "solve_timestamp": "2025-10-26T16:22:43.067292",
+  "success": false,
+  "solve_time_seconds": null,
+  "objective_value": null,
+  "mip_gap": null,
+  "solver_status": null,
+  "solver_message": null,
+  "metadata": {},
+  "error_message": "'tuple' object has no attribute 'forecast_date'",
+  "solution_data": null
+}
