@@ -185,6 +185,9 @@ class SolveFile:
         Returns:
             Dictionary representation
         """
+        # Convert metadata to JSON-serializable format (handle tuple keys)
+        serializable_metadata = self._make_json_serializable(solution.metadata) if solution.metadata else {}
+
         return {
             "success": solution.success,
             "objective_value": solution.objective_value,
@@ -197,7 +200,7 @@ class SolveFile:
             "num_constraints": solution.num_constraints,
             "num_integer_vars": solution.num_integer_vars,
             "infeasibility_message": solution.infeasibility_message,
-            "metadata": solution.metadata,
+            "metadata": serializable_metadata,
             # Note: solver_output and variable values not serialized to keep file size manageable
             # These can be added later if needed for warmstart
         }
@@ -229,6 +232,44 @@ class SolveFile:
             infeasibility_message=data.get("infeasibility_message"),
             metadata=data.get("metadata", {}),
         )
+
+    def _make_json_serializable(self, obj: Any) -> Any:
+        """Recursively convert object to JSON-serializable format.
+
+        Handles:
+        - Tuple keys -> convert to string representation
+        - datetime/date objects -> ISO format strings
+        - Other non-serializable types -> string representation
+
+        Args:
+            obj: Object to convert
+
+        Returns:
+            JSON-serializable version of object
+        """
+        if isinstance(obj, dict):
+            # Convert dictionary with potentially non-string keys
+            new_dict = {}
+            for key, value in obj.items():
+                # Convert tuple/non-string keys to strings
+                if isinstance(key, (tuple, list)):
+                    key_str = str(key)
+                elif not isinstance(key, (str, int, float, bool, type(None))):
+                    key_str = str(key)
+                else:
+                    key_str = key
+
+                new_dict[key_str] = self._make_json_serializable(value)
+            return new_dict
+        elif isinstance(obj, (list, tuple)):
+            return [self._make_json_serializable(item) for item in obj]
+        elif isinstance(obj, (datetime, date)):
+            return obj.isoformat()
+        elif isinstance(obj, (str, int, float, bool, type(None))):
+            return obj
+        else:
+            # Convert other types to string
+            return str(obj)
 
     @staticmethod
     def _json_serializer(obj):
