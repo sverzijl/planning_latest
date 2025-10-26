@@ -132,7 +132,7 @@ class BaseWorkflow(ABC):
         locations: List[Location],
         routes: List[Route],
         products: List[Product],
-        forecast: List[Forecast],
+        forecast: Forecast,
         labor_calendar: LaborCalendar,
         truck_schedules: List[TruckSchedule],
         cost_structure: CostStructure,
@@ -146,7 +146,7 @@ class BaseWorkflow(ABC):
             locations: List of network locations
             routes: List of network routes
             products: List of products
-            forecast: Demand forecast
+            forecast: Demand forecast (Forecast object)
             labor_calendar: Labor availability and costs
             truck_schedules: Truck departure schedules
             cost_structure: Cost parameters

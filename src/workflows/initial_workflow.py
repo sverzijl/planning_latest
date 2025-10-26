@@ -70,6 +70,7 @@ class InitialWorkflow(BaseWorkflow):
             ValueError: If initial inventory is missing or invalid
         """
         logger.info("Preparing input data for Initial workflow")
+        logger.debug(f"Forecast type: {type(self.forecast)}, has entries: {hasattr(self.forecast, 'entries')}")
 
         # Validate required inputs
         if not self.initial_inventory:
@@ -92,19 +93,34 @@ class InitialWorkflow(BaseWorkflow):
         )
 
         # Validate forecast coverage
-        forecast_entries = self.forecast.entries if hasattr(self.forecast, 'entries') else self.forecast
-        forecast_dates = {f.forecast_date for f in forecast_entries}
-        required_dates = {
-            planning_start_date + timedelta(days=i)
-            for i in range(horizon_days)
-        }
+        # Handle different forecast formats
+        if hasattr(self.forecast, 'entries'):
+            # Forecast object with entries attribute
+            forecast_entries = self.forecast.entries
+        elif isinstance(self.forecast, (list, tuple)):
+            # Already a list/tuple of entries
+            forecast_entries = self.forecast
+        else:
+            # Unknown format, skip validation
+            logger.warning(f"Unknown forecast format: {type(self.forecast)}")
+            forecast_entries = []
 
-        missing_dates = required_dates - forecast_dates
-        if missing_dates:
-            logger.warning(
-                f"Forecast missing for {len(missing_dates)} dates. "
-                f"First missing: {sorted(missing_dates)[0]}"
-            )
+        if forecast_entries:
+            try:
+                forecast_dates = {f.forecast_date for f in forecast_entries}
+                required_dates = {
+                    planning_start_date + timedelta(days=i)
+                    for i in range(horizon_days)
+                }
+
+                missing_dates = required_dates - forecast_dates
+                if missing_dates:
+                    logger.warning(
+                        f"Forecast missing for {len(missing_dates)} dates. "
+                        f"First missing: {sorted(missing_dates)[0]}"
+                    )
+            except AttributeError as e:
+                logger.warning(f"Could not validate forecast coverage: {e}")
 
         return {
             "planning_start_date": planning_start_date,
