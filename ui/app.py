@@ -269,6 +269,114 @@ else:
 
 st.divider()
 
+# Workflow Selection (Phase A)
+st.markdown(section_header("Production Planning Workflows", level=2, icon="🎯"), unsafe_allow_html=True)
+
+st.markdown(
+    """
+    <div class="body-text" style="margin-bottom: 16px;">
+    Choose the appropriate workflow for your planning needs. Each workflow is optimized for
+    different operational cadences and planning horizons.
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    st.markdown("""
+    <div class="card card-hover" style="min-height: 280px;">
+        <div style="font-size: 32px; margin-bottom: 8px;">🚀</div>
+        <div style="font-weight: 600; font-size: 16px; margin-bottom: 8px;">Initial Solve</div>
+        <div class="caption-text" style="margin-bottom: 12px;">
+            First-time planning or major replanning. Creates baseline 12-week production plan
+            with cold start optimization.
+        </div>
+        <div style="font-size: 12px; color: #6c757d; margin-top: 8px;">
+            <strong>Use when:</strong><br>
+            • Starting fresh<br>
+            • Network changes<br>
+            • Major forecast revisions
+        </div>
+        <div style="margin-top: 12px;">
+            <span style="background-color: #28a745; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+                ✅ AVAILABLE
+            </span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    if st.button("▶️ Run Initial Solve", use_container_width=True, type="primary"):
+        st.switch_page("pages/2_Initial_Solve.py")
+
+with col2:
+    st.markdown("""
+    <div class="card card-hover" style="min-height: 280px;">
+        <div style="font-size: 32px; margin-bottom: 8px;">🔄</div>
+        <div style="font-weight: 600; font-size: 16px; margin-bottom: 8px;">Weekly Solve</div>
+        <div class="caption-text" style="margin-bottom: 12px;">
+            Weekly replanning with updated forecast. Uses warmstart from previous solve
+            for faster optimization. Rolling 12-week horizon.
+        </div>
+        <div style="font-size: 12px; color: #6c757d; margin-top: 8px;">
+            <strong>Use when:</strong><br>
+            • Weekly forecast updates<br>
+            • Rolling forward 1 week<br>
+            • Routine replanning
+        </div>
+        <div style="margin-top: 12px;">
+            <span style="background-color: #ffc107; color: #000; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+                🚧 PHASE B
+            </span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    if st.button("▶️ Run Weekly Solve", use_container_width=True):
+        st.switch_page("pages/3_Weekly_Solve.py")
+
+with col3:
+    st.markdown("""
+    <div class="card card-hover" style="min-height: 280px;">
+        <div style="font-size: 32px; margin-bottom: 8px;">📅</div>
+        <div style="font-weight: 600; font-size: 16px; margin-bottom: 8px;">Daily Solve</div>
+        <div class="caption-text" style="margin-bottom: 12px;">
+            Operational replanning with actuals. Locks yesterday/today, optimizes next
+            4 weeks, fixes remaining 8 weeks for stability.
+        </div>
+        <div style="font-size: 12px; color: #6c757d; margin-top: 8px;">
+            <strong>Use when:</strong><br>
+            • Daily operations<br>
+            • Actuals vs plan tracking<br>
+            • Short-term adjustments
+        </div>
+        <div style="margin-top: 12px;">
+            <span style="background-color: #ffc107; color: #000; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+                🚧 PHASE B
+            </span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    if st.button("▶️ Run Daily Solve", use_container_width=True):
+        st.switch_page("pages/4_Daily_Solve.py")
+
+# Show last solve status if available
+if session_state.has_latest_solve():
+    st.divider()
+    result = session_state.get_latest_solve_result()
+    if result:
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Last Solve Type", result.workflow_type.value.title())
+        with col2:
+            st.metric("Objective Value", f"${result.objective_value:,.2f}" if result.objective_value else "N/A")
+        with col3:
+            st.metric("Solve Time", f"{result.solve_time_seconds:.1f}s" if result.solve_time_seconds else "N/A")
+        with col4:
+            status = "✅ Success" if result.success else "❌ Failed"
+            st.metric("Status", status)
+
+st.divider()
+
 # Quick Navigation section
 st.markdown(section_header("Quick Navigation", level=2, icon="🧭"), unsafe_allow_html=True)
 

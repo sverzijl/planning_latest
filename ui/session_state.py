@@ -64,6 +64,14 @@ def initialize_session_state():
         'network_filename': None,
         'inventory_filename': None,
         'inventory_snapshot_date': None,
+
+        # Workflow state (Phase A - New workflow system)
+        'initial_workflow_step': 0,
+        'weekly_workflow_step': 0,
+        'daily_workflow_step': 0,
+        'latest_solve_result': None,
+        'latest_solve_path': None,
+        'workflow_config': None,
     }
 
     for key, default_value in defaults.items():
@@ -394,3 +402,75 @@ def show_planning_status_card():
         st.info("ℹ️ Planning not yet run. Go to Planning Workflow to generate production and distribution plans.")
         if is_data_uploaded() and st.button("Go to Planning Workflow"):
             st.switch_page("Planning Workflow")
+
+
+# ========== Workflow State Functions (Phase A) ==========
+
+def store_workflow_result(result: Any, file_path: Optional[str] = None):
+    """Store workflow solve result in session state.
+
+    Args:
+        result: WorkflowResult object from workflow execution
+        file_path: Optional path where result was saved
+    """
+    st.session_state.latest_solve_result = result
+    st.session_state.latest_solve_path = file_path
+
+
+def get_latest_solve_result() -> Optional[Any]:
+    """Get the most recent workflow solve result.
+
+    Returns:
+        WorkflowResult object or None
+    """
+    return st.session_state.get('latest_solve_result')
+
+
+def has_latest_solve() -> bool:
+    """Check if a solve result exists in session state.
+
+    Returns:
+        True if latest solve result exists, False otherwise
+    """
+    return st.session_state.get('latest_solve_result') is not None
+
+
+def get_workflow_step(workflow_type: str) -> int:
+    """Get current step for a workflow.
+
+    Args:
+        workflow_type: "initial", "weekly", or "daily"
+
+    Returns:
+        Current step index (0-based)
+    """
+    return st.session_state.get(f'{workflow_type}_workflow_step', 0)
+
+
+def set_workflow_step(workflow_type: str, step: int):
+    """Set current step for a workflow.
+
+    Args:
+        workflow_type: "initial", "weekly", or "daily"
+        step: Step index to set (0-based)
+    """
+    st.session_state[f'{workflow_type}_workflow_step'] = step
+
+
+def advance_workflow_step(workflow_type: str):
+    """Advance to next step in workflow.
+
+    Args:
+        workflow_type: "initial", "weekly", or "daily"
+    """
+    current = get_workflow_step(workflow_type)
+    set_workflow_step(workflow_type, current + 1)
+
+
+def reset_workflow_step(workflow_type: str):
+    """Reset workflow to first step.
+
+    Args:
+        workflow_type: "initial", "weekly", or "daily"
+    """
+    set_workflow_step(workflow_type, 0)
