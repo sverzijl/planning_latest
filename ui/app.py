@@ -89,7 +89,7 @@ with col1:
         </div>
     </div>
     """, unsafe_allow_html=True)
-    if st.button("▶️ Run Initial Solve", width="stretch", type="primary"):
+    if st.button("▶️ Run Initial Solve", use_container_width=True, type="primary"):
         st.switch_page("pages/2_Initial_Solve.py")
 
 with col2:
@@ -114,7 +114,7 @@ with col2:
         </div>
     </div>
     """, unsafe_allow_html=True)
-    if st.button("▶️ Run Weekly Solve", width="stretch"):
+    if st.button("▶️ Run Weekly Solve", use_container_width=True):
         st.switch_page("pages/3_Weekly_Solve.py")
 
 with col3:
@@ -139,7 +139,7 @@ with col3:
         </div>
     </div>
     """, unsafe_allow_html=True)
-    if st.button("▶️ Run Daily Solve", width="stretch"):
+    if st.button("▶️ Run Daily Solve", use_container_width=True):
         st.switch_page("pages/4_Daily_Solve.py")
 
 # Show last solve status if available
