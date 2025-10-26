@@ -11,7 +11,7 @@ from typing import Dict, Any, Optional
 import logging
 
 from ..workflows.base_workflow import WorkflowResult, WorkflowType
-from ..optimization.solution import PyomoSolution
+from ..optimization.base_model import OptimizationResult
 
 logger = logging.getLogger(__name__)
 
@@ -176,64 +176,59 @@ class SolveFile:
             error_message=data.get("error_message"),
         )
 
-    def _solution_to_dict(self, solution: PyomoSolution) -> Dict[str, Any]:
-        """Convert PyomoSolution to dictionary.
+    def _solution_to_dict(self, solution: OptimizationResult) -> Dict[str, Any]:
+        """Convert OptimizationResult to dictionary.
 
         Args:
-            solution: PyomoSolution to serialize
+            solution: OptimizationResult to serialize
 
         Returns:
             Dictionary representation
         """
-        # Extract variable values
-        variable_values = {}
-        if hasattr(solution, 'variables') and solution.variables:
-            for var_name, var_data in solution.variables.items():
-                # Convert to serializable format
-                if isinstance(var_data, dict):
-                    variable_values[var_name] = {
-                        str(k): v for k, v in var_data.items()
-                    }
-                else:
-                    variable_values[var_name] = var_data
-
         return {
+            "success": solution.success,
             "objective_value": solution.objective_value,
-            "solver_status": solution.solver_status,
-            "solver_message": solution.solver_message,
-            "solve_time": solution.solve_time,
-            "mip_gap": solution.mip_gap,
-            "variable_values": variable_values,
-            # Note: Full solution object attributes may be added here
-            # as needed for warmstart and analysis
+            "solver_status": str(solution.solver_status) if solution.solver_status else None,
+            "termination_condition": str(solution.termination_condition) if solution.termination_condition else None,
+            "solve_time_seconds": solution.solve_time_seconds,
+            "solver_name": solution.solver_name,
+            "gap": solution.gap,
+            "num_variables": solution.num_variables,
+            "num_constraints": solution.num_constraints,
+            "num_integer_vars": solution.num_integer_vars,
+            "infeasibility_message": solution.infeasibility_message,
+            "metadata": solution.metadata,
+            # Note: solver_output and variable values not serialized to keep file size manageable
+            # These can be added later if needed for warmstart
         }
 
-    def _dict_to_solution(self, data: Dict[str, Any]) -> PyomoSolution:
-        """Convert dictionary to PyomoSolution.
+    def _dict_to_solution(self, data: Dict[str, Any]) -> OptimizationResult:
+        """Convert dictionary to OptimizationResult.
 
         Args:
             data: Dictionary from JSON
 
         Returns:
-            PyomoSolution object
+            OptimizationResult object
 
         Note:
-            This creates a partial PyomoSolution with key attributes.
-            The full Pyomo model is not reconstructed (not needed for warmstart).
+            This creates an OptimizationResult from stored data.
+            The full Pyomo model is not reconstructed (not needed for result viewing).
         """
-        solution = PyomoSolution(
-            model=None,  # Model not stored in file
-            solver_results=None,  # Results not stored in file
+        return OptimizationResult(
+            success=data.get("success", False),
+            objective_value=data.get("objective_value"),
+            solver_status=None,  # Not deserializing enum
+            termination_condition=None,  # Not deserializing enum
+            solve_time_seconds=data.get("solve_time_seconds"),
+            solver_name=data.get("solver_name"),
+            gap=data.get("gap"),
+            num_variables=data.get("num_variables", 0),
+            num_constraints=data.get("num_constraints", 0),
+            num_integer_vars=data.get("num_integer_vars", 0),
+            infeasibility_message=data.get("infeasibility_message"),
+            metadata=data.get("metadata", {}),
         )
-
-        solution.objective_value = data.get("objective_value")
-        solution.solver_status = data.get("solver_status")
-        solution.solver_message = data.get("solver_message")
-        solution.solve_time = data.get("solve_time")
-        solution.mip_gap = data.get("mip_gap")
-        solution.variables = data.get("variable_values", {})
-
-        return solution
 
     @staticmethod
     def _json_serializer(obj):

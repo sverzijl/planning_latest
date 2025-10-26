@@ -398,13 +398,14 @@ with tab4:
             st.json(result.metadata)
 
         # Solution preview (if available)
-        if result.solution and hasattr(result.solution, 'variables'):
+        if result.solution:
             st.subheader("Solution Preview")
             st.info("🚧 Detailed solution visualization coming in Phase B/C")
 
-            # Show number of variables
-            var_count = len(result.solution.variables) if result.solution.variables else 0
-            st.write(f"**Variables in solution:** {var_count}")
+            # Show model statistics
+            st.write(f"**Decision variables:** {result.solution.num_variables}")
+            st.write(f"**Constraints:** {result.solution.num_constraints}")
+            st.write(f"**Integer/binary variables:** {result.solution.num_integer_vars}")
 
         st.divider()
 

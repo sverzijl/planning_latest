@@ -21,7 +21,7 @@ from ..models.inventory import InventorySnapshot
 from ..models.labor_calendar import LaborCalendar
 from ..models.truck_schedule import TruckSchedule
 from ..models.cost_structure import CostStructure
-from ..optimization.solution import PyomoSolution
+from ..optimization.base_model import OptimizationResult
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +96,7 @@ class WorkflowResult:
     """
     workflow_type: WorkflowType
     solve_timestamp: datetime
-    solution: Optional[PyomoSolution] = None
+    solution: Optional[OptimizationResult] = None
     success: bool = False
     solve_time_seconds: Optional[float] = None
     objective_value: Optional[float] = None
@@ -277,12 +277,12 @@ class BaseWorkflow(ABC):
                 workflow_type=self.config.workflow_type,
                 solve_timestamp=start_time,
                 solution=solution,
-                success=solution is not None,
+                success=solution is not None and solution.success,
                 solve_time_seconds=solve_time,
                 objective_value=solution.objective_value if solution else None,
-                mip_gap=solution.mip_gap if solution else None,
-                solver_status=solution.solver_status if solution else None,
-                solver_message=solution.solver_message if solution else None,
+                mip_gap=solution.gap if solution else None,
+                solver_status=str(solution.solver_status) if solution and solution.solver_status else None,
+                solver_message=str(solution.termination_condition) if solution and solution.termination_condition else None,
                 metadata=self._build_metadata(input_data),
             )
 
@@ -344,11 +344,11 @@ class BaseWorkflow(ABC):
         logger.info("Warmstart application not yet implemented")
         pass
 
-    def _solve_model(self) -> Optional[PyomoSolution]:
+    def _solve_model(self) -> Optional[OptimizationResult]:
         """Solve the optimization model.
 
         Returns:
-            PyomoSolution if solve successful, None otherwise
+            OptimizationResult if solve successful, None otherwise
         """
         if not self.model:
             raise RuntimeError("Model not built. Call _build_model() first.")
@@ -361,7 +361,7 @@ class BaseWorkflow(ABC):
 
         return solution
 
-    def _validate_solution(self, solution: Optional[PyomoSolution]) -> Dict[str, Any]:
+    def _validate_solution(self, solution: Optional[OptimizationResult]) -> Dict[str, Any]:
         """Validate solution quality and feasibility.
 
         Args:
@@ -373,10 +373,11 @@ class BaseWorkflow(ABC):
         if solution is None:
             return {"valid": False, "message": "No solution returned from solver"}
 
-        if solution.solver_status not in ["ok", "optimal", "feasible"]:
+        # Use OptimizationResult's built-in validation methods
+        if not solution.is_feasible():
             return {
                 "valid": False,
-                "message": f"Solver status not acceptable: {solution.solver_status}"
+                "message": f"Solution not feasible. Termination: {solution.termination_condition}"
             }
 
         # Additional validation can be added here
