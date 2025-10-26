@@ -481,13 +481,24 @@ with tab4:
                         total_cost = cost_breakdown.get('total_cost', 0)
                         st.metric("Total Incremental", f"${total_cost:,.2f}")
 
-                    # Show production cost for reference (not in objective)
+                    # Show production cost and waste details
                     prod_cost_ref = cost_breakdown.get('total_production_cost_reference', 0)
-                    if prod_cost_ref > 0:
-                        st.caption(
-                            f"ℹ️ Production cost (${prod_cost_ref:,.2f}) excluded from objective "
-                            f"(pass-through cost, not decision-dependent)"
-                        )
+                    changeover_waste_units = cost_breakdown.get('total_changeover_waste_units', 0)
+                    end_inv_units = cost_breakdown.get('end_horizon_inventory_units', 0)
+
+                    if prod_cost_ref > 0 or changeover_waste_units > 0 or end_inv_units > 0:
+                        with st.expander("💡 Cost Details"):
+                            if prod_cost_ref > 0:
+                                st.write(f"**Production cost (reference only):** ${prod_cost_ref:,.2f}")
+                                st.caption("Not in objective - pass-through cost, doesn't vary with decisions")
+
+                            if changeover_waste_units > 0:
+                                st.write(f"**Changeover waste:** {changeover_waste_units:,.0f} units (${cost_breakdown.get('total_changeover_waste_cost', 0):,.2f})")
+                                st.caption("Material lost during SKU transitions - creates batch size economics")
+
+                            if end_inv_units > 0:
+                                st.write(f"**End-of-horizon inventory:** {end_inv_units:,.0f} units")
+                                st.caption("Unsold inventory at end of planning period - treated as waste")
 
                 st.divider()
 

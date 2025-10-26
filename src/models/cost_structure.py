@@ -176,6 +176,20 @@ class CostStructure(BaseModel):
         ge=0
     )
 
+    # Changeover waste (2025-10-26 - Phase A)
+    changeover_waste_units: float = Field(
+        default=0.0,
+        description=(
+            "Material waste per product changeover/startup (units). "
+            "Represents yield loss when switching between products. "
+            "Reduces available inventory: net_production = gross_production - changeover_waste. "
+            "Creates economic pressure for larger batch sizes. "
+            "Typical value: 10-50 units depending on product and process. "
+            "Set to 0.0 to disable changeover waste."
+        ),
+        ge=0
+    )
+
     def calculate_waste_cost(self, units: float, unit_production_cost: Optional[float] = None) -> float:
         """
         Calculate cost of wasted units.

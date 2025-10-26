@@ -1775,19 +1775,34 @@ class UnifiedNodeModel(BaseOptimizationModel):
 
         # Extract changeover statistics (start tracking formulation)
         total_changeovers = 0
+        total_changeover_waste_units = 0.0
+
         if hasattr(model, 'product_start'):
+            changeover_waste_per_start = getattr(self.cost_structure, 'changeover_waste_units', 0.0)
+
             for idx in model.product_start:
                 try:
                     start_val = value(model.product_start[idx])
                     if start_val > 0.5:  # Binary variable threshold
                         total_changeovers += 1
+                        total_changeover_waste_units += changeover_waste_per_start
                 except (ValueError, AttributeError, KeyError, RuntimeError):
                     continue
 
+        # Changeover time/setup cost (labor/overhead)
         total_changeover_cost = total_changeovers * self.cost_structure.changeover_cost_per_start
+
+        # Changeover material waste cost (yield loss)
+        total_changeover_waste_cost = (
+            total_changeover_waste_units *
+            self.cost_structure.waste_cost_multiplier *
+            self.cost_structure.production_cost_per_unit
+        )
 
         solution['total_changeovers'] = total_changeovers
         solution['total_changeover_cost'] = total_changeover_cost
+        solution['total_changeover_waste_units'] = total_changeover_waste_units
+        solution['total_changeover_waste_cost'] = total_changeover_waste_cost
 
         # Note: total_cost extraction moved to after all cost components are calculated
 
@@ -2007,7 +2022,8 @@ class UnifiedNodeModel(BaseOptimizationModel):
             total_waste_cost = waste_multiplier * prod_cost_per_unit * end_inventory_units
             solution['end_horizon_inventory_units'] = end_inventory_units
 
-        solution['total_waste_cost'] = total_waste_cost
+        # Combine all waste costs (end-of-horizon + changeover waste)
+        solution['total_waste_cost'] = total_waste_cost + solution.get('total_changeover_waste_cost', 0.0)
 
         # PYOMO BEST PRACTICE: Always use component sum instead of extracting from model.obj
         # Extracting from model.obj can print thousands of error messages when variables
@@ -2016,7 +2032,7 @@ class UnifiedNodeModel(BaseOptimizationModel):
         #
         # REFACTORED OBJECTIVE (Phase A):
         # - REMOVED: production_cost (pass-through, doesn't vary with decisions)
-        # - ADDED: waste_cost (end-of-horizon inventory treated as waste)
+        # - ADDED: waste_cost (end-of-horizon inventory + changeover waste)
         # This focuses on incremental costs and prevents stockpiling
         solution['total_cost'] = (
             solution.get('total_labor_cost', 0.0) +
@@ -2214,13 +2230,25 @@ class UnifiedNodeModel(BaseOptimizationModel):
                     prev_inv = 0
 
             # Production inflow (only if node can manufacture AND prod_date == curr_date)
+            # Net of changeover waste (yield loss when starting production of a product)
             production_inflow = 0
             if node.can_produce() and prod_date == curr_date:
                 # Production creates cohort with prod_date = curr_date
                 # State of produced product matches node's production state
                 production_state = node.get_production_state()
                 if state == production_state:
-                    production_inflow = model.production[node_id, prod, curr_date]
+                    gross_production = model.production[node_id, prod, curr_date]
+
+                    # Subtract changeover waste (material lost when starting this product)
+                    changeover_waste = 0
+                    if hasattr(self.cost_structure, 'changeover_waste_units') and self.cost_structure.changeover_waste_units > 0:
+                        if hasattr(model, 'product_start') and (node_id, prod, curr_date) in model.product_start:
+                            # Waste = changeover_waste_units × product_start[node, prod, date]
+                            # product_start is binary (1 if starting, 0 if continuing or not producing)
+                            changeover_waste = self.cost_structure.changeover_waste_units * model.product_start[node_id, prod, curr_date]
+
+                    # Net production available for inventory/shipment
+                    production_inflow = gross_production - changeover_waste
 
             # Arrivals: shipments arriving in this state
             arrivals = 0
@@ -3697,13 +3725,24 @@ class UnifiedNodeModel(BaseOptimizationModel):
             )
             print(f"  Changeover cost enabled: ${self.cost_structure.changeover_cost_per_start:.2f} per start")
 
-        # Waste cost (expired inventory + end-of-horizon inventory treated as waste)
-        # This prevents stockpiling and properly costs inventory that won't be sold
+        # Waste cost (changeover yield loss + end-of-horizon inventory)
+        # This prevents stockpiling and properly costs material waste
         waste_cost = 0
         waste_multiplier = self.cost_structure.waste_cost_multiplier
         prod_cost_per_unit = self.cost_structure.production_cost_per_unit
+        changeover_waste_units = getattr(self.cost_structure, 'changeover_waste_units', 0.0)
 
         if waste_multiplier > 0 and prod_cost_per_unit > 0:
+            # Changeover material waste (yield loss when switching products)
+            if changeover_waste_units > 0 and hasattr(model, 'product_start'):
+                changeover_waste_cost_expr = (
+                    waste_multiplier * prod_cost_per_unit * changeover_waste_units *
+                    sum(model.product_start[idx] for idx in model.product_start)
+                )
+                waste_cost += changeover_waste_cost_expr
+                print(f"\n  Changeover waste enabled: {changeover_waste_units} units per SKU start")
+                print(f"  Cost: ${waste_multiplier * prod_cost_per_unit * changeover_waste_units:.2f} per changeover")
+
             # End-of-horizon inventory waste (all inventory on last day is discarded)
             last_date = max(model.dates)
 
@@ -3718,9 +3757,8 @@ class UnifiedNodeModel(BaseOptimizationModel):
                                     model.inventory_cohort[node_id, prod, prod_date, last_date, state]
                                 )
 
-            print(f"\n  End-of-horizon waste enabled: {waste_multiplier:.2f}× production cost")
-            print(f"  Cost: ${waste_multiplier * prod_cost_per_unit:.2f} per wasted unit")
-            print(f"  This prevents stockpiling at horizon end")
+            print(f"  End-of-horizon waste: {waste_multiplier:.2f}× production cost per unit")
+            print(f"  Combined waste cost prevents stockpiling and penalizes small batches")
         else:
             print(f"\n  Waste cost disabled (waste_cost_multiplier = {waste_multiplier})")
 
