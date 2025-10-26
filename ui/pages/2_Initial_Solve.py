@@ -320,6 +320,10 @@ with tab3:
                     # Store in session state
                     session_state.store_workflow_result(result, str(file_path))
 
+                    # Also store for Results page compatibility
+                    if result.model and result.success:
+                        session_state.store_optimization_results(result.model, result.solution)
+
                     # Clear progress, show result
                     progress_container.empty()
 
@@ -393,19 +397,94 @@ with tab4:
 
         st.divider()
 
+        # Extract and display production data if model available
+        if result.model and hasattr(result.model, 'get_solution'):
+            solution_dict = result.model.get_solution()
+
+            if solution_dict:
+                st.subheader("Production Summary")
+
+                # Production by product
+                production_by_product = solution_dict.get('production_by_product', {})
+                if production_by_product:
+                    st.write("**Total Production by SKU:**")
+                    import pandas as pd
+                    prod_df = pd.DataFrame([
+                        {"Product": prod, "Quantity": qty}
+                        for prod, qty in production_by_product.items()
+                    ]).sort_values("Quantity", ascending=False)
+                    st.dataframe(prod_df, hide_index=True, use_container_width=True)
+
+                st.divider()
+
+                # Production by date
+                production_by_date = solution_dict.get('production_by_date', {})
+                if production_by_date:
+                    st.subheader("Daily Production")
+                    import pandas as pd
+                    import plotly.express as px
+
+                    daily_df = pd.DataFrame([
+                        {"Date": date_val, "Quantity": qty}
+                        for date_val, qty in sorted(production_by_date.items())
+                    ])
+
+                    if not daily_df.empty:
+                        fig = px.bar(
+                            daily_df,
+                            x="Date",
+                            y="Quantity",
+                            title="Production by Date",
+                            labels={"Quantity": "Units Produced", "Date": "Production Date"}
+                        )
+                        fig.update_layout(showlegend=False)
+                        st.plotly_chart(fig, use_container_width=True)
+
+                st.divider()
+
+                # Cost breakdown
+                cost_breakdown = solution_dict.get('cost_breakdown', {})
+                if cost_breakdown:
+                    st.subheader("Cost Breakdown")
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        labor_cost = cost_breakdown.get('total_labor_cost', 0)
+                        st.metric("Labor Cost", f"${labor_cost:,.2f}")
+                    with col2:
+                        transport_cost = cost_breakdown.get('total_transport_cost', 0)
+                        st.metric("Transport Cost", f"${transport_cost:,.2f}")
+                    with col3:
+                        storage_cost = cost_breakdown.get('total_storage_cost', 0)
+                        st.metric("Storage Cost", f"${storage_cost:,.2f}")
+                    with col4:
+                        production_cost = cost_breakdown.get('total_production_cost', 0)
+                        st.metric("Production Cost", f"${production_cost:,.2f}")
+
+                st.divider()
+
+                # Link to detailed results
+                st.info("📊 For detailed analysis, drill-down views, and exports, visit the **Results** page.")
+                if st.button("📈 Go to Detailed Results", type="secondary"):
+                    st.switch_page("pages/5_Results.py")
+
+        else:
+            # Model not available - show basic info only
+            st.subheader("Model Statistics")
+            if result.solution:
+                st.write(f"**Decision variables:** {result.solution.num_variables:,}")
+                st.write(f"**Constraints:** {result.solution.num_constraints:,}")
+                st.write(f"**Integer/binary variables:** {result.solution.num_integer_vars:,}")
+
+            st.info(
+                "💡 **Tip:** Detailed production schedule and cost analysis available on the **Results** page. "
+                "The model data is stored in session state while the app is running."
+            )
+
+        st.divider()
+
         # Metadata
         with st.expander("📋 Solve Metadata"):
             st.json(result.metadata)
-
-        # Solution preview (if available)
-        if result.solution:
-            st.subheader("Solution Preview")
-            st.info("🚧 Detailed solution visualization coming in Phase B/C")
-
-            # Show model statistics
-            st.write(f"**Decision variables:** {result.solution.num_variables}")
-            st.write(f"**Constraints:** {result.solution.num_constraints}")
-            st.write(f"**Integer/binary variables:** {result.solution.num_integer_vars}")
 
         st.divider()
 

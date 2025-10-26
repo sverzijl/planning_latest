@@ -84,7 +84,8 @@ class WorkflowResult:
     Attributes:
         workflow_type: Type of workflow that was run
         solve_timestamp: When the solve was executed
-        solution: Pyomo solution object (None if solve failed)
+        solution: Optimization solution metadata (persisted to file)
+        model: Reference to optimization model (session state only, not persisted)
         success: Whether the solve was successful
         solve_time_seconds: Time taken to solve
         objective_value: Objective function value (None if failed)
@@ -97,6 +98,7 @@ class WorkflowResult:
     workflow_type: WorkflowType
     solve_timestamp: datetime
     solution: Optional[OptimizationResult] = None
+    model: Optional[Any] = None  # UnifiedNodeModel reference (not persisted)
     success: bool = False
     solve_time_seconds: Optional[float] = None
     objective_value: Optional[float] = None
@@ -277,6 +279,7 @@ class BaseWorkflow(ABC):
                 workflow_type=self.config.workflow_type,
                 solve_timestamp=start_time,
                 solution=solution,
+                model=self.model,  # Store model reference for result extraction
                 success=solution is not None and solution.success,
                 solve_time_seconds=solve_time,
                 objective_value=solution.objective_value if solution else None,
