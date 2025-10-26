@@ -437,6 +437,13 @@ class BaseWorkflow(ABC):
         Returns:
             Metadata dictionary
         """
+        # Get forecast entries count
+        num_forecast_entries = 0
+        if hasattr(self.forecast, 'entries'):
+            num_forecast_entries = len(self.forecast.entries)
+        elif isinstance(self.forecast, (list, tuple)):
+            num_forecast_entries = len(self.forecast)
+
         return {
             "workflow_type": self.config.workflow_type.value,
             "planning_horizon_weeks": self.config.planning_horizon_weeks,
@@ -447,5 +454,5 @@ class BaseWorkflow(ABC):
             "num_locations": len(self.locations),
             "num_routes": len(self.routes),
             "num_products": len(self.products),
-            "num_forecast_entries": len(self.forecast),
+            "num_forecast_entries": num_forecast_entries,
         }
