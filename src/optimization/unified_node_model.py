@@ -1991,19 +1991,18 @@ class UnifiedNodeModel(BaseOptimizationModel):
         waste_multiplier = self.cost_structure.waste_cost_multiplier
         prod_cost_per_unit = self.cost_structure.production_cost_per_unit
 
-        if waste_multiplier > 0 and prod_cost_per_unit > 0:
+        if waste_multiplier > 0 and prod_cost_per_unit > 0 and hasattr(model, 'inventory_cohort'):
             # Calculate end-of-horizon inventory
-            last_date = max(self.dates)
+            last_date = max(model.dates)
             end_inventory_units = 0.0
 
-            for node_id in self.nodes.keys():
-                for prod in self.products.keys():
-                    for prod_date in self.dates:
-                        for state in ['frozen', 'ambient', 'thawed']:
-                            if (node_id, prod, prod_date, last_date, state) in model.inventory_cohort:
-                                inv_qty = value(model.inventory_cohort[node_id, prod, prod_date, last_date, state])
-                                if inv_qty and inv_qty > 0:
-                                    end_inventory_units += inv_qty
+            for node_id in model.nodes:
+                for prod in model.products:
+                    for (n, p, prod_date, curr_date, state) in model.inventory_cohort:
+                        if n == node_id and p == prod and curr_date == last_date:
+                            inv_qty = value(model.inventory_cohort[n, p, prod_date, curr_date, state])
+                            if inv_qty and inv_qty > 0:
+                                end_inventory_units += inv_qty
 
             total_waste_cost = waste_multiplier * prod_cost_per_unit * end_inventory_units
             solution['end_horizon_inventory_units'] = end_inventory_units
