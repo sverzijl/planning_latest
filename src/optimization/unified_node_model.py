@@ -2916,17 +2916,17 @@ class UnifiedNodeModel(BaseOptimizationModel):
                 )
 
                 # Overhead calculation using start tracking:
-                # overhead = (startup + shutdown) * production_day + changeover * (num_starts - 1)
+                # overhead = (startup + shutdown) * production_day + changeover * (num_starts - production_day)
                 #
-                # Changeover represents switching BETWEEN products, so:
-                #   - 0 products: 0 overhead (production_day=0, num_starts=0)
-                #   - 1 product:  startup + shutdown (production_day=1, num_starts=1, 0 changeovers)
-                #   - 2 products: startup + shutdown + 1×changeover (production_day=1, num_starts=2, 1 changeover)
-                #   - N products: startup + shutdown + (N-1)×changeover (N-1 transitions between products)
-                num_changeovers = max(num_starts - 1, 0)  # At least 0
+                # Changeover represents switching BETWEEN products:
+                # We use (num_starts - production_day) which algebraically computes max(num_starts - 1, 0):
+                #   - If production_day=0: num_starts=0, so 0-0=0 changeovers ✅
+                #   - If production_day=1, num_starts=1: 1-1=0 changeovers ✅ (1 product, no switch)
+                #   - If production_day=1, num_starts=2: 2-1=1 changeover ✅ (2 products, 1 switch)
+                #   - If production_day=1, num_starts=N: N-1 changeovers ✅
                 overhead_time = (
                     (startup_hours + shutdown_hours) * model.production_day[node_id, date] +
-                    changeover_hours * num_changeovers
+                    changeover_hours * (num_starts - model.production_day[node_id, date])
                 )
 
                 # Total time constraint: production time + overhead <= available hours
@@ -3161,14 +3161,13 @@ class UnifiedNodeModel(BaseOptimizationModel):
                 )
 
                 # Changeover represents switching BETWEEN products:
-                # - 1 product: 0 changeovers (startup + shutdown only)
-                # - 2 products: 1 changeover (from product 1 to 2)
-                # - N products: N-1 changeovers (transitions between products)
-                num_changeovers = max(num_starts - 1, 0)
-
+                # Use (num_starts - production_day) which algebraically equals max(num_starts - 1, 0)
+                # - If production_day=0: 0-0=0 changeovers
+                # - If production_day=1, num_starts=1: 1-1=0 changeovers (1 product, no switching)
+                # - If production_day=1, num_starts=2: 2-1=1 changeover (2 products, 1 switch)
                 overhead_time = (
                     (startup_hours + shutdown_hours) * model.production_day[node_id, date] +
-                    changeover_hours * num_changeovers
+                    changeover_hours * (num_starts - model.production_day[node_id, date])
                 )
 
                 # Link labor_hours_used to production + overhead
