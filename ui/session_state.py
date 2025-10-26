@@ -43,18 +43,7 @@ def initialize_session_state():
         'initial_inventory': None,
         'product_aliases': None,
 
-        # Planning objects
-        'graph_builder': None,
-        'route_finder': None,
-        'scheduler': None,
-
-        # Planning results (heuristic)
-        'production_schedule': None,
-        'shipments': None,
-        'truck_plan': None,
-        'cost_breakdown': None,
-
-        # Optimization results (Phase 3)
+        # Optimization results
         'optimization_complete': False,
         'optimization_result': None,
         'optimization_model': None,
@@ -80,16 +69,12 @@ def initialize_session_state():
 
 
 def clear_planning_results():
-    """Clear planning results (but keep parsed data)."""
+    """Clear planning results (but keep parsed data).
+
+    Note: This is legacy. For new workflow system, use reset_workflow_step() instead.
+    """
     st.session_state.planning_complete = False
     st.session_state.current_step = 0
-    st.session_state.graph_builder = None
-    st.session_state.route_finder = None
-    st.session_state.scheduler = None
-    st.session_state.production_schedule = None
-    st.session_state.shipments = None
-    st.session_state.truck_plan = None
-    st.session_state.cost_breakdown = None
     st.session_state.optimization_complete = False
     st.session_state.optimization_result = None
     st.session_state.optimization_model = None
@@ -107,18 +92,13 @@ def clear_all_data():
     st.session_state.truck_schedules = None
     st.session_state.cost_structure = None
     st.session_state.manufacturing_site = None
-    st.session_state.graph_builder = None
-    st.session_state.route_finder = None
-    st.session_state.scheduler = None
-    st.session_state.production_schedule = None
-    st.session_state.shipments = None
-    st.session_state.truck_plan = None
-    st.session_state.cost_breakdown = None
     st.session_state.optimization_complete = False
     st.session_state.optimization_result = None
     st.session_state.optimization_model = None
     st.session_state.forecast_filename = None
     st.session_state.network_filename = None
+    st.session_state.initial_inventory = None
+    st.session_state.product_aliases = None
 
 
 # ========== Data Storage Functions ==========
@@ -162,14 +142,18 @@ def store_parsed_data(
     st.session_state.data_uploaded = True
 
 
+# Legacy functions - kept for backward compatibility with Results page
+# These will be removed when Results page is updated to use workflow results
+
 def store_planning_objects(
     graph_builder: NetworkGraphBuilder,
     route_finder: RouteFinder,
 ):
-    """Store planning objects in session state (heuristic planning deprecated)."""
-    st.session_state.graph_builder = graph_builder
-    st.session_state.route_finder = route_finder
-    # Note: scheduler parameter removed - heuristic planning deprecated
+    """DEPRECATED: Store planning objects in session state.
+
+    Legacy function from Phase 2 heuristic planning. No longer used by workflow system.
+    """
+    pass  # No-op
 
 
 def store_planning_results(
@@ -178,7 +162,11 @@ def store_planning_results(
     truck_plan: TruckLoadPlan,
     cost_breakdown: TotalCostBreakdown,
 ):
-    """Store planning results in session state."""
+    """DEPRECATED: Store planning results in session state.
+
+    Legacy function from Phase 2. Results page may still use this.
+    Will be removed when Results page is updated to use WorkflowResult.
+    """
     st.session_state.production_schedule = production_schedule
     st.session_state.shipments = shipments
     st.session_state.truck_plan = truck_plan
