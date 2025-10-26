@@ -92,7 +92,7 @@ class InitialWorkflow(BaseWorkflow):
         )
 
         # Validate forecast coverage
-        forecast_dates = {f.date for f in self.forecast}
+        forecast_dates = {f.forecast_date for f in self.forecast}
         required_dates = {
             planning_start_date + timedelta(days=i)
             for i in range(horizon_days)
