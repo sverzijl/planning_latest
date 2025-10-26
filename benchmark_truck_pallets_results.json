@@ -1,0 +1,224 @@
+[
+  {
+    "weeks": 1,
+    "pallet_tracking": false,
+    "solve_time": 4.242370843887329,
+    "total_time": 4.751883029937744,
+    "status": "TerminationCondition.optimal",
+    "success": true,
+    "total_cost": 406225.8600529832,
+    "mip_gap": 0.001739688318735078,
+    "variables": {
+      "binary": 161,
+      "integer": 336,
+      "continuous": 4478,
+      "total": 4975
+    },
+    "truck_validation": {
+      "total_trucks_used": 0,
+      "trucks_over_capacity": 0,
+      "max_pallets_on_truck": 0.0,
+      "trucks_checked": 0,
+      "product_ceiling_violations": 0
+    },
+    "labor_stats": {
+      "total_regular_hours": 50.68642857142857,
+      "total_overtime_hours": 0.18571428571428605,
+      "weekend_production_days": 0,
+      "weekday_production_days": 5,
+      "total_production_days": 5
+    },
+    "sku_stats": {
+      "days_with_production": 5,
+      "total_skus_produced": 25,
+      "avg_skus_per_day": 5.0,
+      "max_skus_per_day": 5,
+      "min_skus_per_day": 5
+    }
+  },
+  {
+    "weeks": 1,
+    "pallet_tracking": true,
+    "solve_time": 2.8902761936187744,
+    "total_time": 3.1068122386932373,
+    "status": "TerminationCondition.optimal",
+    "success": true,
+    "total_cost": 406086.69607239496,
+    "mip_gap": 0.0013975892547164522,
+    "variables": {
+      "binary": 161,
+      "integer": 756,
+      "continuous": 4478,
+      "total": 5395
+    },
+    "truck_validation": {
+      "total_trucks_used": 11,
+      "trucks_over_capacity": 0,
+      "max_pallets_on_truck": 44.0,
+      "trucks_checked": 11,
+      "product_ceiling_violations": 0
+    },
+    "labor_stats": {
+      "total_regular_hours": 50.63642857142857,
+      "total_overtime_hours": 0.23571428571428565,
+      "weekend_production_days": 0,
+      "weekday_production_days": 5,
+      "total_production_days": 5
+    },
+    "sku_stats": {
+      "days_with_production": 5,
+      "total_skus_produced": 25,
+      "avg_skus_per_day": 5.0,
+      "max_skus_per_day": 5,
+      "min_skus_per_day": 5
+    }
+  },
+  {
+    "weeks": 2,
+    "pallet_tracking": false,
+    "solve_time": 17.335185766220093,
+    "total_time": 18.588868379592896,
+    "status": "TerminationCondition.optimal",
+    "success": true,
+    "total_cost": 622619.8277259663,
+    "mip_gap": 0.008079419320300676,
+    "variables": {
+      "binary": 322,
+      "integer": 917,
+      "continuous": 16196,
+      "total": 17435
+    },
+    "truck_validation": {
+      "total_trucks_used": 0,
+      "trucks_over_capacity": 0,
+      "max_pallets_on_truck": 0.0,
+      "trucks_checked": 0,
+      "product_ceiling_violations": 0
+    },
+    "labor_stats": {
+      "total_regular_hours": 110.94928571428571,
+      "total_overtime_hours": 10.916428571428572,
+      "weekend_production_days": 0,
+      "weekday_production_days": 10,
+      "total_production_days": 10
+    },
+    "sku_stats": {
+      "days_with_production": 10,
+      "total_skus_produced": 50,
+      "avg_skus_per_day": 5.0,
+      "max_skus_per_day": 5,
+      "min_skus_per_day": 5
+    }
+  },
+  {
+    "weeks": 2,
+    "pallet_tracking": true,
+    "solve_time": 15.616586446762085,
+    "total_time": 16.97404408454895,
+    "status": "TerminationCondition.optimal",
+    "success": true,
+    "total_cost": 620752.6042493698,
+    "mip_gap": 0.005818549215320214,
+    "variables": {
+      "binary": 322,
+      "integer": 1757,
+      "continuous": 16196,
+      "total": 18275
+    },
+    "truck_validation": {
+      "total_trucks_used": 22,
+      "trucks_over_capacity": 0,
+      "max_pallets_on_truck": 44.0,
+      "trucks_checked": 22,
+      "product_ceiling_violations": 0
+    },
+    "labor_stats": {
+      "total_regular_hours": 110.94928571428572,
+      "total_overtime_hours": 11.37428571428571,
+      "weekend_production_days": 0,
+      "weekday_production_days": 10,
+      "total_production_days": 10
+    },
+    "sku_stats": {
+      "days_with_production": 10,
+      "total_skus_produced": 50,
+      "avg_skus_per_day": 5.0,
+      "max_skus_per_day": 5,
+      "min_skus_per_day": 5
+    }
+  },
+  {
+    "weeks": 3,
+    "pallet_tracking": false,
+    "solve_time": 651.5401957035065,
+    "total_time": 655.3227152824402,
+    "status": "TerminationCondition.optimal",
+    "success": true,
+    "total_cost": 841770.542347521,
+    "mip_gap": 0.007094480020280949,
+    "variables": {
+      "binary": 483,
+      "integer": 1743,
+      "continuous": 33269,
+      "total": 35495
+    },
+    "truck_validation": {
+      "total_trucks_used": 0,
+      "trucks_over_capacity": 0,
+      "max_pallets_on_truck": 0.0,
+      "trucks_checked": 0,
+      "product_ceiling_violations": 0
+    },
+    "labor_stats": {
+      "total_regular_hours": 161.0392857142857,
+      "total_overtime_hours": 20.105000000000004,
+      "weekend_production_days": 0,
+      "weekday_production_days": 15,
+      "total_production_days": 15
+    },
+    "sku_stats": {
+      "days_with_production": 15,
+      "total_skus_produced": 75,
+      "avg_skus_per_day": 5.0,
+      "max_skus_per_day": 5,
+      "min_skus_per_day": 5
+    }
+  },
+  {
+    "weeks": 3,
+    "pallet_tracking": true,
+    "solve_time": 488.97980284690857,
+    "total_time": 490.80894565582275,
+    "status": "TerminationCondition.optimal",
+    "success": true,
+    "total_cost": 842423.9211701681,
+    "mip_gap": 0.008180417426595563,
+    "variables": {
+      "binary": 483,
+      "integer": 3003,
+      "continuous": 33269,
+      "total": 36755
+    },
+    "truck_validation": {
+      "total_trucks_used": 33,
+      "trucks_over_capacity": 0,
+      "max_pallets_on_truck": 44.0,
+      "trucks_checked": 33,
+      "product_ceiling_violations": 0
+    },
+    "labor_stats": {
+      "total_regular_hours": 161.31571428571428,
+      "total_overtime_hours": 20.134999999999998,
+      "weekend_production_days": 0,
+      "weekday_production_days": 15,
+      "total_production_days": 15
+    },
+    "sku_stats": {
+      "days_with_production": 15,
+      "total_skus_produced": 75,
+      "avg_skus_per_day": 5.0,
+      "max_skus_per_day": 5,
+      "min_skus_per_day": 5
+    }
+  }
+]

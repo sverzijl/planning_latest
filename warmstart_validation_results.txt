@@ -1,0 +1,89 @@
+/home/sverzijl/planning_latest/src/optimization/unified_node_model.py:303: UserWarning: Zero cost parameters detected: All route transport costs are 0, ambient storage costs are 0. This may cause solver to leave some variables uninitialized (valid behavior). Consider using small non-zero costs (e.g., 0.0001) if you encounter solution extraction issues.
+  warnings.warn(warning_msg, UserWarning)
+================================================================================
+WARMSTART SPEEDUP VALIDATION
+================================================================================
+
+📂 Loading data...
+   ✓ Data loaded
+
+🔨 Creating optimization components...
+   ✓ 11 nodes, 10 routes
+
+⚙️  Configuring solver (fast settings for validation)...
+   ✓ Configured: 2-week horizon, 3% gap, 3min limit
+
+🚀 Solving 3 days to validate warmstart...
+   Day 1: Cold start (baseline)
+   Days 2-3: Warmstart (should be faster)
+
+Unified Model Data Summary:
+  Nodes: 11
+    Manufacturing: 1
+    Demand: 9
+    With truck constraints: 1
+  Routes: 10
+  Truck schedules: 11
+  Planning horizon: 2025-01-06 to 2025-01-19 (14 days)
+  Products: 0
+  Demand entries: 0
+
+Building Unified Node Model...
+  Sets defined: 11 nodes, 0 products, 14 dates, 10 routes
+  Production dates for cohorts: 14 in horizon + 0 from initial inventory
+  Cohort indices: 0 cohorts
+  Shipment cohort indices: 0
+  Demand cohort indices: 0
+  🚛 Truck pallet tracking enabled: 0 integer pallet variables
+  Changeover tracking: 14 production days, 0 product indicators (VARIABLE (binary decision))
+  Start tracking: 0 start indicators (binary)
+  Labor cost variables: 14 labor hour variables added
+  Variables created successfully
+  Adding core constraints...
+ERROR: Rule failed when generating expression for Constraint
+production_capacity_con with index ('6122', datetime.date(2025, 1, 6)):
+ValueError: Invalid constraint expression. The constraint expression resolved
+to a trivial Boolean (True) instead of a Pyomo object. Please modify your rule
+to return Constraint.Feasible instead of True.
+
+    Error thrown for Constraint 'production_capacity_con['6122',2025-01-06]'
+ERROR: Constructing component 'production_capacity_con' from data=None failed:
+        ValueError: Invalid constraint expression. The constraint expression
+        resolved to a trivial Boolean (True) instead of a Pyomo object. Please
+        modify your rule to return Constraint.Feasible instead of True.
+
+    Error thrown for Constraint 'production_capacity_con['6122',2025-01-06]'
+Traceback (most recent call last):
+  File "/home/sverzijl/planning_latest/validate_warmstart_speedup.py", line 89, in <module>
+    results = solver.solve_sequence(
+              ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/sverzijl/planning_latest/src/optimization/daily_rolling_solver.py", line 511, in solve_sequence
+    result = self.solve_day_n(
+             ^^^^^^^^^^^^^^^^^
+  File "/home/sverzijl/planning_latest/src/optimization/daily_rolling_solver.py", line 385, in solve_day_n
+    result = model.solve(
+             ^^^^^^^^^^^^
+  File "/home/sverzijl/planning_latest/src/optimization/unified_node_model.py", line 1523, in solve
+    return super().solve(
+           ^^^^^^^^^^^^^^
+  File "/home/sverzijl/planning_latest/src/optimization/base_model.py", line 376, in solve
+    self.model = self.build_model()
+                 ^^^^^^^^^^^^^^^^^^
+  File "/home/sverzijl/planning_latest/src/optimization/unified_node_model.py", line 861, in build_model
+    self._add_production_capacity_constraints(model)
+  File "/home/sverzijl/planning_latest/src/optimization/unified_node_model.py", line 2871, in _add_production_capacity_constraints
+    model.production_capacity_con = Constraint(
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pyomo/core/base/block.py", line 573, in __setattr__
+    self.add_component(name, val)
+  File "/home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pyomo/core/base/block.py", line 1103, in add_component
+    val.construct(data)
+  File "/home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pyomo/core/base/constraint.py", line 739, in construct
+    self._setitem_when_not_present(index, rule(block, index))
+  File "/home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pyomo/core/base/indexed_component.py", line 1111, in _setitem_when_not_present
+    obj.set_value(value)
+  File "/home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pyomo/core/base/constraint.py", line 467, in set_value
+    raise ValueError(
+ValueError: Invalid constraint expression. The constraint expression resolved to a trivial Boolean (True) instead of a Pyomo object. Please modify your rule to return Constraint.Feasible instead of True.
+
+Error thrown for Constraint 'production_capacity_con['6122',2025-01-06]'

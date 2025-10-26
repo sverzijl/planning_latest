@@ -1,0 +1,51 @@
+================================================================================
+DIAGNOSTIC: Zero Production Investigation
+================================================================================
+
+[1] LOADING DATA
+--------------------------------------------------------------------------------
+✓ Forecast entries: 20295
+✓ Locations loaded: 11
+✓ Routes loaded: 10
+✓ Products loaded: 2
+  Product IDs: ['G144', 'G610']
+
+[2] PRODUCT DATA VERIFICATION
+--------------------------------------------------------------------------------
+Products with units_per_mix:
+  G144: 387 units/mix (name=Product G144)
+  G610: 395 units/mix (name=Product G610)
+
+[3] FORECAST DATA FOR PLANNING PERIOD
+--------------------------------------------------------------------------------
+Planning period: 2025-10-16 to 2025-10-22
+Forecast entries in period: 315
+
+Demand by product:
+  HELGAS GFREE MIXED GRAIN 500G: 18,733 units
+  HELGAS GFREE TRAD WHITE 470G: 19,351 units
+  HELGAS GFREE WHOLEM 500G: 21,270 units
+  WONDER GFREE WHITE 470G: 15,408 units
+  WONDER GFREE WHOLEM 500G: 11,214 units
+
+Total demand: 85,976 units
+
+[4] PRODUCT ID MATCHING
+--------------------------------------------------------------------------------
+Product IDs in forecast: ['HELGAS GFREE MIXED GRAIN 500G', 'HELGAS GFREE TRAD WHITE 470G', 'HELGAS GFREE WHOLEM 500G', 'WONDER GFREE WHITE 470G', 'WONDER GFREE WHOLEM 500G']
+Product IDs in model: ['G144', 'G610']
+Intersection: []
+Only in forecast: ['HELGAS GFREE MIXED GRAIN 500G', 'HELGAS GFREE TRAD WHITE 470G', 'HELGAS GFREE WHOLEM 500G', 'WONDER GFREE WHITE 470G', 'WONDER GFREE WHOLEM 500G']
+Only in model: ['G144', 'G610']
+
+❌ CRITICAL: NO PRODUCT ID OVERLAP!
+   Forecast and model have completely different product IDs.
+   This explains zero production - demand for products that don't exist in model!
+
+[5] CONVERTING TO UNIFIED FORMAT
+--------------------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/sverzijl/planning_latest/debug_zero_production.py", line 102, in <module>
+    unified_nodes = converter.convert_locations_to_nodes(locations)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'LegacyToUnifiedConverter' object has no attribute 'convert_locations_to_nodes'

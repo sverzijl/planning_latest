@@ -233,13 +233,16 @@ def main():
 
     costs = {
         'Labor': meta.get('total_labor_cost', 0),
-        'Production': meta.get('total_production_cost', 0),
         'Transport': meta.get('total_transport_cost', 0),
         'Storage': meta.get('total_holding_cost', 0),
         'Shortage Penalty': meta.get('total_shortage_cost', 0),
-        'Staleness Penalty': meta.get('total_staleness_cost', 0),
+        'Freshness Penalty': meta.get('total_staleness_cost', 0),
         'Changeover': meta.get('total_changeover_cost', 0),
+        'Waste (End Inventory)': meta.get('total_waste_cost', 0),
     }
+
+    # Show production cost separately (not in objective after refactor)
+    production_cost_ref = meta.get('total_production_cost_reference', meta.get('total_production_cost', 0))
 
     sum_known = sum(costs.values())
     missing = obj - sum_known
@@ -249,13 +252,22 @@ def main():
         print(f"{name:20s}: ${cost:>12,.2f}  ({pct:5.1f}%)")
 
     print(f"{'-' * 50}")
-    print(f"{'Sum of known costs':20s}: ${sum_known:>12,.2f}  ({sum_known/obj*100:5.1f}%)")
-    print(f"{'⚠️  Missing cost':20s}: ${missing:>12,.2f}  ({missing/obj*100:5.1f}%)")
-    print(f"{'Objective value':20s}: ${obj:>12,.2f}  (100.0%)")
+    print(f"{'Incremental Total':20s}: ${sum_known:>12,.2f}  ({sum_known/obj*100:5.1f}%)")
 
-    if missing > 1000:
-        print(f"\n⚠️  WARNING: Large unaccounted cost component (${missing:,.0f})")
-        print(f"    This is likely freshness/staleness penalty not reported in metadata")
+    if production_cost_ref > 0:
+        print(f"{'Production (ref)':20s}: ${production_cost_ref:>12,.2f}  (not in objective)")
+
+    if abs(missing) > 1:
+        print(f"{'⚠️  Discrepancy':20s}: ${missing:>12,.2f}  ({abs(missing)/obj*100:5.1f}%)")
+        if abs(missing) > 1000:
+            print(f"\n⚠️  WARNING: Large discrepancy (${abs(missing):,.0f})")
+    else:
+        print(f"{'✅ Objective':20s}: ${obj:>12,.2f}  (100.0%)")
+
+    # Show end inventory if available
+    end_inv = meta.get('end_horizon_inventory_units', 0)
+    if end_inv > 0:
+        print(f"\n📦 End-of-horizon inventory: {end_inv:,.0f} units (treated as waste)")
 
     print(f"\n{'=' * 80}\n")
 

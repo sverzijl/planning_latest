@@ -1,0 +1,183 @@
+/home/sverzijl/planning_latest/src/optimization/unified_node_model.py:303: UserWarning: Zero cost parameters detected: All route transport costs are 0, ambient storage costs are 0. This may cause solver to leave some variables uninitialized (valid behavior). Consider using small non-zero costs (e.g., 0.0001) if you encounter solution extraction issues.
+  warnings.warn(warning_msg, UserWarning)
+================================================================================
+WARMSTART SPEEDUP VALIDATION (SIMPLIFIED)
+================================================================================
+
+📂 Loading data...
+   ✓ 11 nodes, 10 routes, 5 products
+   ✓ Forecast: 2025-10-16 to 2027-01-09
+
+================================================================================
+DAY 1: COLD START (Baseline)
+================================================================================
+Planning horizon: 2025-10-16 to 2025-10-29
+
+Unified Model Data Summary:
+  Nodes: 11
+    Manufacturing: 1
+    Demand: 9
+    With truck constraints: 1
+  Routes: 10
+  Truck schedules: 11
+  Planning horizon: 2025-10-16 to 2025-10-29 (14 days)
+  Products: 5
+  Demand entries: 630
+
+Building Unified Node Model...
+  Sets defined: 11 nodes, 5 products, 14 dates, 10 routes
+  Production dates for cohorts: 14 in horizon + 0 from initial inventory
+  Cohort indices: 5,775 cohorts
+  Shipment cohorts by origin node:
+    6104: 700
+    6122: 1440
+    6125: 1050
+    Lineage: 140
+  Shipment cohort indices: 3,330
+  Demand cohort indices: 3,780
+  🚛 Truck pallet tracking enabled: 840 integer pallet variables
+  Changeover tracking: 14 production days, 70 product indicators (VARIABLE (binary decision))
+  Start tracking: 70 start indicators (binary)
+  Labor cost variables: 14 labor hour variables added
+  Variables created successfully
+  Adding core constraints...
+  Changeover tracking constraints added (224 constraints)
+  Big-M: Using max_mixes per product (tighter than max_production)
+  Labor cost constraints added (14 node-date pairs, 126 constraints)
+  Adding storage shipment delay constraint for 3 nodes: ['6104', '6125', 'Lineage']
+    Added 33 storage delay constraints
+  ✓ Added truck pallet ceiling constraints: 840 constraints
+  Hybrid pallet formulation (MIP optimization):
+    Small cohorts (integer 0-10): 525
+    Domain reduced: 62 → 10 (84% reduction)
+  Pallet tracking enabled for states: ['frozen']
+    - Pallet integer variables: 525
+    - Domain per variable: 0-10 (vs 0-62 full formulation)
+    - Unit-tracked states: ['ambient', 'thawed']
+  Holding cost enabled: 5,775 total cohorts (1,925 pallet-tracked)
+
+  Staleness penalty enabled: $5.0000 per unit per age ratio
+  Staleness penalty calculation: 3,780 demand cohorts
+  Formula: (age_days / 17) × $5.0000 × demand_satisfied
+  Changeover cost enabled: $38.40 per start
+  Core constraints added
+  Truck constraints added (generalized for any node)
+  Model complete and ready to solve
+/home/sverzijl/planning_latest/src/optimization/unified_node_model.py:303: UserWarning: Zero cost parameters detected: All route transport costs are 0, ambient storage costs are 0. This may cause solver to leave some variables uninitialized (valid behavior). Consider using small non-zero costs (e.g., 0.0001) if you encounter solution extraction issues.
+  warnings.warn(warning_msg, UserWarning)
+
+✅ Day 1 solved successfully!
+   Time: 12.1s
+   Cost: $782,470
+   Gap: 2.73%
+
+📦 Extracting warmstart from Day 1 solution...
+
+✓ Warmstart extraction complete:
+  Total variables: 911
+  Production: 44
+  Product binaries: 70
+  Changeover starts: 70
+  Inventory cohorts: 310
+  Shipment cohorts: 345
+  Production days: 14
+  Overtime flags: 14
+  Labor hours: 0
+  Pallet counts: 0
+  Other: 44
+
+================================================================================
+DAY 2: WITH WARMSTART
+================================================================================
+Planning horizon: 2025-10-17 to 2025-10-30 (shifted +1 day)
+
+✓ Warmstart shifting complete:
+  Original variables: 783
+  Shifted successfully: 783
+  Dropped (before horizon): 0
+  Dropped (after horizon): 0
+  Non-date variables kept: 0
+  New dates added: 0
+  Total in shifted hints: 783
+
+Unified Model Data Summary:
+  Nodes: 11
+    Manufacturing: 1
+    Demand: 9
+    With truck constraints: 1
+  Routes: 10
+  Truck schedules: 11
+  Planning horizon: 2025-10-17 to 2025-10-30 (14 days)
+  Products: 5
+  Demand entries: 630
+
+Building Unified Node Model...
+  Sets defined: 11 nodes, 5 products, 14 dates, 10 routes
+  Production dates for cohorts: 14 in horizon + 0 from initial inventory
+  Cohort indices: 5,775 cohorts
+  Shipment cohorts by origin node:
+    6104: 700
+    6122: 1440
+    6125: 1050
+    Lineage: 140
+  Shipment cohort indices: 3,330
+  Demand cohort indices: 3,780
+  🚛 Truck pallet tracking enabled: 840 integer pallet variables
+  Changeover tracking: 14 production days, 70 product indicators (VARIABLE (binary decision))
+  Start tracking: 70 start indicators (binary)
+  Labor cost variables: 14 labor hour variables added
+  Variables created successfully
+  Adding core constraints...
+  Changeover tracking constraints added (224 constraints)
+  Big-M: Using max_mixes per product (tighter than max_production)
+  Labor cost constraints added (14 node-date pairs, 126 constraints)
+  Adding storage shipment delay constraint for 3 nodes: ['6104', '6125', 'Lineage']
+    Added 33 storage delay constraints
+  ✓ Added truck pallet ceiling constraints: 840 constraints
+  Hybrid pallet formulation (MIP optimization):
+    Small cohorts (integer 0-10): 525
+    Domain reduced: 62 → 10 (84% reduction)
+  Pallet tracking enabled for states: ['frozen']
+    - Pallet integer variables: 525
+    - Domain per variable: 0-10 (vs 0-62 full formulation)
+    - Unit-tracked states: ['ambient', 'thawed']
+  Holding cost enabled: 5,775 total cohorts (1,925 pallet-tracked)
+
+  Staleness penalty enabled: $5.0000 per unit per age ratio
+  Staleness penalty calculation: 3,780 demand cohorts
+  Formula: (age_days / 17) × $5.0000 × demand_satisfied
+  Changeover cost enabled: $38.40 per start
+  Core constraints added
+  Truck constraints added (generalized for any node)
+  Model complete and ready to solve
+
+Applying comprehensive warmstart hints...
+  Warmstart applied to 739 variables:
+    inventory_cohort: 310
+    other_binary: 14
+    product_produced: 70
+    shipment_cohort: 345
+  Skipped: 44 (no matching variable)
+
+✅ Day 2 solved successfully!
+   Time: 6.1s
+   Cost: $819,992
+   Gap: 1.68%
+
+================================================================================
+SPEEDUP VALIDATION
+================================================================================
+Day 1 (cold start):   12.1s - $782,470
+Day 2 (warmstart):     6.1s - $819,992
+Speedup:             49.8% faster
+
+✅ SUCCESS: Warmstart achieved 49.8% speedup (target: ≥20%)
+   Warmstart is working correctly!
+
+💰 Cost Consistency:
+   Difference: $37,522 (4.80%)
+   ✓ Good consistency (<5%)
+
+================================================================================
+✨ Warmstart validation complete!
+================================================================================

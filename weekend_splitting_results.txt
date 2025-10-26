@@ -1,0 +1,151 @@
+/home/sverzijl/planning_latest/src/parsers/inventory_parser.py:167: UserWarning: Found 8 negative quantity values. These were set to 0.
+  warnings.warn(
+/home/sverzijl/planning_latest/src/parsers/inventory_parser.py:173: UserWarning: Skipped 39 entries with Storage Location 5000 (excluded from inventory).
+  warnings.warn(
+/home/sverzijl/planning_latest/src/optimization/unified_node_model.py:303: UserWarning: Zero cost parameters detected: All route transport costs are 0, ambient storage costs are 0. This may cause solver to leave some variables uninitialized (valid behavior). Consider using small non-zero costs (e.g., 0.0001) if you encounter solution extraction issues.
+  warnings.warn(warning_msg, UserWarning)
+================================================================================
+WEEKEND PRODUCTION SPLITTING INVESTIGATION
+================================================================================
+
+Loading data from:
+  Forecast:  data/examples/Gluten Free Forecast - Latest.xlsm
+  Network:   data/examples/Network_Config.xlsx
+  Inventory: data/examples/inventory_latest.XLSX
+
+✓ Loaded 11 nodes
+✓ Loaded 10 routes
+✓ Loaded labor calendar
+✓ Loaded 11 truck schedules
+
+Planning Horizon........................ 2025-10-26 to 2025-11-23
+Horizon Days............................ 28
+
+Non-Fixed Days (Weekends/Holidays)...... 9
+  2025-10-26 (Sunday): 4.0h min @ $1320.00/h
+  2025-11-01 (Saturday): 4.0h min @ $1320.00/h
+  2025-11-02 (Sunday): 4.0h min @ $1320.00/h
+  2025-11-04 (Tuesday): 4.0h min @ $1320.00/h
+  2025-11-08 (Saturday): 4.0h min @ $1320.00/h
+  ... and 4 more
+
+Weekend Minimum Payment................. 4.0h × $1320.00/h = $5,280.00
+Penalty for Splitting Across 2 Days..... $5,280.00 (pays 2× minimum)
+
+================================================================================
+BUILDING OPTIMIZATION MODEL
+================================================================================
+
+📦 Preprocessed initial inventory: 34 items, prod_date=2025-10-25 (one day before snapshot)
+
+Unified Model Data Summary:
+  Nodes: 11
+    Manufacturing: 1
+    Demand: 9
+    With truck constraints: 1
+  Routes: 10
+  Truck schedules: 11
+  Planning horizon: 2025-10-26 to 2025-11-23 (29 days)
+  Products: 5
+  Demand entries: 1305
+
+✓ Model built successfully
+  Manufacturing nodes: 1
+  Products: 5
+  Date range: 2025-10-26 to 2025-11-23
+
+================================================================================
+SOLVING OPTIMIZATION MODEL
+================================================================================
+
+Building Unified Node Model...
+  Sets defined: 11 nodes, 5 products, 29 dates, 10 routes
+  Production dates for cohorts: 29 in horizon + 1 from initial inventory
+  Cohort indices: 19,520 cohorts
+  Shipment cohorts by origin node:
+    6104: 1810
+    6122: 4740
+    6125: 2715
+    Lineage: 1375
+  Shipment cohort indices: 10,640
+  Demand cohort indices: 9,495
+  🚛 Truck pallet tracking enabled: 1,740 integer pallet variables
+  Changeover tracking: 29 production days, 145 product indicators (VARIABLE (binary decision))
+  Start tracking: 145 start indicators (binary)
+  Labor cost variables: 29 labor hour variables added
+  Variables created successfully
+  Adding core constraints...
+  Changeover tracking constraints added (464 constraints)
+  Big-M: Using max_mixes per product (tighter than max_production)
+  Labor cost constraints added (29 node-date pairs, 261 constraints)
+  Adding storage shipment delay constraint for 3 nodes: ['6104', '6125', 'Lineage']
+    Added 78 storage delay constraints
+  ✓ Added truck pallet ceiling constraints: 1,740 constraints
+  Hybrid pallet formulation (MIP optimization):
+    Small cohorts (integer 0-10): 2,320
+    Domain reduced: 62 → 10 (84% reduction)
+  Pallet tracking enabled for states: ['frozen']
+    - Pallet integer variables: 2,320
+    - Domain per variable: 0-10 (vs 0-62 full formulation)
+    - Unit-tracked states: ['ambient', 'thawed']
+  Holding cost enabled: 19,520 total cohorts (6,506 pallet-tracked)
+
+  Staleness penalty enabled: $5.0000 per unit per age ratio
+  Staleness penalty calculation: 9,495 demand cohorts
+  Formula: (age_days / 17) × $5.0000 × demand_satisfied
+  Changeover cost enabled: $38.40 per start
+  Core constraints added
+  Truck constraints added (generalized for any node)
+  Model complete and ready to solve
+
+✓ Solve completed with status: TerminationCondition.optimal
+  Solve time: 66.46s
+  Objective value: $925,937.20
+
+================================================================================
+WEEKEND PRODUCTION ANALYSIS
+================================================================================
+
+Weekend Production Days................. 11
+
+Detailed Breakdown:
+------------------------------------------------------------------------------------------------------------------------
+Date         Day        Product                        Qty Hours Used Hours Paid   Wasted         Cost
+------------------------------------------------------------------------------------------------------------------------
+2025-11-01 Saturday   WONDER GFREE WHITE 470G        415       0.30       4.00     3.70 $   5,280.00
+2025-11-02 Sunday     HELGAS GFREE TRAD WHITE 470G      415       0.30       4.00     3.70 $   5,280.00
+2025-11-02 Sunday     HELGAS GFREE MIXED GRAIN 500G     2905       2.08       4.00     1.92 $   5,280.00
+2025-11-02 Sunday     WONDER GFREE WHITE 470G        830       0.59       4.00     3.41 $   5,280.00
+2025-11-04 Tuesday    HELGAS GFREE WHOLEM 500G      2075       1.48       4.00     2.52 $   5,280.00
+2025-11-04 Tuesday    WONDER GFREE WHOLEM 500G      1660       1.19       4.00     2.81 $   5,280.00
+2025-11-04 Tuesday    WONDER GFREE WHITE 470G        830       0.59       4.00     3.41 $   5,280.00
+2025-11-08 Saturday   HELGAS GFREE MIXED GRAIN 500G     2075       1.48       4.00     2.52 $   5,280.00
+2025-11-08 Saturday   WONDER GFREE WHITE 470G        830       0.59       4.00     3.41 $   5,280.00
+2025-11-09 Sunday     HELGAS GFREE TRAD WHITE 470G      415       0.30       4.00     3.70 $   5,280.00
+2025-11-09 Sunday     WONDER GFREE WHITE 470G        830       0.59       4.00     3.41 $   5,280.00
+------------------------------------------------------------------------------------------------------------------------
+                                TOTAL                                                             34.51 $  58,080.00
+------------------------------------------------------------------------------------------------------------------------
+
+================================================================================
+CONSOLIDATION OPPORTUNITIES
+================================================================================
+
+✓ No obvious consolidation opportunities found
+   Weekend production appears optimal
+
+================================================================================
+COST BREAKDOWN
+================================================================================
+Production Cost......................... $  370,636.50 ( 56.0%)
+Shortage Cost........................... $  253,934.71 ( 38.4%)
+Labor Cost.............................. $   37,021.29 (  5.6%)
+--------------------------------------------------------------------------------
+TOTAL................................... $  661,592.49
+
+================================================================================
+DEMAND SATISFACTION
+================================================================================
+Total Demand............................    5,569,692 units
+Shortages...............................            0 units
+Fill Rate...............................        100.0%

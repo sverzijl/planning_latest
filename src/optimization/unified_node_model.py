@@ -1986,19 +1986,51 @@ class UnifiedNodeModel(BaseOptimizationModel):
 
         solution['total_staleness_cost'] = total_staleness_cost
 
+        # Extract waste cost (end-of-horizon inventory treated as waste)
+        total_waste_cost = 0.0
+        waste_multiplier = self.cost_structure.waste_cost_multiplier
+        prod_cost_per_unit = self.cost_structure.production_cost_per_unit
+
+        if waste_multiplier > 0 and prod_cost_per_unit > 0:
+            # Calculate end-of-horizon inventory
+            last_date = max(self.dates)
+            end_inventory_units = 0.0
+
+            for node_id in self.nodes.keys():
+                for prod in self.products.keys():
+                    for prod_date in self.dates:
+                        for state in ['frozen', 'ambient', 'thawed']:
+                            if (node_id, prod, prod_date, last_date, state) in model.inventory_cohort:
+                                inv_qty = value(model.inventory_cohort[node_id, prod, prod_date, last_date, state])
+                                if inv_qty and inv_qty > 0:
+                                    end_inventory_units += inv_qty
+
+            total_waste_cost = waste_multiplier * prod_cost_per_unit * end_inventory_units
+            solution['end_horizon_inventory_units'] = end_inventory_units
+
+        solution['total_waste_cost'] = total_waste_cost
+
         # PYOMO BEST PRACTICE: Always use component sum instead of extracting from model.obj
         # Extracting from model.obj can print thousands of error messages when variables
         # have zero costs and aren't initialized by the solver (valid MIP behavior).
         # Component sum is more reliable and avoids error spam.
+        #
+        # REFACTORED OBJECTIVE (Phase A):
+        # - REMOVED: production_cost (pass-through, doesn't vary with decisions)
+        # - ADDED: waste_cost (end-of-horizon inventory treated as waste)
+        # This focuses on incremental costs and prevents stockpiling
         solution['total_cost'] = (
-            solution.get('total_production_cost', 0.0) +
             solution.get('total_labor_cost', 0.0) +
             solution.get('total_transport_cost', 0.0) +
             solution.get('total_holding_cost', 0.0) +
             solution.get('total_shortage_cost', 0.0) +
             solution.get('total_changeover_cost', 0.0) +
-            solution.get('total_staleness_cost', 0.0)
+            solution.get('total_staleness_cost', 0.0) +
+            solution.get('total_waste_cost', 0.0)
         )
+
+        # Also report production cost for reference (but not in objective)
+        solution['total_production_cost_reference'] = solution.get('total_production_cost', 0.0)
 
         return solution
 
@@ -3666,13 +3698,50 @@ class UnifiedNodeModel(BaseOptimizationModel):
             )
             print(f"  Changeover cost enabled: ${self.cost_structure.changeover_cost_per_start:.2f} per start")
 
-        # Total cost (add staleness penalty + changeover cost)
-        total_cost = production_cost + transport_cost + labor_cost + shortage_cost + holding_cost + staleness_cost + changeover_cost
+        # Waste cost (expired inventory + end-of-horizon inventory treated as waste)
+        # This prevents stockpiling and properly costs inventory that won't be sold
+        waste_cost = 0
+        waste_multiplier = self.cost_structure.waste_cost_multiplier
+        prod_cost_per_unit = self.cost_structure.production_cost_per_unit
+
+        if waste_multiplier > 0 and prod_cost_per_unit > 0:
+            # End-of-horizon inventory waste (all inventory on last day is discarded)
+            last_date = max(model.dates)
+
+            for node_id in model.nodes:
+                for prod in model.products:
+                    for prod_date in model.dates:
+                        for state in ['frozen', 'ambient', 'thawed']:
+                            if (node_id, prod, prod_date, last_date, state) in model.inventory_cohort:
+                                # Treat all end-of-horizon inventory as waste
+                                waste_cost += (
+                                    waste_multiplier * prod_cost_per_unit *
+                                    model.inventory_cohort[node_id, prod, prod_date, last_date, state]
+                                )
+
+            print(f"\n  End-of-horizon waste enabled: {waste_multiplier:.2f}× production cost")
+            print(f"  Cost: ${waste_multiplier * prod_cost_per_unit:.2f} per wasted unit")
+            print(f"  This prevents stockpiling at horizon end")
+        else:
+            print(f"\n  Waste cost disabled (waste_cost_multiplier = {waste_multiplier})")
+
+        # Total cost - REFACTORED to incremental costs only
+        # REMOVED: production_cost (it's a pass-through, doesn't vary with decisions)
+        # ADDED: waste_cost (end-of-horizon inventory + expired units)
+        total_cost = (
+            labor_cost +
+            transport_cost +
+            holding_cost +
+            shortage_cost +
+            staleness_cost +
+            changeover_cost +
+            waste_cost
+        )
 
         model.obj = Objective(
             expr=total_cost,
             sense=minimize,
-            doc="Minimize total cost (production + transport + labor + holding + shortage + staleness + changeover)"
+            doc="Minimize incremental cost (labor + transport + holding + shortage + freshness + changeover + waste)"
         )
 
 

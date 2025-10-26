@@ -449,22 +449,24 @@ with tab4:
                     cost_breakdown = solution_dict
 
                 if cost_breakdown:
-                    st.subheader("Cost Breakdown")
+                    st.subheader("Cost Breakdown (Incremental Costs)")
+
+                    # Primary operational costs (Row 1)
                     col1, col2, col3, col4 = st.columns(4)
                     with col1:
                         labor_cost = cost_breakdown.get('total_labor_cost', 0)
                         st.metric("Labor Cost", f"${labor_cost:,.2f}")
                     with col2:
-                        production_cost = cost_breakdown.get('total_production_cost', 0)
-                        st.metric("Production Cost", f"${production_cost:,.2f}")
-                    with col3:
                         shortage_cost = cost_breakdown.get('total_shortage_cost', 0)
                         st.metric("Shortage Penalty", f"${shortage_cost:,.2f}")
+                    with col3:
+                        waste_cost = cost_breakdown.get('total_waste_cost', 0)
+                        st.metric("Waste Cost", f"${waste_cost:,.2f}")
                     with col4:
                         staleness_cost = cost_breakdown.get('total_staleness_cost', 0)
-                        st.metric("Staleness Penalty", f"${staleness_cost:,.2f}")
+                        st.metric("Freshness Penalty", f"${staleness_cost:,.2f}")
 
-                    # Second row of costs
+                    # Secondary costs (Row 2)
                     col1, col2, col3, col4 = st.columns(4)
                     with col1:
                         transport_cost = cost_breakdown.get('total_transport_cost', 0)
@@ -477,7 +479,15 @@ with tab4:
                         st.metric("Changeover Cost", f"${changeover_cost:,.2f}")
                     with col4:
                         total_cost = cost_breakdown.get('total_cost', 0)
-                        st.metric("Total Cost", f"${total_cost:,.2f}", delta=None)
+                        st.metric("Total Incremental", f"${total_cost:,.2f}")
+
+                    # Show production cost for reference (not in objective)
+                    prod_cost_ref = cost_breakdown.get('total_production_cost_reference', 0)
+                    if prod_cost_ref > 0:
+                        st.caption(
+                            f"ℹ️ Production cost (${prod_cost_ref:,.2f}) excluded from objective "
+                            f"(pass-through cost, not decision-dependent)"
+                        )
 
                 st.divider()
 

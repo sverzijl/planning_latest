@@ -1,0 +1,37 @@
+BENCHMARK WITH DEMAND - Detailed Results
+================================================================================
+Run date: 2025-10-23 21:28:53
+Forecast start: 2025-10-16
+
+
+1-WEEK
+----------------------------------------
+Planning days: 7
+Solve time: 9.3s
+Solver status: TerminationCondition.optimal
+Demand entries: 280
+Total demand: 79,500 units
+Total production: 0 units
+Total mixes: 101.0
+Products produced: 4
+Production days: 15.0
+Total changeovers: 0.0
+Objective value: $484,438.03
+Variables: 4,639 (cont: 4,303, int: 175, bin: 161)
+Constraints: 3,546
+
+2-WEEK
+----------------------------------------
+Planning days: 14
+Solve time: 1m 12.3s
+Solver status: TerminationCondition.optimal
+Demand entries: 440
+Total demand: 126,469 units
+Total production: 0 units
+Total mixes: 211.0
+Products produced: 7
+Production days: 31.0
+Total changeovers: 0.0
+Objective value: $588,581.56
+Variables: 14,838 (cont: 13,921, int: 595, bin: 322)
+Constraints: 10,321
