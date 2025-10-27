@@ -779,13 +779,16 @@ class SlidingWindowModel(BaseOptimizationModel):
                                 departures += model.shipment[node_id, route.destination_node_id, prod, delivery_date, 'ambient']
 
             # Demand consumption from ambient inventory
-            # CRITICAL: Link demand_consumed variable to inventory depletion
             demand_consumption = 0
             if node.has_demand_capability():
-                # Deduct demand_consumed from ambient inventory
-                # This creates the link: demand_consumed requires available inventory!
-                if (node_id, prod, t) in model.demand_consumed:
-                    demand_consumption = model.demand_consumed[node_id, prod, t]
+                demand_qty = self.demand.get((node_id, prod, t), 0)
+                if demand_qty > 0:
+                    # Demand is consumed from inventory
+                    # Actual consumption = demand - shortage
+                    if self.allow_shortages and (node_id, prod, t) in model.shortage:
+                        demand_consumption = demand_qty - model.shortage[node_id, prod, t]
+                    else:
+                        demand_consumption = demand_qty
 
             # Balance
             return model.inventory[node_id, prod, 'ambient', t] == (
