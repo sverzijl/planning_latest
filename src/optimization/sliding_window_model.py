@@ -625,16 +625,271 @@ class SlidingWindowModel(BaseOptimizationModel):
             return 'ambient'
 
     def _add_state_balance(self, model: ConcreteModel):
-        """Add state balance equations (material conservation)."""
+        """Add state balance equations (material conservation per SKU, per state).
+
+        For each state, tracks inflows and outflows:
+
+        AMBIENT:
+            I[t] = I[t-1] + production_ambient[t] + thaw[t] + arrivals_ambient[t]
+                   - shipments_ambient[t] - freeze[t] - demand[t]
+
+        FROZEN:
+            I[t] = I[t-1] + production_frozen[t] + freeze[t] + arrivals_frozen[t]
+                   - shipments_frozen[t] - thaw[t]
+
+        THAWED:
+            I[t] = I[t-1] + thaw[t] + arrivals_thawed[t]
+                   - shipments_thawed[t] - demand[t]
+        """
         print(f"\n  Adding state balance constraints...")
-        # Will implement next
-        pass
+
+        # Build date lookup for previous day
+        date_list = list(model.dates)
+        date_to_prev = {}
+        for i, d in enumerate(date_list):
+            if i > 0:
+                date_to_prev[d] = date_list[i-1]
+
+        # AMBIENT STATE BALANCE
+        def ambient_balance_rule(model, node_id, prod, t):
+            """Material balance for ambient state."""
+            node = self.locations[node_id]
+            if not node.supports_ambient_storage():
+                return Constraint.Skip
+
+            if (node_id, prod, 'ambient', t) not in model.inventory:
+                return Constraint.Skip
+
+            # Previous day inventory
+            prev_date = date_to_prev.get(t)
+            if prev_date and (node_id, prod, 'ambient', prev_date) in model.inventory:
+                prev_inv = model.inventory[node_id, prod, 'ambient', prev_date]
+            else:
+                # First day: use initial inventory
+                prev_inv = self.initial_inventory.get((node_id, prod, 'ambient'), 0)
+
+            # Inflows
+            production_inflow = 0
+            if node.can_produce() and (node_id, prod, t) in model.production:
+                if node.get_production_state() == 'ambient':
+                    production_inflow = model.production[node_id, prod, t]
+
+            thaw_inflow = 0
+            if (node_id, prod, t) in model.thaw:
+                thaw_inflow = model.thaw[node_id, prod, t]
+
+            arrivals = sum(
+                model.shipment[route.origin_node_id, node_id, prod, t, 'ambient']
+                for route in self.routes_to_node[node_id]
+                if (route.origin_node_id, node_id, prod, t, 'ambient') in model.shipment
+                and self._determine_arrival_state(route, node) == 'ambient'
+            )
+
+            # Outflows
+            freeze_outflow = 0
+            if (node_id, prod, t) in model.freeze:
+                freeze_outflow = model.freeze[node_id, prod, t]
+
+            departures = 0
+            for route in self.routes_from_node[node_id]:
+                # Ambient route departures
+                if route.transport_mode != TransportMode.FROZEN:
+                    # Calculate when we need to depart to deliver on various dates
+                    for delivery_date in model.dates:
+                        transit_time = timedelta(days=route.transit_days)
+                        departure_datetime = delivery_date - transit_time
+                        departure_date = departure_datetime.date() if hasattr(departure_datetime, 'date') else departure_datetime
+
+                        if departure_date == t:
+                            if (node_id, route.destination_node_id, prod, delivery_date, 'ambient') in model.shipment:
+                                departures += model.shipment[node_id, route.destination_node_id, prod, delivery_date, 'ambient']
+
+            demand_consumption = 0
+            if node.has_demand_capability() and (node_id, prod, t) in self.demand:
+                # Demand comes from ambient inventory
+                # For now, assume all demand from ambient (will refine with state variables)
+                demand_consumption = self.demand[(node_id, prod, t)]
+                if self.allow_shortages and (node_id, prod, t) in model.shortage:
+                    demand_consumption -= model.shortage[node_id, prod, t]
+
+            # Balance
+            return model.inventory[node_id, prod, 'ambient', t] == (
+                prev_inv + production_inflow + thaw_inflow + arrivals -
+                departures - freeze_outflow - demand_consumption
+            )
+
+        model.ambient_balance_con = Constraint(
+            [(n, p, t) for n, node in self.locations.items()
+             if node.supports_ambient_storage()
+             for p in model.products for t in model.dates],
+            rule=ambient_balance_rule,
+            doc="Ambient state material balance"
+        )
+
+        # FROZEN STATE BALANCE
+        def frozen_balance_rule(model, node_id, prod, t):
+            """Material balance for frozen state."""
+            node = self.locations[node_id]
+            if not node.supports_frozen_storage():
+                return Constraint.Skip
+
+            if (node_id, prod, 'frozen', t) not in model.inventory:
+                return Constraint.Skip
+
+            # Previous day
+            prev_date = date_to_prev.get(t)
+            if prev_date and (node_id, prod, 'frozen', prev_date) in model.inventory:
+                prev_inv = model.inventory[node_id, prod, 'frozen', prev_date]
+            else:
+                prev_inv = self.initial_inventory.get((node_id, prod, 'frozen'), 0)
+
+            # Inflows
+            production_inflow = 0
+            if node.can_produce() and (node_id, prod, t) in model.production:
+                if node.get_production_state() == 'frozen':
+                    production_inflow = model.production[node_id, prod, t]
+
+            freeze_inflow = 0
+            if (node_id, prod, t) in model.freeze:
+                freeze_inflow = model.freeze[node_id, prod, t]
+
+            arrivals = sum(
+                model.shipment[route.origin_node_id, node_id, prod, t, 'frozen']
+                for route in self.routes_to_node[node_id]
+                if (route.origin_node_id, node_id, prod, t, 'frozen') in model.shipment
+                and self._determine_arrival_state(route, node) == 'frozen'
+            )
+
+            # Outflows
+            thaw_outflow = 0
+            if (node_id, prod, t) in model.thaw:
+                thaw_outflow = model.thaw[node_id, prod, t]
+
+            departures = 0
+            for route in self.routes_from_node[node_id]:
+                if route.transport_mode == TransportMode.FROZEN:
+                    for delivery_date in model.dates:
+                        transit_time = timedelta(days=route.transit_days)
+                        departure_datetime = delivery_date - transit_time
+                        departure_date = departure_datetime.date() if hasattr(departure_datetime, 'date') else departure_datetime
+
+                        if departure_date == t:
+                            if (node_id, route.destination_node_id, prod, delivery_date, 'frozen') in model.shipment:
+                                departures += model.shipment[node_id, route.destination_node_id, prod, delivery_date, 'frozen']
+
+            # Balance
+            return model.inventory[node_id, prod, 'frozen', t] == (
+                prev_inv + production_inflow + freeze_inflow + arrivals -
+                departures - thaw_outflow
+            )
+
+        model.frozen_balance_con = Constraint(
+            [(n, p, t) for n, node in self.locations.items()
+             if node.supports_frozen_storage()
+             for p in model.products for t in model.dates],
+            rule=frozen_balance_rule,
+            doc="Frozen state material balance"
+        )
+
+        # THAWED STATE BALANCE
+        def thawed_balance_rule(model, node_id, prod, t):
+            """Material balance for thawed state."""
+            node = self.locations[node_id]
+            if not node.supports_ambient_storage():
+                return Constraint.Skip
+
+            if (node_id, prod, 'thawed', t) not in model.inventory:
+                return Constraint.Skip
+
+            # Previous day
+            prev_date = date_to_prev.get(t)
+            if prev_date and (node_id, prod, 'thawed', prev_date) in model.inventory:
+                prev_inv = model.inventory[node_id, prod, 'thawed', prev_date]
+            else:
+                prev_inv = self.initial_inventory.get((node_id, prod, 'thawed'), 0)
+
+            # Inflows: ONLY from thawing (critical - resets age!)
+            thaw_inflow = 0
+            if (node_id, prod, t) in model.thaw:
+                thaw_inflow = model.thaw[node_id, prod, t]
+
+            arrivals = sum(
+                model.shipment[route.origin_node_id, node_id, prod, t, 'ambient']
+                for route in self.routes_to_node[node_id]
+                if (route.origin_node_id, node_id, prod, t, 'ambient') in model.shipment
+                and self._determine_arrival_state(route, node) == 'thawed'
+            )
+
+            # Outflows: shipments + demand
+            departures = 0
+            # Thawed products ship as ambient
+            for route in self.routes_from_node[node_id]:
+                if route.transport_mode != TransportMode.FROZEN:
+                    for delivery_date in model.dates:
+                        transit_time = timedelta(days=route.transit_days)
+                        departure_datetime = delivery_date - transit_time
+                        departure_date = departure_datetime.date() if hasattr(departure_datetime, 'date') else departure_datetime
+
+                        if departure_date == t:
+                            # Thawed can ship on ambient routes
+                            # Note: shipments are in 'ambient' state, but drawn from thawed inventory
+                            pass  # Complex - will handle in refined version
+
+            demand_consumption = 0
+            # Thawed inventory can satisfy demand
+            # (Will refine to split demand across ambient/thawed states)
+
+            # Balance
+            return model.inventory[node_id, prod, 'thawed', t] == (
+                prev_inv + thaw_inflow + arrivals -
+                departures - demand_consumption
+            )
+
+        model.thawed_balance_con = Constraint(
+            [(n, p, t) for n, node in self.locations.items()
+             if node.supports_ambient_storage()
+             for p in model.products for t in model.dates],
+            rule=thawed_balance_rule,
+            doc="Thawed state material balance (14-day shelf life from thaw)"
+        )
+
+        balance_constraints = (
+            len([n for n in self.locations if self.locations[n].supports_ambient_storage()]) * len(list(model.products)) * len(list(model.dates)) +
+            len([n for n in self.locations if self.locations[n].supports_frozen_storage()]) * len(list(model.products)) * len(list(model.dates)) +
+            len([n for n in self.locations if self.locations[n].supports_ambient_storage()]) * len(list(model.products)) * len(list(model.dates))
+        )
+        print(f"  State balance constraints: {balance_constraints:,}")
+        print(f"    Ambient: ~{len([n for n in self.locations if self.locations[n].supports_ambient_storage()]) * len(list(model.products)) * len(list(model.dates)):,}")
+        print(f"    Frozen: ~{len([n for n in self.locations if self.locations[n].supports_frozen_storage()]) * len(list(model.products)) * len(list(model.dates)):,}")
+        print(f"    Thawed: ~{len([n for n in self.locations if self.locations[n].supports_ambient_storage()]) * len(list(model.products)) * len(list(model.dates)):,}")
 
     def _add_demand_satisfaction(self, model: ConcreteModel):
-        """Add demand satisfaction constraints."""
+        """Add demand satisfaction constraints.
+
+        Total demand = actual consumed + shortage
+        Demand is deducted in state balance equations.
+        """
         print(f"\n  Adding demand satisfaction...")
-        # Will implement next
-        pass
+
+        # Simple: Demand is handled in state balance (demand_consumption)
+        # Just need to ensure shortage is properly bounded
+
+        if self.allow_shortages:
+            def shortage_limit_rule(model, node_id, prod, t):
+                """Shortage cannot exceed demand."""
+                if (node_id, prod, t) not in self.demand:
+                    return Constraint.Skip
+
+                return model.shortage[node_id, prod, t] <= self.demand[(node_id, prod, t)]
+
+            model.shortage_limit_con = Constraint(
+                model.shortage.index_set(),
+                rule=shortage_limit_rule,
+                doc="Shortage bounded by demand"
+            )
+
+        print(f"  Demand satisfaction: handled via state balance")
+        print(f"  Shortage constraints: {len(list(model.shortage)) if self.allow_shortages else 0}")
 
     def _add_pallet_constraints(self, model: ConcreteModel):
         """Add integer pallet ceiling constraints."""
@@ -690,17 +945,164 @@ class SlidingWindowModel(BaseOptimizationModel):
 
 
     def _build_objective(self, model: ConcreteModel):
-        """Build objective function."""
+        """Build objective function.
+
+        Minimize: labor + transport + holding + shortage + changeover + waste
+
+        NO explicit staleness penalty - holding costs implicitly drive freshness.
+        """
         print(f"\n🎯 Building objective...")
 
-        # Will implement in next step
-        pass
+        # HOLDING COST (via integer pallets - drives turnover/freshness)
+        holding_cost = 0
+
+        if self.use_pallet_tracking and hasattr(model, 'pallet_count'):
+            # Frozen pallet costs
+            frozen_daily_cost = self.cost_structure.storage_cost_per_pallet_day_frozen or 0
+            frozen_fixed_cost = self.cost_structure.storage_cost_fixed_per_pallet_frozen or 0
+
+            # Ambient pallet costs
+            ambient_daily_cost = self.cost_structure.storage_cost_per_pallet_day_ambient or 0
+            ambient_fixed_cost = self.cost_structure.storage_cost_fixed_per_pallet_ambient or 0
+
+            if frozen_daily_cost > 0 or frozen_fixed_cost > 0:
+                holding_cost += sum(
+                    (frozen_fixed_cost + frozen_daily_cost) * model.pallet_count[node_id, prod, 'frozen', t]
+                    for (node_id, prod, state, t) in model.pallet_count
+                    if state == 'frozen'
+                )
+                print(f"  Frozen pallet cost: ${frozen_fixed_cost + frozen_daily_cost:.4f}/pallet/day")
+
+            if ambient_daily_cost > 0 or ambient_fixed_cost > 0:
+                holding_cost += sum(
+                    (ambient_fixed_cost + ambient_daily_cost) * model.pallet_count[node_id, prod, 'ambient', t]
+                    for (node_id, prod, state, t) in model.pallet_count
+                    if state == 'ambient'
+                )
+                print(f"  Ambient pallet cost: ${ambient_fixed_cost + ambient_daily_cost:.4f}/pallet/day")
+
+        # SHORTAGE COST
+        shortage_cost = 0
+        if self.allow_shortages and hasattr(model, 'shortage'):
+            penalty = self.cost_structure.shortage_penalty_per_unit
+            shortage_cost = quicksum(
+                penalty * model.shortage[node_id, prod, t]
+                for (node_id, prod, t) in model.shortage
+            )
+            print(f"  Shortage penalty: ${penalty:.2f}/unit")
+
+        # Placeholder costs (will add when constraints migrated)
+        labor_cost = 0
+        transport_cost = 0
+        changeover_cost = 0
+        waste_cost = 0
+
+        # TOTAL OBJECTIVE
+        total_cost = (
+            labor_cost +
+            transport_cost +
+            holding_cost +
+            shortage_cost +
+            changeover_cost +
+            waste_cost
+        )
+
+        model.obj = Objective(
+            expr=total_cost,
+            sense=minimize,
+            doc="Minimize total cost - holding drives freshness implicitly"
+        )
+
+        print(f"\n✅ Objective built")
+        print(f"  Active components: holding + shortage")
+        print(f"  TODO: labor, transport, changeover, waste")
+        print(f"  Staleness: IMPLICIT via holding costs (inventory costs money)")
 
     def extract_solution(self, model: ConcreteModel) -> Dict[str, Any]:
         """Extract solution from solved model.
 
         Returns:
-            Solution dictionary with aggregate flows and costs
+            Solution dictionary with aggregate flows
         """
-        # Will implement in next step
-        return {}
+        from pyomo.core.base import value
+
+        solution = {}
+
+        # Extract production
+        production_by_date_product = {}
+        if hasattr(model, 'production'):
+            for (node_id, prod, t) in model.production:
+                try:
+                    qty = value(model.production[node_id, prod, t])
+                    if qty and qty > 0.01:
+                        production_by_date_product[(node_id, prod, t)] = qty
+                except:
+                    pass
+
+        solution['production_by_date_product'] = production_by_date_product
+        solution['total_production'] = sum(production_by_date_product.values())
+
+        # Extract inventory by state
+        inventory_by_state = {}
+        if hasattr(model, 'inventory'):
+            for (node_id, prod, state, t) in model.inventory:
+                try:
+                    qty = value(model.inventory[node_id, prod, state, t])
+                    if qty and qty > 0.01:
+                        inventory_by_state[(node_id, prod, state, t)] = qty
+                except:
+                    pass
+
+        solution['inventory'] = inventory_by_state
+
+        # Extract state transitions
+        thaw_flows = {}
+        freeze_flows = {}
+        if hasattr(model, 'thaw'):
+            for (node_id, prod, t) in model.thaw:
+                try:
+                    qty = value(model.thaw[node_id, prod, t])
+                    if qty and qty > 0.01:
+                        thaw_flows[(node_id, prod, t)] = qty
+                except:
+                    pass
+
+        if hasattr(model, 'freeze'):
+            for (node_id, prod, t) in model.freeze:
+                try:
+                    qty = value(model.freeze[node_id, prod, t])
+                    if qty and qty > 0.01:
+                        freeze_flows[(node_id, prod, t)] = qty
+                except:
+                    pass
+
+        solution['thaw_flows'] = thaw_flows
+        solution['freeze_flows'] = freeze_flows
+
+        # Extract shortages
+        total_shortage = 0
+        shortages_by_location = {}
+        if hasattr(model, 'shortage'):
+            for (node_id, prod, t) in model.shortage:
+                try:
+                    qty = value(model.shortage[node_id, prod, t])
+                    if qty and qty > 0.01:
+                        shortages_by_location[(node_id, prod, t)] = qty
+                        total_shortage += qty
+                except:
+                    pass
+
+        solution['shortages'] = shortages_by_location
+        solution['total_shortage_units'] = total_shortage
+
+        # Calculate fill rate
+        total_demand = sum(self.demand.values())
+        solution['fill_rate'] = (1 - total_shortage / total_demand) if total_demand > 0 else 1.0
+
+        # Extract costs (from objective if available)
+        try:
+            solution['total_cost'] = value(model.obj) if hasattr(model, 'obj') else 0
+        except:
+            solution['total_cost'] = 0
+
+        return solution
