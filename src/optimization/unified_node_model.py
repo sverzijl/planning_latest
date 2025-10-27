@@ -2512,47 +2512,47 @@ class UnifiedNodeModel(BaseOptimizationModel):
             if (node_id, prod, prod_date, state_entry_date, demand_date, state) not in self.demand_cohort_index_set:
                 return Constraint.Skip
 
-            # Calculate beginning-of-day inventory for this cohort
+            # Calculate beginning-of-day inventory for THIS SPECIFIC COHORT
+            # NEW (Phase A): Link to inventory of this specific (prod_date, state_entry_date, state) cohort
             # BOD inventory = previous day inventory + arrivals + same-day production
             # (This is BEFORE demand consumption and departures)
+            node = self.nodes[node_id]
 
-            # Previous day inventory
+            # Previous day inventory FOR THIS COHORT (same prod_date, state_entry_date, state)
             prev_date = self.date_previous.get(demand_date)
             prev_inventory = 0
 
             if prev_date is None:
-                # First date: use initial inventory
-                # NEW (Phase A): initial_inventory uses 5-tuple format (node, prod, prod_date, state_entry_date, state)
-                # Need to sum across all state_entry_dates for each state
-                for state in ['ambient', 'frozen', 'thawed']:
-                    for init_key in self.initial_inventory.keys():
-                        if (init_key[0] == node_id and init_key[1] == prod and
-                            init_key[2] == prod_date and init_key[4] == state):
-                            prev_inventory += self.initial_inventory[init_key]
+                # First date: use initial inventory for this specific cohort
+                # initial_inventory key: (node, prod, prod_date, state_entry_date, state)
+                prev_inventory = self.initial_inventory.get((node_id, prod, prod_date, state_entry_date, state), 0)
             else:
-                # Sum inventory from previous day across all states
-                # NEW (Phase A): Need to sum across all state_entry_dates for each state
-                for state in ['ambient', 'frozen', 'thawed']:
-                    for (n, p, pd, sed, cd, s) in self.cohort_index_set:
-                        if n == node_id and p == prod and pd == prod_date and cd == prev_date and s == state:
-                            prev_inventory += model.inventory_cohort[n, p, pd, sed, cd, s]
+                # Previous day inventory for this cohort (same prod_date, state_entry_date, state)
+                if (node_id, prod, prod_date, state_entry_date, prev_date, state) in self.cohort_index_set:
+                    prev_inventory = model.inventory_cohort[node_id, prod, prod_date, state_entry_date, prev_date, state]
 
-            # Arrivals on demand date
+            # Arrivals on demand date that created this cohort
+            # Only count arrivals if state_entry_date == demand_date (arrivals create new cohorts)
             arrivals_on_demand_date = 0
-            node = self.nodes[node_id]
-            for route in self.routes_to_node[node_id]:
-                arrival_state = self._determine_arrival_state(route, node)
-                if (route.origin_node_id, route.destination_node_id, prod, prod_date, demand_date, arrival_state) in self.shipment_cohort_index_set:
-                    arrivals_on_demand_date += model.shipment_cohort[
-                        route.origin_node_id, route.destination_node_id,
-                        prod, prod_date, demand_date, arrival_state
-                    ]
+            if state_entry_date == demand_date:
+                # This cohort was created by arrivals TODAY
+                for route in self.routes_to_node[node_id]:
+                    arrival_state = self._determine_arrival_state(route, node)
+                    if arrival_state == state:
+                        if (route.origin_node_id, route.destination_node_id, prod, prod_date, demand_date, arrival_state) in self.shipment_cohort_index_set:
+                            arrivals_on_demand_date += model.shipment_cohort[
+                                route.origin_node_id, route.destination_node_id,
+                                prod, prod_date, demand_date, arrival_state
+                            ]
 
-            # Same-day production (if node can produce and prod_date == demand_date)
+            # Same-day production (if this cohort represents fresh production)
             same_day_production = 0
-            if node.can_produce() and prod_date == demand_date:
-                if (node_id, prod, demand_date) in model.production:
-                    same_day_production = model.production[node_id, prod, demand_date]
+            if node.can_produce() and prod_date == demand_date and state_entry_date == prod_date:
+                # This cohort is FRESH production (state_entry_date = prod_date)
+                production_state = node.get_production_state()
+                if state == production_state:
+                    if (node_id, prod, demand_date) in model.production:
+                        same_day_production = model.production[node_id, prod, demand_date]
 
             # BOD inventory = previous inventory + arrivals + same-day production
             beginning_of_day_inventory = prev_inventory + arrivals_on_demand_date + same_day_production
@@ -3687,8 +3687,15 @@ class UnifiedNodeModel(BaseOptimizationModel):
 
                         # For simplicity: ALL cohorts get hybrid treatment based on actual inventory
                         # Small domain (0-10) vs large domain (11-62) during solve
-                        small_pallet_cohorts = pallet_cohort_index  # Use all with tight bound
+                        small_pallet_cohorts_6tuple = pallet_cohort_index  # 6-tuples
                         large_pallet_cohorts = []  # None use pure linear (too conservative)
+
+                        # Convert 6-tuples to 5-tuples for pallet_count
+                        # NEW (Phase A): pallet_count aggregates across state_entry_dates
+                        # Physical pallets = total inventory at (node, prod, prod_date, curr_date, state)
+                        small_pallet_cohorts = list(set(
+                            (n, p, pd, cd, s) for (n, p, pd, sed, cd, s) in small_pallet_cohorts_6tuple
+                        ))
 
                         max_small_pallets = 10  # Tight bound for hybrid formulation
 
@@ -3697,28 +3704,35 @@ class UnifiedNodeModel(BaseOptimizationModel):
                         print(f"    Domain reduced: 62 → 10 (84% reduction)")
 
                         # Create integer variables with TIGHT bounds (0-10)
+                        # Uses 5-tuple index (aggregates across state_entry_dates)
                         model.pallet_cohort_index = PyomoSet(initialize=small_pallet_cohorts)
 
                         model.pallet_count = Var(
                             model.pallet_cohort_index,
                             within=NonNegativeIntegers,
                             bounds=(0, max_small_pallets),  # TIGHT: max 10 pallets
-                            doc="Integer pallet count for small cohorts (≤10 pallets, tight domain)"
+                            doc="Integer pallet count for small cohorts (≤10 pallets, aggregates across state_entry_dates)"
                         )
                     else:
                         # ORIGINAL: All cohorts with full domain
                         max_pallets_per_cohort = int(math.ceil(self.max_inventory_cohort / self.UNITS_PER_PALLET))
 
-                        model.pallet_cohort_index = PyomoSet(initialize=pallet_cohort_index)
+                        # Convert 6-tuples to 5-tuples for pallet_count
+                        # NEW (Phase A): pallet_count aggregates across state_entry_dates
+                        pallet_5tuple_index = list(set(
+                            (n, p, pd, cd, s) for (n, p, pd, sed, cd, s) in pallet_cohort_index
+                        ))
+
+                        model.pallet_cohort_index = PyomoSet(initialize=pallet_5tuple_index)
 
                         model.pallet_count = Var(
                             model.pallet_cohort_index,
                             within=NonNegativeIntegers,
                             bounds=(0, max_pallets_per_cohort),
-                            doc="Integer pallet count (full formulation)"
+                            doc="Integer pallet count (full formulation, aggregates across state_entry_dates)"
                         )
 
-                        small_pallet_cohorts = pallet_cohort_index
+                        small_pallet_cohorts = pallet_5tuple_index  # Now 5-tuples
                         large_pallet_cohorts = []
 
                     # Ceiling constraint: pallet_count * 320 >= inventory
@@ -3728,27 +3742,32 @@ class UnifiedNodeModel(BaseOptimizationModel):
                         node_id: str,
                         prod: str,
                         prod_date: Date,
-                        state_entry_date: Date,
                         curr_date: Date,
                         state: str
                     ) -> Constraint:
                         """Pallet count must cover inventory (ceiling constraint).
 
-                        NEW (Phase A): Now uses 6-tuple cohort format with state_entry_date.
+                        NEW (Phase A): pallet_count (5-tuple) must cover SUM of inventory across all state_entry_dates.
                         For hybrid formulation: only applies to small cohorts with pallet_count variable.
                         Large cohorts (>10 pallets) use linear approximation without integer variable.
 
-                        NOTE: pallet_count still uses 5-tuple (no state_entry_date dimension)
+                        pallet_count[node, prod, prod_date, curr_date, state] * 320 >=
+                            sum(inventory_cohort[node, prod, prod_date, sed, curr_date, state] for all sed)
                         """
-                        cohort_6 = (node_id, prod, prod_date, state_entry_date, curr_date, state)
                         cohort_5 = (node_id, prod, prod_date, curr_date, state)
 
-                        if cohort_6 not in small_pallet_cohorts:
+                        if cohort_5 not in small_pallet_cohorts:
                             return Constraint.Skip  # Large cohort - no pallet variable
 
-                        inv_qty = model.inventory_cohort[node_id, prod, prod_date, state_entry_date, curr_date, state]
-                        pallet_var = model.pallet_count[cohort_5]  # pallet_count uses 5-tuple
-                        return pallet_var * self.UNITS_PER_PALLET >= inv_qty
+                        # Sum inventory across ALL state_entry_dates for this 5-tuple
+                        total_inv = sum(
+                            model.inventory_cohort[node_id, prod, prod_date, sed, curr_date, state]
+                            for (n, p, pd, sed, cd, s) in self.cohort_index_set
+                            if n == node_id and p == prod and pd == prod_date and cd == curr_date and s == state
+                        )
+
+                        pallet_var = model.pallet_count[cohort_5]
+                        return pallet_var * self.UNITS_PER_PALLET >= total_inv
 
                     model.pallet_lower_bound_con = Constraint(
                         model.pallet_cohort_index,
@@ -3763,77 +3782,44 @@ class UnifiedNodeModel(BaseOptimizationModel):
                     print(f"    - Unit-tracked states: {sorted(set(['frozen', 'ambient', 'thawed']) - pallet_states)}")
 
                 # Add holding cost to objective (state-specific logic + hybrid formulation)
-                # NEW (Phase A): cohort_index_set now includes state_entry_date (6-tuple)
-                for (node_id, prod, prod_date, state_entry_date, curr_date, state) in self.cohort_index_set:
-                    cohort = (node_id, prod, prod_date, state_entry_date, curr_date, state)
+                # NEW (Phase A): Iterate over 5-tuple pallet keys (pallet_count aggregates across state_entry_dates)
+                for cohort_5 in small_pallet_cohorts:
+                    # cohort_5 = (node_id, prod, prod_date, curr_date, state)
+                    node_id, prod, prod_date, curr_date, state = cohort_5
 
                     # Use pallet tracking if state is in pallet_states
                     if state in pallet_states:
-                        # HYBRID FORMULATION: Check if this cohort has pallet_count variable
-                        if cohort in small_pallet_cohorts:
-                            # Small cohort: use integer pallet_count (exact)
-                            pallet_count = model.pallet_count[cohort]
+                        # Small cohort: use integer pallet_count (exact)
+                        # pallet_count uses 5-tuple (aggregates across state_entry_dates)
+                        pallet_count_var = model.pallet_count[cohort_5]
 
-                            # Apply state-specific fixed cost
-                            if state == 'frozen' and pallet_fixed_frozen > 0:
-                                holding_cost += pallet_fixed_frozen * pallet_count
-                            elif state in ['ambient', 'thawed'] and pallet_fixed_ambient > 0:
-                                holding_cost += pallet_fixed_ambient * pallet_count
+                        # Apply state-specific fixed cost
+                        if state == 'frozen' and pallet_fixed_frozen > 0:
+                            holding_cost += pallet_fixed_frozen * pallet_count_var
+                        elif state in ['ambient', 'thawed'] and pallet_fixed_ambient > 0:
+                            holding_cost += pallet_fixed_ambient * pallet_count_var
 
-                            # Apply daily holding cost
-                            if state == 'frozen' and frozen_rate_per_pallet > 0:
-                                holding_cost += frozen_rate_per_pallet * pallet_count
-                            elif state in ['ambient', 'thawed'] and ambient_rate_per_pallet > 0:
-                                holding_cost += ambient_rate_per_pallet * pallet_count
+                        # Apply daily holding cost
+                        if state == 'frozen' and frozen_rate_per_pallet > 0:
+                            holding_cost += frozen_rate_per_pallet * pallet_count_var
+                        elif state in ['ambient', 'thawed'] and ambient_rate_per_pallet > 0:
+                            holding_cost += ambient_rate_per_pallet * pallet_count_var
 
-                            # HYBRID PENALTY: For inventory exceeding 10 pallets, add linear cost
-                            # This handles the case where pallet_count=10 but inventory>3200
-                            # CRITICAL FIX: Only charge for POSITIVE excess (not negative!)
-                            inv_qty = model.inventory_cohort[cohort]
+                        # Note: Excess penalty removed - pallet_count constraint handles ceiling
 
-                            # Calculate excess (only if positive - most cohorts have zero excess)
-                            # Using Pyomo max() pattern for non-negative excess
-                            excess_threshold = self.pallet_hybrid_threshold
+                # UNIT-TRACKED STATES: Iterate over 6-tuple cohorts for non-pallet states
+                for (node_id, prod, prod_date, state_entry_date, curr_date, state) in self.cohort_index_set:
+                    # Skip if this state is pallet-tracked (already handled above)
+                    if state in pallet_states:
+                        continue
 
-                            # For small cohorts (<3200), this will be negative - we want zero cost
-                            # For large cohorts (>3200), charge for units beyond threshold
-                            if state == 'frozen' and frozen_rate_per_pallet > 0:
-                                linear_rate = frozen_rate_per_pallet / self.UNITS_PER_PALLET
-                                # Only add cost if inventory exceeds threshold
-                                # Solver will naturally avoid this region (costs more)
-                                # Note: This creates a kink at threshold but objective still well-defined
-                                excess_var = inv_qty - excess_threshold
-                                # For Pyomo, we can use conditional: only add if excess > 0
-                                # Simplified: Use max formulation (Pyomo handles internally)
-                                # Since we're minimizing, solver won't choose negative excess
-                                # But to be safe, model it properly:
-                                # If inv_qty > threshold: cost = pallet_cost(10) + linear * (inv - threshold)
-                                # If inv_qty ≤ threshold: cost = pallet_cost(pallet_count)
-                                # This is handled by pallet_count already for ≤threshold
-                                # For >threshold, need additional cost
-                                # Actually, let's not add this - it's creating issues
-                                pass  # Skip excess penalty - pallet_count=10 already charges for 10 pallets
-                            elif state in ['ambient', 'thawed'] and ambient_rate_per_pallet > 0:
-                                pass  # Skip excess penalty for ambient too
+                    # Use unit tracking for this state
+                    inv_qty = model.inventory_cohort[node_id, prod, prod_date, state_entry_date, curr_date, state]
 
-                        else:
-                            # Large cohort: use pure linear cost (no pallet variable exists)
-                            inv_qty = model.inventory_cohort[cohort]
-
-                            if state == 'frozen' and frozen_rate_per_pallet > 0:
-                                linear_rate = frozen_rate_per_pallet / self.UNITS_PER_PALLET
-                                holding_cost += linear_rate * inv_qty
-                            elif state in ['ambient', 'thawed'] and ambient_rate_per_pallet > 0:
-                                linear_rate = ambient_rate_per_pallet / self.UNITS_PER_PALLET
-                                holding_cost += linear_rate * inv_qty
-                    else:
-                        # Use unit tracking for this state
-                        inv_qty = model.inventory_cohort[node_id, prod, prod_date, curr_date, state]
-
-                        if state == 'frozen' and unit_frozen_per_day > 0:
-                            holding_cost += unit_frozen_per_day * inv_qty
-                        elif state in ['ambient', 'thawed'] and unit_ambient_per_day > 0:
-                            holding_cost += unit_ambient_per_day * inv_qty
+                    if state == 'frozen' and unit_frozen_per_day > 0:
+                        holding_cost += unit_frozen_per_day * inv_qty
+                    elif state in ['ambient', 'thawed'] and unit_ambient_per_day > 0:
+                        holding_cost += unit_ambient_per_day * inv_qty
 
                 total_cohorts = len(self.cohort_index_set)
                 pallet_cohorts = len(pallet_states) * total_cohorts // 3  # Rough estimate
