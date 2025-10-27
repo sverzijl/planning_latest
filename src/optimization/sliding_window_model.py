@@ -779,8 +779,11 @@ class SlidingWindowModel(BaseOptimizationModel):
                                 departures += model.shipment[node_id, route.destination_node_id, prod, delivery_date, 'ambient']
 
             # Demand consumption from ambient inventory
+            # CRITICAL: Link demand_consumed variable to inventory depletion
             demand_consumption = 0
-            if node.has_demand_capability() and (node_id, prod, t) in self.demand:
+            if node.has_demand_capability():
+                # Deduct demand_consumed from ambient inventory
+                # This creates the link: demand_consumed requires available inventory!
                 if (node_id, prod, t) in model.demand_consumed:
                     demand_consumption = model.demand_consumed[node_id, prod, t]
 
@@ -1307,15 +1310,26 @@ class SlidingWindowModel(BaseOptimizationModel):
         production_by_date_product = {}
         if hasattr(model, 'production'):
             for (node_id, prod, t) in model.production:
+                var = model.production[node_id, prod, t]
                 try:
-                    var = model.production[node_id, prod, t]
-                    # Don't check .stale - APPSI sets values even on "stale" variables
-                    qty = value(var)
-                    if qty and qty > 0.01:
+                    # Try getting value directly
+                    if hasattr(var, 'value') and var.value is not None:
+                        qty = var.value
+                    else:
+                        qty = value(var)  # Use Pyomo value() function
+
+                    if qty and abs(qty) > 0.01:
                         production_by_date_product[(node_id, prod, t)] = qty
-                except (ValueError, AttributeError):
-                    # Variable truly has no value
-                    pass
+                except (ValueError, AttributeError, TypeError):
+                    # Variable has no value or is uninitialized - try returning 0
+                    try:
+                        qty = value(var)
+                        if qty is None:
+                            qty = 0
+                        if abs(qty) > 0.01:
+                            production_by_date_product[(node_id, prod, t)] = qty
+                    except:
+                        pass  # Give up on this variable
 
         solution['production_by_date_product'] = production_by_date_product
         solution['total_production'] = sum(production_by_date_product.values())
