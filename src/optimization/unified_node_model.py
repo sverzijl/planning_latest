@@ -666,7 +666,8 @@ class UnifiedNodeModel(BaseOptimizationModel):
         # Demand satisfaction variables
         if self.use_batch_tracking:
             # Demand allocated from each cohort
-            # NEW (Phase A): demand_cohort now uses 6-tuple format with state_entry_date and state
+            # NEW (Phase A - REVISED): demand_cohort uses 5-tuple format (no state_entry_date)
+            # Reason: Demand must draw from ANY state_entry_date; model can't predict which will exist
             self.demand_cohort_index_set = self._build_demand_cohort_indices(model.dates)
             model.demand_cohort_index = list(self.demand_cohort_index_set)
 
@@ -675,7 +676,7 @@ class UnifiedNodeModel(BaseOptimizationModel):
                 model.demand_cohort_index,
                 within=NonNegativeReals,
                 bounds=(0, max_demand),  # Phase 3 #6: Demand cohort bounded by max demand
-                doc="Demand satisfied from specific cohort (node, prod, prod_date, state_entry_date, demand_date, state)"
+                doc="Demand satisfied from cohort (node, prod, prod_date, demand_date, state) - sums across state_entry_dates"
             )
             print(f"  Demand cohort indices: {len(self.demand_cohort_index_set):,}")
 
@@ -1105,19 +1106,22 @@ class UnifiedNodeModel(BaseOptimizationModel):
         return shipments
 
     def _build_demand_cohort_indices(self, dates: List[Date]) -> Set[Tuple]:
-        """Build sparse demand cohort allocation indices with state_entry_date tracking.
+        """Build sparse demand cohort allocation indices.
 
-        NEW (Phase A state_entry_date architecture):
-        Format: (node, product, prod_date, state_entry_date, demand_date, state)
+        NEW (Phase A state_entry_date architecture - REVISED):
+        Format: (node, product, prod_date, demand_date, state)
 
-        This tracks which specific cohorts (with state and state_entry_date) can satisfy demand.
-        Age is calculated based on state_entry_date, not production date.
+        NOTE: We do NOT include state_entry_date in demand_from_cohort because:
+        - Demand needs to draw from ANY state_entry_date of a given (prod_date, state)
+        - Model can't predict which state_entry_dates will have inventory
+        - state_entry_date is tracked in inventory_cohort for aging calculations
+        - Staleness penalty calculated as weighted average across consumed cohorts
 
         Args:
             dates: List of dates
 
         Returns:
-            Set of valid demand cohort tuples (6-tuples)
+            Set of valid demand cohort tuples (5-tuples)
         """
         demand_cohorts = set()
 
@@ -1146,39 +1150,35 @@ class UnifiedNodeModel(BaseOptimizationModel):
                 if prod_date > demand_date:
                     continue  # Can't satisfy demand with future production
 
-                # For each possible state_entry_date from prod_date to demand_date
-                for state_entry_date in dates:
-                    if state_entry_date < prod_date or state_entry_date > demand_date:
-                        continue  # Invalid: state_entry must be between production and demand
+                # For each state this node supports
+                for state in demand_states:
+                    # Calculate WORST-CASE age (maximum possible age_in_state)
+                    # This occurs when state_entry_date = prod_date (earliest possible entry)
+                    worst_case_age = (demand_date - prod_date).days
 
-                    # For each state this node supports
-                    for state in demand_states:
-                        # Calculate age in current state
-                        age_in_state = (demand_date - state_entry_date).days
+                    # Check shelf life based on state (use worst-case age for filtering)
+                    # BREADROOM POLICY: Discard stock with <7 days remaining
+                    valid = False
 
-                        # Check shelf life based on state
-                        # BREADROOM POLICY: Discard stock with <7 days remaining
-                        valid = False
+                    if state == 'frozen':
+                        # Frozen: 120 days shelf life, no minimum freshness requirement
+                        if worst_case_age <= self.FROZEN_SHELF_LIFE:
+                            valid = True
+                    elif state == 'thawed':
+                        # Thawed: 14 days shelf life
+                        # Must have ≥7 days remaining: age ≤ 14 - 7 = 7
+                        max_acceptable_age = self.THAWED_SHELF_LIFE - self.MINIMUM_ACCEPTABLE_SHELF_LIFE_DAYS
+                        if worst_case_age <= max_acceptable_age:
+                            valid = True
+                    elif state == 'ambient':
+                        # Ambient: 17 days shelf life
+                        # Must have ≥7 days remaining: age ≤ 17 - 7 = 10
+                        max_acceptable_age = self.AMBIENT_SHELF_LIFE - self.MINIMUM_ACCEPTABLE_SHELF_LIFE_DAYS
+                        if worst_case_age <= max_acceptable_age:
+                            valid = True
 
-                        if state == 'frozen':
-                            # Frozen: 120 days shelf life, no minimum freshness requirement
-                            if age_in_state <= self.FROZEN_SHELF_LIFE:
-                                valid = True
-                        elif state == 'thawed':
-                            # Thawed: 14 days shelf life
-                            # Must have ≥7 days remaining: age_in_state ≤ 14 - 7 = 7
-                            max_acceptable_age = self.THAWED_SHELF_LIFE - self.MINIMUM_ACCEPTABLE_SHELF_LIFE_DAYS
-                            if age_in_state <= max_acceptable_age:
-                                valid = True
-                        elif state == 'ambient':
-                            # Ambient: 17 days shelf life
-                            # Must have ≥7 days remaining: age_in_state ≤ 17 - 7 = 10
-                            max_acceptable_age = self.AMBIENT_SHELF_LIFE - self.MINIMUM_ACCEPTABLE_SHELF_LIFE_DAYS
-                            if age_in_state <= max_acceptable_age:
-                                valid = True
-
-                        if valid:
-                            demand_cohorts.add((node_id, prod, prod_date, state_entry_date, demand_date, state))
+                    if valid:
+                        demand_cohorts.add((node_id, prod, prod_date, demand_date, state))
 
         return demand_cohorts
 
@@ -1397,21 +1397,25 @@ class UnifiedNodeModel(BaseOptimizationModel):
 
                 elif key_len == 4:
                     # OLD 4-tuple format (no longer used after Phase A)
-                    # Skip - demand_from_cohort now uses 6-tuple format
+                    # Skip - demand_from_cohort now uses 5-tuple format
                     pass
 
                 elif key_len == 5:
-                    # pallet_count[node, prod, prod_date, curr_date, state] - OLD 5-tuple
-                    if hasattr(model, 'pallet_count') and key in model.pallet_count:
+                    # Multiple 5-tuple variables
+                    # demand_from_cohort[node, prod, prod_date, demand_date, state]
+                    # pallet_count[node, prod, prod_date, curr_date, state]
+                    if hasattr(model, 'demand_from_cohort') and key in model.demand_from_cohort:
+                        model.demand_from_cohort[key] = hint_value
+                        stats['demand_from_cohort'] += 1
+                        applied = True
+                    elif hasattr(model, 'pallet_count') and key in model.pallet_count:
                         model.pallet_count[key] = hint_value
                         stats['pallet_count'] += 1
                         applied = True
 
                 elif key_len == 6:
-                    # Multiple 6-tuple variables now
-                    # NEW (Phase A): inventory_cohort[node, prod, prod_date, state_entry_date, curr_date, state]
+                    # inventory_cohort[node, prod, prod_date, state_entry_date, curr_date, state]
                     # shipment_cohort[origin, dest, prod, prod_date, delivery_date, arrival_state]
-                    # demand_from_cohort[node, prod, prod_date, state_entry_date, demand_date, state]
                     if hasattr(model, 'inventory_cohort') and key in model.inventory_cohort:
                         model.inventory_cohort[key] = hint_value
                         stats['inventory_cohort'] += 1
@@ -1419,10 +1423,6 @@ class UnifiedNodeModel(BaseOptimizationModel):
                     elif hasattr(model, 'shipment_cohort') and key in model.shipment_cohort:
                         model.shipment_cohort[key] = hint_value
                         stats['shipment_cohort'] += 1
-                        applied = True
-                    elif hasattr(model, 'demand_from_cohort') and key in model.demand_from_cohort:
-                        model.demand_from_cohort[key] = hint_value
-                        stats['demand_from_cohort'] += 1
                         applied = True
 
                 else:
@@ -1688,19 +1688,19 @@ class UnifiedNodeModel(BaseOptimizationModel):
         solution['use_batch_tracking'] = self.use_batch_tracking
 
         # Extract demand consumption by cohort (for daily snapshot)
-        # NEW (Phase A): demand_cohort now uses 6-tuple format
-        cohort_demand_consumption: Dict[Tuple[str, str, Date, Date, Date, str], float] = {}
+        # NEW (Phase A - REVISED): demand_cohort uses 5-tuple format (no state_entry_date)
+        cohort_demand_consumption: Dict[Tuple[str, str, Date, Date, str], float] = {}
         if self.use_batch_tracking and hasattr(model, 'demand_from_cohort'):
-            for (node_id, prod, prod_date, state_entry_date, demand_date, state) in self.demand_cohort_index_set:
+            for (node_id, prod, prod_date, demand_date, state) in self.demand_cohort_index_set:
                 # Check if variable initialized BEFORE calling value()
-                var = model.demand_from_cohort[node_id, prod, prod_date, state_entry_date, demand_date, state]
+                var = model.demand_from_cohort[node_id, prod, prod_date, demand_date, state]
                 if var.stale:
                     continue
 
                 try:
                     qty = value(var)
                     if qty > 0.01:
-                        cohort_demand_consumption[(node_id, prod, prod_date, state_entry_date, demand_date, state)] = qty
+                        cohort_demand_consumption[(node_id, prod, prod_date, demand_date, state)] = qty
                 except (ValueError, AttributeError, KeyError, RuntimeError):
                     continue
 
@@ -2080,27 +2080,27 @@ class UnifiedNodeModel(BaseOptimizationModel):
 
         # Extract total cost from objective
         # Extract staleness cost (if batch tracking enabled)
-        # NEW (Phase A): Use state-aware aging with age_in_state
+        # NEW (Phase A - REVISED): Use calendar age with state-aware normalization
         total_staleness_cost = 0.0
         if hasattr(model, 'demand_from_cohort'):
             staleness_weight = self.cost_structure.freshness_incentive_weight
             if staleness_weight > 0:
-                # NEW (Phase A): Iterate over 6-tuple demand cohorts
-                for (node_id, prod, prod_date, state_entry_date, demand_date, state) in model.demand_from_cohort:
-                    demand_qty = value(model.demand_from_cohort[node_id, prod, prod_date, state_entry_date, demand_date, state])
+                # NEW (Phase A - REVISED): Iterate over 5-tuple demand cohorts
+                for (node_id, prod, prod_date, demand_date, state) in model.demand_from_cohort:
+                    demand_qty = value(model.demand_from_cohort[node_id, prod, prod_date, demand_date, state])
                     if demand_qty > 0:
-                        # Calculate age in current state
-                        age_in_state = (demand_date - state_entry_date).days
+                        # Calculate calendar age
+                        calendar_age = (demand_date - prod_date).days
 
                         # State-aware age ratio (same logic as objective)
                         if state == 'frozen':
-                            age_ratio = 0.0  # No aging for frozen
+                            age_ratio = calendar_age / self.FROZEN_SHELF_LIFE
                         elif state == 'thawed':
-                            age_ratio = age_in_state / self.THAWED_SHELF_LIFE
+                            age_ratio = calendar_age / self.THAWED_SHELF_LIFE
                         elif state == 'ambient':
-                            age_ratio = age_in_state / self.AMBIENT_SHELF_LIFE
+                            age_ratio = calendar_age / self.AMBIENT_SHELF_LIFE
                         else:
-                            age_ratio = age_in_state / self.AMBIENT_SHELF_LIFE  # Default
+                            age_ratio = calendar_age / self.AMBIENT_SHELF_LIFE  # Default
 
                         total_staleness_cost += staleness_weight * age_ratio * demand_qty
 
@@ -2426,18 +2426,20 @@ class UnifiedNodeModel(BaseOptimizationModel):
                             ]
 
             # Demand consumption (only if node has demand capability)
-            # NEW (Phase A): Demand can be satisfied from ANY state_entry_date cohort in this state
+            # NEW (Phase A - REVISED): demand_from_cohort is 5-tuple (no state_entry_date)
+            # Demand consumption is split across all state_entry_dates based on inventory available
             demand_consumption = 0
             if node.has_demand_capability():
                 if (node_id, prod, curr_date) in self.demand:
-                    # Sum across all state_entry_dates for this state
-                    if (node_id, prod, prod_date, state_entry_date, curr_date, state) in self.demand_cohort_index_set:
+                    # Check if this (prod_date, state) combination can satisfy demand
+                    if (node_id, prod, prod_date, curr_date, state) in self.demand_cohort_index_set:
                         if state in ['ambient', 'thawed'] and node.supports_ambient_storage():
                             # Ambient/thawed nodes: deduct from ambient or thawed inventory
-                            demand_consumption = model.demand_from_cohort[node_id, prod, prod_date, state_entry_date, curr_date, state]
+                            # Demand is allocated across ALL state_entry_dates proportionally by inventory balance
+                            demand_consumption = model.demand_from_cohort[node_id, prod, prod_date, curr_date, state]
                         elif state == 'frozen' and node.supports_frozen_storage():
                             # Frozen nodes: deduct from frozen inventory
-                            demand_consumption = model.demand_from_cohort[node_id, prod, prod_date, state_entry_date, curr_date, state]
+                            demand_consumption = model.demand_from_cohort[node_id, prod, prod_date, curr_date, state]
                         else:
                             demand_consumption = 0
 
@@ -2473,10 +2475,10 @@ class UnifiedNodeModel(BaseOptimizationModel):
             # Sum demand satisfied from all cohorts
             # CRITICAL FIX: Iterate over demand_cohort_index_set directly, not model.dates
             # This ensures initial inventory cohorts (with prod_date before planning horizon) are included
-            # NEW (Phase A): demand_cohort uses 6-tuple format with state_entry_date and state
+            # NEW (Phase A - REVISED): demand_cohort uses 5-tuple format (no state_entry_date)
             cohort_supply = sum(
-                model.demand_from_cohort[n, p, pd, sed, dd, s]
-                for (n, p, pd, sed, dd, s) in self.demand_cohort_index_set
+                model.demand_from_cohort[n, p, pd, dd, s]
+                for (n, p, pd, dd, s) in self.demand_cohort_index_set
                 if n == node_id and p == prod and dd == demand_date
             )
 
@@ -2503,64 +2505,59 @@ class UnifiedNodeModel(BaseOptimizationModel):
         # This forced demand <= (prev_inv + arrivals) / 2, causing 2x production bug!
         #
         # Correct constraint: demand <= inv[before] = prev_inv + arrivals + production (if same-day)
-        # NEW (Phase A): Now uses 6-tuple format with state_entry_date and state
-        def demand_inventory_linking_rule(model, node_id, prod, prod_date, state_entry_date, demand_date, state):
+        # NEW (Phase A - REVISED): demand_from_cohort is 5-tuple; sums inventory across state_entry_dates
+        def demand_inventory_linking_rule(model, node_id, prod, prod_date, demand_date, state):
             """Demand from cohort cannot exceed BEGINNING-OF-DAY inventory (before consumption).
 
-            NEW (Phase A): Links specific cohort (with state_entry_date and state) to inventory.
+            NEW (Phase A - REVISED): Links (prod_date, state) cohort to SUM of inventory across all state_entry_dates.
             """
 
-            if (node_id, prod, prod_date, state_entry_date, demand_date, state) not in self.demand_cohort_index_set:
+            if (node_id, prod, prod_date, demand_date, state) not in self.demand_cohort_index_set:
                 return Constraint.Skip
 
-            # Calculate beginning-of-day inventory for THIS SPECIFIC COHORT
-            # NEW (Phase A): Link to inventory of this specific (prod_date, state_entry_date, state) cohort
+            # Calculate beginning-of-day inventory for (prod_date, state) across ALL state_entry_dates
             # BOD inventory = previous day inventory + arrivals + same-day production
             # (This is BEFORE demand consumption and departures)
             node = self.nodes[node_id]
-
-            # Previous day inventory FOR THIS COHORT (same prod_date, state_entry_date, state)
             prev_date = self.date_previous.get(demand_date)
             prev_inventory = 0
 
             if prev_date is None:
-                # First date: use initial inventory for this specific cohort
-                # initial_inventory key: (node, prod, prod_date, state_entry_date, state)
-                prev_inventory = self.initial_inventory.get((node_id, prod, prod_date, state_entry_date, state), 0)
+                # First date: sum initial inventory across all state_entry_dates for this (prod_date, state)
+                for init_key in self.initial_inventory.keys():
+                    if (init_key[0] == node_id and init_key[1] == prod and
+                        init_key[2] == prod_date and init_key[4] == state):
+                        prev_inventory += self.initial_inventory[init_key]
             else:
-                # Previous day inventory for this cohort (same prod_date, state_entry_date, state)
-                if (node_id, prod, prod_date, state_entry_date, prev_date, state) in self.cohort_index_set:
-                    prev_inventory = model.inventory_cohort[node_id, prod, prod_date, state_entry_date, prev_date, state]
+                # Sum previous day inventory across ALL state_entry_dates for this (prod_date, state)
+                for (n, p, pd, sed, cd, s) in self.cohort_index_set:
+                    if n == node_id and p == prod and pd == prod_date and cd == prev_date and s == state:
+                        prev_inventory += model.inventory_cohort[n, p, pd, sed, cd, s]
 
-            # Arrivals on demand date that created this cohort
-            # Only count arrivals if state_entry_date == demand_date (arrivals create new cohorts)
+            # Arrivals on demand date (creates new cohorts with state_entry_date = demand_date)
             arrivals_on_demand_date = 0
-            if state_entry_date == demand_date:
-                # This cohort was created by arrivals TODAY
-                for route in self.routes_to_node[node_id]:
-                    arrival_state = self._determine_arrival_state(route, node)
-                    if arrival_state == state:
-                        if (route.origin_node_id, route.destination_node_id, prod, prod_date, demand_date, arrival_state) in self.shipment_cohort_index_set:
-                            arrivals_on_demand_date += model.shipment_cohort[
-                                route.origin_node_id, route.destination_node_id,
-                                prod, prod_date, demand_date, arrival_state
-                            ]
+            for route in self.routes_to_node[node_id]:
+                arrival_state = self._determine_arrival_state(route, node)
+                if arrival_state == state:
+                    if (route.origin_node_id, route.destination_node_id, prod, prod_date, demand_date, arrival_state) in self.shipment_cohort_index_set:
+                        arrivals_on_demand_date += model.shipment_cohort[
+                            route.origin_node_id, route.destination_node_id,
+                            prod, prod_date, demand_date, arrival_state
+                        ]
 
-            # Same-day production (if this cohort represents fresh production)
+            # Same-day production (creates fresh inventory with state_entry_date = prod_date)
             same_day_production = 0
-            if node.can_produce() and prod_date == demand_date and state_entry_date == prod_date:
-                # This cohort is FRESH production (state_entry_date = prod_date)
+            if node.can_produce() and prod_date == demand_date:
                 production_state = node.get_production_state()
                 if state == production_state:
                     if (node_id, prod, demand_date) in model.production:
                         same_day_production = model.production[node_id, prod, demand_date]
 
-            # BOD inventory = previous inventory + arrivals + same-day production
+            # BOD inventory = sum across all state_entry_dates
             beginning_of_day_inventory = prev_inventory + arrivals_on_demand_date + same_day_production
 
-            # Demand from this cohort cannot exceed BOD inventory
-            # NEW (Phase A): Use 6-tuple format
-            return model.demand_from_cohort[node_id, prod, prod_date, state_entry_date, demand_date, state] <= beginning_of_day_inventory
+            # Demand from this (prod_date, state) cohort cannot exceed total BOD inventory
+            return model.demand_from_cohort[node_id, prod, prod_date, demand_date, state] <= beginning_of_day_inventory
 
         model.demand_inventory_linking_con = Constraint(
             model.demand_cohort_index,
@@ -3836,36 +3833,38 @@ class UnifiedNodeModel(BaseOptimizationModel):
 
         if staleness_weight > 0 and self.use_batch_tracking:
             print(f"\n  Staleness penalty enabled: ${staleness_weight:.4f} per unit per age ratio")
-            print(f"  State-aware aging: frozen=0 (no aging), thawed=14d, ambient=17d shelf lives")
+            print(f"  State-aware normalization: frozen=120d, thawed=14d, ambient=17d shelf lives")
 
-            # NEW (Phase A): Iterate over 6-tuple demand cohorts with state_entry_date and state
-            for (node_id, prod, prod_date, state_entry_date, demand_date, state) in self.demand_cohort_index_set:
-                # Calculate age IN CURRENT STATE (not calendar age from production)
-                age_in_state = (demand_date - state_entry_date).days
+            # NEW (Phase A - REVISED): demand_cohort is 5-tuple (no state_entry_date)
+            # Use CALENDAR AGE from production, but normalize by state-specific shelf life
+            for (node_id, prod, prod_date, demand_date, state) in self.demand_cohort_index_set:
+                # Calculate calendar age (days from production to demand)
+                calendar_age = (demand_date - prod_date).days
 
-                # State-aware age ratio calculation
+                # State-aware age ratio calculation (normalize by shelf life)
                 if state == 'frozen':
-                    # Frozen products don't age (120-day shelf life, no staleness penalty)
-                    age_ratio = 0.0
+                    # Frozen products: Very long shelf life (120 days)
+                    # Still apply some penalty to prefer fresh, but much less than ambient
+                    age_ratio = min(calendar_age / self.FROZEN_SHELF_LIFE, 1.0)
                 elif state == 'thawed':
-                    # Thawed: 14-day shelf life, normalize age by shelf life
-                    # age_ratio = 0 (fresh) to 1.0 (14 days old)
-                    age_ratio = min(age_in_state / self.THAWED_SHELF_LIFE, 1.0)
+                    # Thawed: 14-day shelf life
+                    # NOTE: If frozen for N days then thawed, calendar age includes frozen time
+                    # This is conservative - better to use fresh production
+                    age_ratio = min(calendar_age / self.THAWED_SHELF_LIFE, 1.0)
                 elif state == 'ambient':
-                    # Ambient: 17-day shelf life, normalize age by shelf life
-                    # age_ratio = 0 (fresh) to 1.0 (17 days old)
-                    age_ratio = min(age_in_state / self.AMBIENT_SHELF_LIFE, 1.0)
+                    # Ambient: 17-day shelf life
+                    age_ratio = min(calendar_age / self.AMBIENT_SHELF_LIFE, 1.0)
                 else:
                     # Unknown state - use ambient as default
-                    age_ratio = min(age_in_state / self.AMBIENT_SHELF_LIFE, 1.0)
+                    age_ratio = min(calendar_age / self.AMBIENT_SHELF_LIFE, 1.0)
 
                 # Penalize older products (higher age ratio = higher penalty)
-                # Frozen products have age_ratio=0, so no penalty (correct!)
-                staleness_cost += staleness_weight * age_ratio * model.demand_from_cohort[node_id, prod, prod_date, state_entry_date, demand_date, state]
+                # Frozen products have low age_ratio (calendar_age / 120), so minimal penalty
+                staleness_cost += staleness_weight * age_ratio * model.demand_from_cohort[node_id, prod, prod_date, demand_date, state]
 
             print(f"  Staleness penalty calculation: {len(self.demand_cohort_index_set):,} demand cohorts")
-            print(f"  Formula: (age_in_state / shelf_life) × ${staleness_weight:.4f} × demand_satisfied")
-            print(f"  Result: Frozen inventory has zero staleness cost")
+            print(f"  Formula: (calendar_age / state_shelf_life) × ${staleness_weight:.4f} × demand_satisfied")
+            print(f"  Result: Frozen inventory has minimal staleness cost (age/120)")
         elif staleness_weight > 0 and not self.use_batch_tracking:
             print(f"\n  ⚠️  Staleness penalty disabled (requires use_batch_tracking=True)")
 
