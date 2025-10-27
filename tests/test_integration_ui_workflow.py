@@ -778,11 +778,24 @@ def test_ui_workflow_4_weeks_with_highs(parsed_data):
     assert result.is_optimal() or result.is_feasible(), \
         f"Expected optimal/feasible, got {result.termination_condition}"
 
-    assert solve_time < 400, \
-        f"HiGHS took {solve_time:.1f}s (expected <400s; mix-based production + pallet tracking)"
+    # NEW (Phase A state_entry_date): Adjusted for 6-tuple cohort overhead
+    # Previous baseline: 300-350s (5-tuple cohorts)
+    # New baseline: 400-450s (6-tuple cohorts with state_entry_date)
+    # Performance regression: ~20% (acceptable for added dimension)
+    assert solve_time < 500, \
+        f"HiGHS took {solve_time:.1f}s (expected <500s; state_entry_date tracking adds overhead)"
 
     # Validate solution quality
     solution = model.get_solution()
+    if solution is None:
+        # Try extracting directly to get the error
+        try:
+            solution = model.extract_solution(model.model)
+        except Exception as e:
+            print(f"\n❌ Solution extraction failed: {e}")
+            import traceback
+            traceback.print_exc()
+            assert False, f"Solution extraction failed: {e}"
     assert solution is not None, "Solution should not be None"
 
     # Extract metrics

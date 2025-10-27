@@ -1688,18 +1688,19 @@ class UnifiedNodeModel(BaseOptimizationModel):
         solution['use_batch_tracking'] = self.use_batch_tracking
 
         # Extract demand consumption by cohort (for daily snapshot)
-        cohort_demand_consumption: Dict[Tuple[str, str, Date, Date], float] = {}
+        # NEW (Phase A): demand_cohort now uses 6-tuple format
+        cohort_demand_consumption: Dict[Tuple[str, str, Date, Date, Date, str], float] = {}
         if self.use_batch_tracking and hasattr(model, 'demand_from_cohort'):
-            for (node_id, prod, prod_date, demand_date) in self.demand_cohort_index_set:
+            for (node_id, prod, prod_date, state_entry_date, demand_date, state) in self.demand_cohort_index_set:
                 # Check if variable initialized BEFORE calling value()
-                var = model.demand_from_cohort[node_id, prod, prod_date, demand_date]
+                var = model.demand_from_cohort[node_id, prod, prod_date, state_entry_date, demand_date, state]
                 if var.stale:
                     continue
 
                 try:
                     qty = value(var)
                     if qty > 0.01:
-                        cohort_demand_consumption[(node_id, prod, prod_date, demand_date)] = qty
+                        cohort_demand_consumption[(node_id, prod, prod_date, state_entry_date, demand_date, state)] = qty
                 except (ValueError, AttributeError, KeyError, RuntimeError):
                     continue
 
