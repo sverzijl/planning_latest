@@ -417,15 +417,23 @@ class SlidingWindowModel(BaseOptimizationModel):
             )
             print(f"  Truck pallet variables: {len(truck_pallet_index)} integers")
 
+        # DEMAND CONSUMPTION VARIABLES (tracks what's actually consumed from inventory)
+        demand_keys = list(self.demand.keys())
+        model.demand_consumed = Var(
+            demand_keys,
+            within=NonNegativeReals,
+            doc="Demand actually consumed from inventory"
+        )
+        print(f"  Demand consumed variables: {len(demand_keys)}")
+
         # SHORTAGE VARIABLES (if allowed)
         if self.allow_shortages:
-            shortage_index = list(self.demand.keys())
             model.shortage = Var(
-                shortage_index,
+                demand_keys,
                 within=NonNegativeReals,
                 doc="Unmet demand with penalty"
             )
-            print(f"  Shortage variables: {len(shortage_index)}")
+            print(f"  Shortage variables: {len(demand_keys)}")
 
         # BINARY INDICATORS (for changeover tracking, labor, trucks)
         # Product produced indicator
@@ -770,16 +778,11 @@ class SlidingWindowModel(BaseOptimizationModel):
                             if (node_id, route.destination_node_id, prod, delivery_date, 'ambient') in model.shipment:
                                 departures += model.shipment[node_id, route.destination_node_id, prod, delivery_date, 'ambient']
 
+            # Demand consumption from ambient inventory
             demand_consumption = 0
-            if node.has_demand_capability():
-                demand_qty = self.demand.get((node_id, prod, t), 0)
-                if demand_qty > 0:
-                    # Demand is satisfied from ambient inventory
-                    # Actual consumption = demand - shortage
-                    if self.allow_shortages and (node_id, prod, t) in model.shortage:
-                        demand_consumption = demand_qty - model.shortage[node_id, prod, t]
-                    else:
-                        demand_consumption = demand_qty
+            if node.has_demand_capability() and (node_id, prod, t) in self.demand:
+                if (node_id, prod, t) in model.demand_consumed:
+                    demand_consumption = model.demand_consumed[node_id, prod, t]
 
             # Balance
             return model.inventory[node_id, prod, 'ambient', t] == (
@@ -932,30 +935,36 @@ class SlidingWindowModel(BaseOptimizationModel):
     def _add_demand_satisfaction(self, model: ConcreteModel):
         """Add demand satisfaction constraints.
 
-        Total demand = actual consumed + shortage
-        Demand is deducted in state balance equations.
+        Demand must be satisfied from available inventory (ambient/thawed) or taken as shortage.
+
+        demand_consumed + shortage = demand
         """
         print(f"\n  Adding demand satisfaction...")
 
-        # Simple: Demand is handled in state balance (demand_consumption)
-        # Just need to ensure shortage is properly bounded
+        demand_keys = list(self.demand.keys())
 
-        if self.allow_shortages:
-            def shortage_limit_rule(model, node_id, prod, t):
-                """Shortage cannot exceed demand."""
-                if (node_id, prod, t) not in self.demand:
-                    return Constraint.Skip
+        # DEMAND BALANCE: consumed + shortage = total demand
+        def demand_balance_rule(model, node_id, prod, t):
+            """Total demand = consumed + shortage."""
+            if (node_id, prod, t) not in self.demand:
+                return Constraint.Skip
 
-                return model.shortage[node_id, prod, t] <= self.demand[(node_id, prod, t)]
+            demand_qty = self.demand[(node_id, prod, t)]
+            consumed = model.demand_consumed[node_id, prod, t]
 
-            model.shortage_limit_con = Constraint(
-                model.shortage.index_set(),
-                rule=shortage_limit_rule,
-                doc="Shortage bounded by demand"
-            )
+            if self.allow_shortages:
+                shortage = model.shortage[node_id, prod, t]
+                return consumed + shortage == demand_qty
+            else:
+                return consumed == demand_qty
 
-        print(f"  Demand satisfaction: handled via state balance")
-        print(f"  Shortage constraints: {len(list(model.shortage)) if self.allow_shortages else 0}")
+        model.demand_balance_con = Constraint(
+            demand_keys,
+            rule=demand_balance_rule,
+            doc="Demand = consumed + shortage"
+        )
+
+        print(f"  Demand balance constraints: {len(demand_keys)}")
 
     def _add_pallet_constraints(self, model: ConcreteModel):
         """Add integer pallet ceiling constraints."""
@@ -1299,10 +1308,13 @@ class SlidingWindowModel(BaseOptimizationModel):
         if hasattr(model, 'production'):
             for (node_id, prod, t) in model.production:
                 try:
-                    qty = value(model.production[node_id, prod, t])
+                    var = model.production[node_id, prod, t]
+                    # Don't check .stale - APPSI sets values even on "stale" variables
+                    qty = value(var)
                     if qty and qty > 0.01:
                         production_by_date_product[(node_id, prod, t)] = qty
-                except:
+                except (ValueError, AttributeError):
+                    # Variable truly has no value
                     pass
 
         solution['production_by_date_product'] = production_by_date_product
@@ -1351,11 +1363,12 @@ class SlidingWindowModel(BaseOptimizationModel):
         if hasattr(model, 'shortage'):
             for (node_id, prod, t) in model.shortage:
                 try:
-                    qty = value(model.shortage[node_id, prod, t])
+                    var = model.shortage[node_id, prod, t]
+                    qty = value(var)  # Don't check .stale
                     if qty and qty > 0.01:
                         shortages_by_location[(node_id, prod, t)] = qty
                         total_shortage += qty
-                except:
+                except (ValueError, AttributeError):
                     pass
 
         solution['shortages'] = shortages_by_location
