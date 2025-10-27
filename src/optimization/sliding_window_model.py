@@ -443,8 +443,37 @@ class SlidingWindowModel(BaseOptimizationModel):
 
         print(f"  Binary product indicators: {len(product_produced_index) * 2}")
 
-        # Labor variables (same as current model - will copy later)
-        # Truck variables (same as current model - will copy later)
+        # LABOR VARIABLES (for cost modeling)
+        labor_index = [
+            (node.id, t)
+            for node in self.manufacturing_nodes
+            for t in model.dates
+        ]
+
+        # Labor hours used for production
+        model.labor_hours_used = Var(
+            labor_index,
+            within=NonNegativeReals,
+            doc="Total labor hours used for production"
+        )
+
+        print(f"  Labor variables: {len(labor_index)}")
+
+        # Mix count variables (integer production batches)
+        mix_index = []
+        for node in self.manufacturing_nodes:
+            for prod_id, product in self.products.items():
+                if hasattr(product, 'units_per_mix') and product.units_per_mix > 0:
+                    for t in model.dates:
+                        mix_index.append((node.id, prod_id, t))
+
+        if mix_index:
+            model.mix_count = Var(
+                mix_index,
+                within=NonNegativeIntegers,
+                doc="Number of production mixes (batches)"
+            )
+            print(f"  Mix count variables: {len(mix_index)} integers")
 
         print(f"\n✅ Variables created")
         total_vars = (len(production_index) + len(inventory_index) +
@@ -467,7 +496,8 @@ class SlidingWindowModel(BaseOptimizationModel):
         self._add_state_balance(model)
         self._add_demand_satisfaction(model)
         self._add_pallet_constraints(model)
-        # TODO: Add production, labor, truck constraints
+        self._add_production_constraints(model)
+        # TODO: Add truck constraints
 
         print(f"\n✅ Constraints added")
 
@@ -969,6 +999,76 @@ class SlidingWindowModel(BaseOptimizationModel):
             print(f"    Truck pallet ceiling constraints added")
 
 
+    def _add_production_constraints(self, model: ConcreteModel):
+        """Add production capacity and mix-based production constraints."""
+        print(f"\n  Adding production constraints...")
+
+        # MIX-BASED PRODUCTION: production = mix_count × units_per_mix
+        if hasattr(model, 'mix_count'):
+            def mix_production_rule(model, node_id, prod, t):
+                """Link production quantity to integer mix count."""
+                if (node_id, prod, t) not in model.mix_count:
+                    return Constraint.Skip
+
+                product = self.products[prod]
+                units_per_mix = product.units_per_mix if hasattr(product, 'units_per_mix') else 1
+
+                if (node_id, prod, t) in model.production:
+                    return model.production[node_id, prod, t] == model.mix_count[node_id, prod, t] * units_per_mix
+                else:
+                    return Constraint.Skip
+
+            model.mix_production_con = Constraint(
+                model.mix_count.index_set(),
+                rule=mix_production_rule,
+                doc="Production = mix_count × units_per_mix"
+            )
+            print(f"    Mix-based production constraints added")
+
+        # PRODUCTION CAPACITY: production_time <= labor_hours
+        def production_capacity_rule(model, node_id, t):
+            """Total production time cannot exceed available labor hours."""
+            node = self.nodes[node_id]
+            if not node.can_produce():
+                return Constraint.Skip
+
+            # Get production rate
+            production_rate = node.capabilities.production_rate_per_hour
+            if not production_rate or production_rate <= 0:
+                return Constraint.Skip
+
+            # Total production
+            total_production = sum(
+                model.production[node_id, prod, t]
+                for prod in model.products
+                if (node_id, prod, t) in model.production
+            )
+            production_time = total_production / production_rate
+
+            # Get available hours
+            labor_day = self.labor_calendar.get_labor_day(t)
+            if not labor_day:
+                return total_production == 0  # No labor → no production
+
+            # Simple capacity: use total available hours (fixed + overtime)
+            if labor_day.is_fixed_day:
+                max_hours = labor_day.fixed_hours + (labor_day.overtime_hours if hasattr(labor_day, 'overtime_hours') else 0)
+            else:
+                max_hours = 14.0  # Weekend/holiday max
+
+            # Link to labor hours variable
+            if (node_id, t) in model.labor_hours_used:
+                return model.labor_hours_used[node_id, t] == production_time
+            else:
+                return production_time <= max_hours
+
+        model.production_capacity_con = Constraint(
+            [(node.id, t) for node in self.manufacturing_nodes for t in model.dates],
+            rule=production_capacity_rule,
+            doc="Production capacity: time <= available labor hours"
+        )
+        print(f"    Production capacity constraints added")
+
     def _build_objective(self, model: ConcreteModel):
         """Build objective function.
 
@@ -1016,8 +1116,18 @@ class SlidingWindowModel(BaseOptimizationModel):
             )
             print(f"  Shortage penalty: ${penalty:.2f}/unit")
 
-        # Placeholder costs (will add when constraints migrated)
+        # LABOR COST (simplified - just use regular rate for now)
         labor_cost = 0
+        if hasattr(model, 'labor_hours_used'):
+            for (node_id, t) in model.labor_hours_used:
+                labor_day = self.labor_calendar.get_labor_day(t)
+                if labor_day:
+                    # Use regular rate (simplified - will add overtime logic later)
+                    rate = labor_day.regular_rate if hasattr(labor_day, 'regular_rate') else 20.0
+                    labor_cost += rate * model.labor_hours_used[node_id, t]
+            print(f"  Labor cost: hours × rate (simplified)")
+
+        # Placeholder costs (will add when constraints migrated)
         transport_cost = 0
         changeover_cost = 0
         waste_cost = 0
