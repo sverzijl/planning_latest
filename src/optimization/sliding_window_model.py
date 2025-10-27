@@ -497,7 +497,8 @@ class SlidingWindowModel(BaseOptimizationModel):
         self._add_demand_satisfaction(model)
         self._add_pallet_constraints(model)
         self._add_production_constraints(model)
-        # TODO: Add truck constraints
+        self._add_changeover_detection(model)
+        self._add_truck_constraints(model)
 
         print(f"\n✅ Constraints added")
 
@@ -1069,6 +1070,95 @@ class SlidingWindowModel(BaseOptimizationModel):
         )
         print(f"    Production capacity constraints added")
 
+    def _add_changeover_detection(self, model: ConcreteModel):
+        """Add changeover detection constraints (start tracking)."""
+        print(f"\n  Adding changeover detection...")
+
+        # Build date index for lookups
+        date_list = list(model.dates)
+        date_to_prev = {}
+        for i, d in enumerate(date_list):
+            if i > 0:
+                date_to_prev[d] = date_list[i-1]
+
+        # START DETECTION: product_start[t] >= product_produced[t] - product_produced[t-1]
+        def start_detection_rule(model, node_id, prod, t):
+            """Detect 0→1 transitions (product starts)."""
+            prev_date = date_to_prev.get(t)
+
+            if prev_date and (node_id, prod, prev_date) in model.product_produced:
+                # Start = 1 if product_produced went from 0 to 1
+                return (model.product_start[node_id, prod, t] >=
+                        model.product_produced[node_id, prod, t] -
+                        model.product_produced[node_id, prod, prev_date])
+            else:
+                # First day: start if producing
+                return model.product_start[node_id, prod, t] >= model.product_produced[node_id, prod, t]
+
+        model.start_detection_con = Constraint(
+            model.product_start.index_set(),
+            rule=start_detection_rule,
+            doc="Detect product starts (0→1 transitions)"
+        )
+
+        # LINK PRODUCTION TO BINARY: production > 0 → product_produced = 1
+        def product_binary_linking_rule(model, node_id, prod, t):
+            """If production > 0, force product_produced = 1."""
+            if (node_id, prod, t) not in model.production:
+                return Constraint.Skip
+
+            # Big-M: production <= M * product_produced
+            # If product_produced = 0, forces production = 0
+            # If product_produced = 1, allows production up to M
+            node = self.nodes[node_id]
+            production_rate = node.capabilities.production_rate_per_hour or 1400
+            max_daily_production = production_rate * 14  # Max hours per day
+
+            return model.production[node_id, prod, t] <= max_daily_production * model.product_produced[node_id, prod, t]
+
+        model.product_binary_linking_con = Constraint(
+            [(node.id, prod, t) for node in self.manufacturing_nodes
+             for prod in model.products for t in model.dates],
+            rule=product_binary_linking_rule,
+            doc="Link production quantity to product_produced binary"
+        )
+
+        print(f"    Changeover detection constraints added")
+
+    def _add_truck_constraints(self, model: ConcreteModel):
+        """Add truck scheduling and capacity constraints with integer pallets."""
+        print(f"\n  Adding truck constraints...")
+
+        if not self.truck_schedules or not self.use_truck_pallet_tracking:
+            print(f"    Truck constraints skipped (no schedules or tracking disabled)")
+            return
+
+        # TRUCK CAPACITY: Sum of pallet loads <= 44 pallets
+        def truck_capacity_rule(model, truck_idx, t):
+            """Total pallets loaded cannot exceed truck capacity."""
+            truck = self.truck_schedules[truck_idx]
+
+            # Sum pallets across all destinations and products for this truck
+            total_pallets = sum(
+                model.truck_pallet_load[truck_idx, dest, prod, delivery_date]
+                for dest in model.nodes
+                for prod in model.products
+                for delivery_date in model.dates
+                if (truck_idx, dest, prod, delivery_date) in model.truck_pallet_load
+            )
+
+            return total_pallets <= self.PALLETS_PER_TRUCK
+
+        # Simplified truck capacity (one constraint per truck per day)
+        truck_index = [(i, t) for i, truck in enumerate(self.truck_schedules) for t in model.dates]
+        model.truck_capacity_con = Constraint(
+            truck_index,
+            rule=truck_capacity_rule,
+            doc="Truck capacity: total pallets <= 44"
+        )
+
+        print(f"    Truck capacity constraints added: {len(truck_index)}")
+
     def _build_objective(self, model: ConcreteModel):
         """Build objective function.
 
@@ -1116,21 +1206,52 @@ class SlidingWindowModel(BaseOptimizationModel):
             )
             print(f"  Shortage penalty: ${penalty:.2f}/unit")
 
-        # LABOR COST (simplified - just use regular rate for now)
+        # LABOR COST (simplified - regular rate)
         labor_cost = 0
         if hasattr(model, 'labor_hours_used'):
             for (node_id, t) in model.labor_hours_used:
                 labor_day = self.labor_calendar.get_labor_day(t)
                 if labor_day:
-                    # Use regular rate (simplified - will add overtime logic later)
                     rate = labor_day.regular_rate if hasattr(labor_day, 'regular_rate') else 20.0
                     labor_cost += rate * model.labor_hours_used[node_id, t]
-            print(f"  Labor cost: hours × rate (simplified)")
+            print(f"  Labor cost: hours × rate")
 
-        # Placeholder costs (will add when constraints migrated)
+        # TRANSPORT COST (per-route costs)
         transport_cost = 0
+        if hasattr(model, 'shipment'):
+            for (origin, dest, prod, t, state) in model.shipment:
+                # Find route cost
+                route = next((r for r in self.routes if r.origin_node_id == origin and r.destination_node_id == dest), None)
+                if route and hasattr(route, 'cost_per_unit') and route.cost_per_unit:
+                    transport_cost += route.cost_per_unit * model.shipment[origin, dest, prod, t, state]
+            if transport_cost > 0:
+                print(f"  Transport cost: route costs included")
+
+        # CHANGEOVER COST (per product start)
         changeover_cost = 0
+        if hasattr(model, 'product_start') and hasattr(self.cost_structure, 'changeover_cost_per_start'):
+            changeover_cost_per_start = self.cost_structure.changeover_cost_per_start or 0
+            if changeover_cost_per_start > 0:
+                changeover_cost = changeover_cost_per_start * sum(
+                    model.product_start[node_id, prod, t]
+                    for (node_id, prod, t) in model.product_start
+                )
+                print(f"  Changeover cost: ${changeover_cost_per_start:.2f} per start")
+
+        # WASTE COST (end-of-horizon inventory)
         waste_cost = 0
+        waste_multiplier = self.cost_structure.waste_cost_multiplier or 0
+        if waste_multiplier > 0 and hasattr(model, 'inventory'):
+            # Calculate end-of-horizon inventory
+            last_date = max(model.dates)
+            end_inventory = sum(
+                model.inventory[node_id, prod, state, last_date]
+                for (node_id, prod, state, t) in model.inventory
+                if t == last_date
+            )
+            prod_cost = self.cost_structure.production_cost_per_unit or 1.3
+            waste_cost = waste_multiplier * prod_cost * end_inventory
+            print(f"  Waste cost: end-of-horizon inventory penalty")
 
         # TOTAL OBJECTIVE
         total_cost = (
