@@ -1152,29 +1152,27 @@ class UnifiedNodeModel(BaseOptimizationModel):
 
                 # For each state this node supports
                 for state in demand_states:
-                    # Calculate WORST-CASE age (maximum possible age_in_state)
-                    # This occurs when state_entry_date = prod_date (earliest possible entry)
-                    worst_case_age = (demand_date - prod_date).days
-
-                    # Check shelf life based on state (use worst-case age for filtering)
-                    # BREADROOM POLICY: Discard stock with <7 days remaining
+                    # Check shelf life based on state
+                    # NOTE: For 5-tuple demand (no state_entry_date), we can't predict thaw timing
+                    # Use calendar age from production for filtering where applicable
+                    calendar_age = (demand_date - prod_date).days
                     valid = False
 
                     if state == 'frozen':
                         # Frozen: 120 days shelf life, no minimum freshness requirement
-                        if worst_case_age <= self.FROZEN_SHELF_LIFE:
+                        if calendar_age <= self.FROZEN_SHELF_LIFE:
                             valid = True
                     elif state == 'thawed':
-                        # Thawed: 14 days shelf life
-                        # Must have ≥7 days remaining: age ≤ 14 - 7 = 7
-                        max_acceptable_age = self.THAWED_SHELF_LIFE - self.MINIMUM_ACCEPTABLE_SHELF_LIFE_DAYS
-                        if worst_case_age <= max_acceptable_age:
-                            valid = True
+                        # Thawed: CANNOT filter by calendar age!
+                        # Products can be frozen for 100+ days then thawed close to demand
+                        # Age from thaw (not production) is what matters, but we can't predict thaw timing
+                        # Solution: Allow ALL production dates (thaw timing determined by inventory_balance)
+                        valid = True  # No filtering for thawed demand cohorts
                     elif state == 'ambient':
-                        # Ambient: 17 days shelf life
+                        # Ambient: 17 days shelf life (age from production = age in state)
                         # Must have ≥7 days remaining: age ≤ 17 - 7 = 10
                         max_acceptable_age = self.AMBIENT_SHELF_LIFE - self.MINIMUM_ACCEPTABLE_SHELF_LIFE_DAYS
-                        if worst_case_age <= max_acceptable_age:
+                        if calendar_age <= max_acceptable_age:
                             valid = True
 
                     if valid:

@@ -35,7 +35,7 @@ from pyomo.environ import (
 from ..models import Location, Route, Product, CostStructure
 from ..models.truck_schedule import TruckSchedule
 from ..models.labor_calendar import LaborCalendar
-from ..models.enums import TransportMode
+from ..models.unified_route import TransportMode
 from .base_model import BaseOptimizationModel, OptimizationResult
 
 
@@ -217,8 +217,12 @@ class SlidingWindowModel(BaseOptimizationModel):
         self.routes_to_node = defaultdict(list)
 
         for route in self.routes:
-            self.routes_from_node[route.origin_node_id].append(route)
-            self.routes_to_node[route.destination_node_id].append(route)
+            # Handle both Route and UnifiedRoute objects
+            origin = getattr(route, 'origin_node_id', getattr(route, 'origin_id', None))
+            dest = getattr(route, 'destination_node_id', getattr(route, 'destination_id', None))
+            if origin and dest:
+                self.routes_from_node[origin].append(route)
+                self.routes_to_node[dest].append(route)
 
         # Nodes by capability
         self.manufacturing_nodes = [
