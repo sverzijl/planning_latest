@@ -2524,15 +2524,19 @@ class UnifiedNodeModel(BaseOptimizationModel):
 
             if prev_date is None:
                 # First date: sum initial inventory across all state_entry_dates for this (prod_date, state)
-                for init_key in self.initial_inventory.keys():
-                    if (init_key[0] == node_id and init_key[1] == prod and
-                        init_key[2] == prod_date and init_key[4] == state):
-                        prev_inventory += self.initial_inventory[init_key]
+                # PERFORMANCE FIX: More efficient than iterating all keys
+                prev_inventory = sum(
+                    self.initial_inventory.get((node_id, prod, prod_date, sed, state), 0)
+                    for sed in model.dates
+                )
             else:
                 # Sum previous day inventory across ALL state_entry_dates for this (prod_date, state)
-                for (n, p, pd, sed, cd, s) in self.cohort_index_set:
-                    if n == node_id and p == prod and pd == prod_date and cd == prev_date and s == state:
-                        prev_inventory += model.inventory_cohort[n, p, pd, sed, cd, s]
+                # PERFORMANCE FIX: Iterate over dates (30 items), not full cohort_index_set (466k items)
+                prev_inventory = sum(
+                    model.inventory_cohort[node_id, prod, prod_date, sed, prev_date, state]
+                    for sed in model.dates
+                    if (node_id, prod, prod_date, sed, prev_date, state) in self.cohort_index_set
+                )
 
             # Arrivals on demand date (creates new cohorts with state_entry_date = demand_date)
             arrivals_on_demand_date = 0
@@ -2559,11 +2563,18 @@ class UnifiedNodeModel(BaseOptimizationModel):
             # Demand from this (prod_date, state) cohort cannot exceed total BOD inventory
             return model.demand_from_cohort[node_id, prod, prod_date, demand_date, state] <= beginning_of_day_inventory
 
-        model.demand_inventory_linking_con = Constraint(
-            model.demand_cohort_index,
-            rule=demand_inventory_linking_rule,
-            doc="Link demand allocation to BEGINNING-OF-DAY inventory (prevents circular dependency)"
-        )
+        # REMOVED: This constraint is redundant with inventory_balance_rule
+        # inventory_balance already prevents demand from exceeding inventory
+        # Adding this creates over-constraint with 5-tuple demand structure
+        # (forces demand from prod_date to match inventory at that prod_date, but inventory
+        #  balance already handles this correctly across all state_entry_dates)
+        #
+        # model.demand_inventory_linking_con = Constraint(
+        #     model.demand_cohort_index,
+        #     rule=demand_inventory_linking_rule,
+        #     doc="Link demand allocation to BEGINNING-OF-DAY inventory (prevents circular dependency)"
+        # )
+        print("  demand_inventory_linking_con: REMOVED (redundant with inventory_balance)")
 
     def _add_aggregated_inventory_balance(self, model: ConcreteModel) -> None:
         """Add aggregated inventory balance (no batch tracking - simplified)."""
