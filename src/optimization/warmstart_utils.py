@@ -73,7 +73,7 @@ def extract_solution_for_warmstart(
     - production[node, product, date]: Production quantities
     - product_produced[node, product, date]: Binary production flags
     - product_start[node, product, date]: Binary changeover flags
-    - inventory_cohort[node, product, state, prod_date, inv_date]: Inventory by age
+    - inventory_cohort[node, product, prod_date, state_entry_date, inv_date, state]: Inventory by age in state
     - shipment_cohort[origin, dest, product, state, prod_date, ship_date]: Shipments
     - production_day[node, date]: Binary production day flags
     - uses_overtime[node, date]: Overtime usage
