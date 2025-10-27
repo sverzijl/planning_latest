@@ -63,7 +63,7 @@ model = SlidingWindowModel(
     inventory_snapshot_date=start,
     allow_shortages=True,
     use_pallet_tracking=True,
-    use_truck_pallet_tracking=False  # Disable for now
+    use_truck_pallet_tracking=True  # ENABLE truck integer pallets
 )
 
 print("\n🔨 Building model...")

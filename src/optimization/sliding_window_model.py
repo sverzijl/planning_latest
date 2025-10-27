@@ -132,13 +132,22 @@ class SlidingWindowModel(BaseOptimizationModel):
         self.products = products
         self.products_dict = products
 
-        # Convert forecast to demand dict
+        # Convert forecast to demand dict (FILTER to planning horizon only!)
         self.demand = {}
         for entry in forecast.entries:
-            key = (entry.location_id, entry.product_id, entry.forecast_date)
-            self.demand[key] = self.demand.get(key, 0) + entry.quantity
+            # Only include demand within planning horizon
+            if start_date <= entry.forecast_date <= end_date:
+                key = (entry.location_id, entry.product_id, entry.forecast_date)
+                self.demand[key] = self.demand.get(key, 0) + entry.quantity
 
         self.forecast = forecast
+
+        # Build date list BEFORE using for filtering
+        self.dates = []
+        current = start_date
+        while current <= end_date:
+            self.dates.append(current)
+            current += timedelta(days=1)
         self.truck_schedules = truck_schedules or []
         self.labor_calendar = labor_calendar
         self.cost_structure = cost_structure
@@ -152,13 +161,6 @@ class SlidingWindowModel(BaseOptimizationModel):
         self.initial_inventory = self._preprocess_initial_inventory(
             initial_inventory, inventory_snapshot_date
         )
-
-        # Build date list
-        self.dates = []
-        current = start_date
-        while current <= end_date:
-            self.dates.append(current)
-            current += timedelta(days=1)
 
         # Build network indices
         self._build_network_indices()
@@ -307,16 +309,21 @@ class SlidingWindowModel(BaseOptimizationModel):
 
         # STATE-BASED INVENTORY VARIABLES (NEW - replaces inventory_cohort)
         # I[node, product, state, t] - end-of-day inventory in each state
+        # CRITICAL: Create inventory vars for ALL nodes (including demand nodes!)
+        # Demand nodes need inventory to satisfy demand from
         inventory_index = []
         for node_id, node in self.nodes.items():
-            if not node.capabilities.can_store:
+            # Skip only if node has no storage AND no demand capability
+            if not node.capabilities.can_store and not node.has_demand_capability():
                 continue
+
             for prod in model.products:
                 for t in model.dates:
                     # Add state dimensions based on node capabilities
                     if node.supports_frozen_storage():
                         inventory_index.append((node_id, prod, 'frozen', t))
-                    if node.supports_ambient_storage():
+                    if node.supports_ambient_storage() or node.has_demand_capability():
+                        # Demand nodes need ambient inventory to satisfy demand from
                         inventory_index.append((node_id, prod, 'ambient', t))
                         inventory_index.append((node_id, prod, 'thawed', t))
 
@@ -764,12 +771,15 @@ class SlidingWindowModel(BaseOptimizationModel):
                                 departures += model.shipment[node_id, route.destination_node_id, prod, delivery_date, 'ambient']
 
             demand_consumption = 0
-            if node.has_demand_capability() and (node_id, prod, t) in self.demand:
-                # Demand comes from ambient inventory
-                # For now, assume all demand from ambient (will refine with state variables)
-                demand_consumption = self.demand[(node_id, prod, t)]
-                if self.allow_shortages and (node_id, prod, t) in model.shortage:
-                    demand_consumption -= model.shortage[node_id, prod, t]
+            if node.has_demand_capability():
+                demand_qty = self.demand.get((node_id, prod, t), 0)
+                if demand_qty > 0:
+                    # Demand is satisfied from ambient inventory
+                    # Actual consumption = demand - shortage
+                    if self.allow_shortages and (node_id, prod, t) in model.shortage:
+                        demand_consumption = demand_qty - model.shortage[node_id, prod, t]
+                    else:
+                        demand_consumption = demand_qty
 
             # Balance
             return model.inventory[node_id, prod, 'ambient', t] == (
