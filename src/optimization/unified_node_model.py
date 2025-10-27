@@ -1017,8 +1017,10 @@ class UnifiedNodeModel(BaseOptimizationModel):
                                         remaining_shelf_life = shelf_life_at_dest - age_at_arrival
                                 elif arrival_state == 'frozen':
                                     # Frozen arrival at frozen node (e.g., Lineage)
+                                    # Product doesn't age while frozen - always has full frozen shelf life
+                                    # Age_at_arrival is calendar time, but frozen products don't spoil
                                     shelf_life_at_dest = self.FROZEN_SHELF_LIFE
-                                    remaining_shelf_life = shelf_life_at_dest - age_at_arrival
+                                    remaining_shelf_life = shelf_life_at_dest  # Full 120 days (frozen doesn't age)
                                 else:
                                     # Shouldn't happen but be safe
                                     remaining_shelf_life = 14  # Conservative
