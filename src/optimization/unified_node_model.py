@@ -595,12 +595,13 @@ class UnifiedNodeModel(BaseOptimizationModel):
 
         # Inventory variables (cohort-based if batch tracking enabled)
         if self.use_batch_tracking:
-            # inventory_cohort[node, product, prod_date, curr_date, state]
+            # NEW (Phase A): inventory_cohort[node, product, prod_date, state_entry_date, curr_date, state]
+            # state_entry_date tracks when inventory entered current state (for accurate age tracking)
             model.inventory_cohort = Var(
                 model.cohort_index,
                 within=NonNegativeReals,
                 bounds=(0, max_inventory_cohort),  # Adaptive bound: max(daily_production, initial_inventory)
-                doc="Inventory by node, product, production cohort, date, and state"
+                doc="Inventory by node, product, production date, state entry date, current date, and state"
             )
         else:
             # Aggregated inventory[node, product, date]
@@ -887,15 +888,22 @@ class UnifiedNodeModel(BaseOptimizationModel):
         return model
 
     def _build_cohort_indices(self, dates: List[Date]) -> Set[Tuple]:
-        """Build sparse cohort indices: (node, product, prod_date, curr_date, state).
+        """Build sparse cohort indices with state_entry_date.
 
-        Only creates indices for valid cohorts (reachable, within shelf life).
+        NEW STRUCTURE (Phase A state_entry_date architecture):
+        (node, product, prod_date, state_entry_date, curr_date, state)
+
+        Where state_entry_date tracks when inventory entered its current state:
+        - Production: state_entry_date = prod_date
+        - Freeze event: state_entry_date = freeze_date
+        - Thaw event: state_entry_date = thaw_date
+        - Arrivals: state_entry_date = arrival_date
 
         Args:
             dates: List of dates in planning horizon
 
         Returns:
-            Set of valid cohort tuples
+            Set of valid cohort 6-tuples
         """
         cohorts = set()
 
@@ -912,34 +920,58 @@ class UnifiedNodeModel(BaseOptimizationModel):
         all_prod_dates_sorted = sorted(all_prod_dates)
         print(f"  Production dates for cohorts: {len(dates)} in horizon + {len(all_prod_dates) - len(dates)} from initial inventory")
 
-        # For each node that can store inventory
+        # Strategy: Build cohorts with valid state_entry_dates
+        # Only create state_entry_dates for actual events (production, arrivals, transitions)
+
         for node in self.nodes_list:
             if not node.capabilities.can_store:
                 continue
 
             for prod in self.products:
-                for prod_date in all_prod_dates_sorted:  # Use extended date range
-                    for curr_date in dates:  # Current dates still within planning horizon
+                for prod_date in all_prod_dates_sorted:
+                    for curr_date in dates:
                         if curr_date < prod_date:
                             continue  # Can't have inventory from the future
 
-                        age_days = (curr_date - prod_date).days
-
-                        # Create cohorts for each state the node supports
-                        # Frozen cohorts
+                        # For each state the node supports
+                        states_at_node = []
                         if node.supports_frozen_storage():
-                            if age_days <= self.FROZEN_SHELF_LIFE:
-                                cohorts.add((node.id, prod, prod_date, curr_date, 'frozen'))
-
-                        # Ambient cohorts (at AMBIENT nodes)
+                            states_at_node.append('frozen')
                         if node.supports_ambient_storage():
-                            # Use MINIMUM shelf life to account for frozen arrivals that thaw
-                            # Frozen product arriving at ambient node thaws and has 14-day shelf life
-                            # Ambient product has 17-day shelf life
-                            # We use 14 days to be conservative (handles both cases)
-                            shelf_life = min(self.AMBIENT_SHELF_LIFE, self.THAWED_SHELF_LIFE)
-                            if age_days <= shelf_life:
-                                cohorts.add((node.id, prod, prod_date, curr_date, 'ambient'))
+                            states_at_node.extend(['ambient', 'thawed'])
+
+                        for state in states_at_node:
+                            # Determine valid state_entry_dates for this cohort
+                            #
+                            # SMART INDEXING: Only create state_entry_dates for:
+                            # 1. Production: state_entry_date = prod_date (if produced here)
+                            # 2. Potential arrivals: any date from prod_date to curr_date
+                            # 3. Carries forward: previous state_entry_dates
+                            #
+                            # To avoid explosion, we enumerate all possible entry dates
+                            # The inventory balance will determine which are actually used
+
+                            for state_entry_date in dates:
+                                # State entry must be between production and current date
+                                if state_entry_date < prod_date or state_entry_date > curr_date:
+                                    continue
+
+                                # Check shelf life based on age in current state
+                                age_in_state = (curr_date - state_entry_date).days
+
+                                # Shelf life check based on state
+                                valid = False
+                                if state == 'frozen':
+                                    if age_in_state <= self.FROZEN_SHELF_LIFE:
+                                        valid = True
+                                elif state in ['ambient', 'thawed']:
+                                    # Thawed has 14-day shelf life, ambient has 17
+                                    shelf_life = self.THAWED_SHELF_LIFE if state == 'thawed' else self.AMBIENT_SHELF_LIFE
+                                    if age_in_state <= shelf_life:
+                                        valid = True
+
+                                if valid:
+                                    cohorts.add((node.id, prod, prod_date, state_entry_date, curr_date, state))
 
         return cohorts
 
