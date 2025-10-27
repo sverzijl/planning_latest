@@ -197,18 +197,23 @@ class UnifiedNodeModel(BaseOptimizationModel):
         # Check format by inspecting first key
         first_key = next(iter(self.initial_inventory.keys()))
 
-        # If already in 4-tuple format, no preprocessing needed
-        if len(first_key) == 4:
+        # If already in 5-tuple format, no preprocessing needed
+        if len(first_key) == 5:
             return
 
-        # Convert from 2-tuple to 4-tuple format
+        # Convert from 2-tuple to 5-tuple format
+        # NEW (Phase A state_entry_date): (node, prod, prod_date, state_entry_date, state)
         if len(first_key) == 2:
             # Initial inventory production date: ONE DAY BEFORE snapshot/planning starts
             # This marks it as pre-existing inventory, not Day 1 production
             if self.inventory_snapshot_date:
                 init_prod_date = self.inventory_snapshot_date - timedelta(days=1)
+                # State entry date: assume inventory entered state same day as snapshot
+                # (conservative - inventory is 1 day old in its current state)
+                init_state_entry_date = self.inventory_snapshot_date - timedelta(days=1)
             else:
                 init_prod_date = self.start_date - timedelta(days=1)
+                init_state_entry_date = self.start_date - timedelta(days=1)
 
             converted_inventory = {}
             for (node_id, prod), qty in self.initial_inventory.items():
@@ -228,33 +233,47 @@ class UnifiedNodeModel(BaseOptimizationModel):
                     state = 'ambient'
                 else:
                     # Node has unclear or no storage capability - default to ambient
-                    # User can override by passing 4-tuple format if needed
+                    # User can override by passing 5-tuple format if needed
                     warnings.warn(f"Node {node_id} has unclear storage capability. Defaulting to ambient.")
                     state = 'ambient'
 
-                # Store in 4-tuple format
-                converted_inventory[(node_id, prod, init_prod_date, state)] = qty
+                # Store in 5-tuple format: (node, prod, prod_date, state_entry_date, state)
+                converted_inventory[(node_id, prod, init_prod_date, init_state_entry_date, state)] = qty
 
             self.initial_inventory = converted_inventory
-            print(f"\n📦 Preprocessed initial inventory: {len(converted_inventory)} items, prod_date={init_prod_date} (one day before snapshot)")
+            print(f"\n📦 Preprocessed initial inventory: {len(converted_inventory)} items, prod_date={init_prod_date}, state_entry_date={init_state_entry_date}")
 
         elif len(first_key) == 3:
-            # 3-tuple format: (node, prod, state) -> needs prod_date
+            # 3-tuple format: (node, prod, state) -> needs prod_date and state_entry_date
             if self.inventory_snapshot_date:
                 init_prod_date = self.inventory_snapshot_date - timedelta(days=1)
+                init_state_entry_date = self.inventory_snapshot_date - timedelta(days=1)
             else:
                 init_prod_date = self.start_date - timedelta(days=1)
+                init_state_entry_date = self.start_date - timedelta(days=1)
 
             converted_inventory = {}
             for (node_id, prod, state), qty in self.initial_inventory.items():
                 if qty > 0:
-                    converted_inventory[(node_id, prod, init_prod_date, state)] = qty
+                    converted_inventory[(node_id, prod, init_prod_date, init_state_entry_date, state)] = qty
 
             self.initial_inventory = converted_inventory
-            print(f"\n📦 Preprocessed initial inventory: {len(converted_inventory)} items, prod_date={init_prod_date}")
+            print(f"\n📦 Preprocessed initial inventory: {len(converted_inventory)} items, prod_date={init_prod_date}, state_entry_date={init_state_entry_date}")
+
+        elif len(first_key) == 4:
+            # 4-tuple format: (node, prod, prod_date, state) -> needs state_entry_date
+            # Assume state_entry_date same as prod_date for 4-tuple (backward compatibility)
+            converted_inventory = {}
+            for (node_id, prod, prod_date, state), qty in self.initial_inventory.items():
+                if qty > 0:
+                    # Conservative: state_entry_date = prod_date (inventory entered state when produced)
+                    converted_inventory[(node_id, prod, prod_date, prod_date, state)] = qty
+
+            self.initial_inventory = converted_inventory
+            print(f"\n📦 Preprocessed initial inventory: {len(converted_inventory)} items (converted from 4-tuple, state_entry_date=prod_date)")
 
         else:
-            warnings.warn(f"Unknown initial_inventory format with key length {len(first_key)}. Expected 2, 3, or 4.")
+            warnings.warn(f"Unknown initial_inventory format with key length {len(first_key)}. Expected 2, 3, 4, or 5.")
 
     def _validate_cost_parameters(self) -> None:
         """Validate cost parameters and warn about potential issues.
@@ -1355,19 +1374,21 @@ class UnifiedNodeModel(BaseOptimizationModel):
                         applied = True
 
                 elif key_len == 5:
-                    # Could be: inventory_cohort or pallet_count
+                    # pallet_count[node, prod, prod_date, curr_date, state] - OLD 5-tuple
                     if hasattr(model, 'pallet_count') and key in model.pallet_count:
                         model.pallet_count[key] = hint_value
                         stats['pallet_count'] += 1
                         applied = True
-                    elif hasattr(model, 'inventory_cohort') and key in model.inventory_cohort:
+
+                elif key_len == 6:
+                    # Both inventory_cohort and shipment_cohort are 6-tuples now
+                    # NEW (Phase A): inventory_cohort[node, prod, prod_date, state_entry_date, curr_date, state]
+                    # shipment_cohort[origin, dest, prod, prod_date, delivery_date, arrival_state]
+                    if hasattr(model, 'inventory_cohort') and key in model.inventory_cohort:
                         model.inventory_cohort[key] = hint_value
                         stats['inventory_cohort'] += 1
                         applied = True
-
-                elif key_len == 6:
-                    # shipment_cohort[origin, dest, prod, prod_date, curr_date, state]
-                    if hasattr(model, 'shipment_cohort') and key in model.shipment_cohort:
+                    elif hasattr(model, 'shipment_cohort') and key in model.shipment_cohort:
                         model.shipment_cohort[key] = hint_value
                         stats['shipment_cohort'] += 1
                         applied = True
@@ -1447,17 +1468,18 @@ class UnifiedNodeModel(BaseOptimizationModel):
             return stats
 
         # Tighten inventory_cohort bounds
+        # NEW (Phase A): inventory_cohort now uses 6-tuple format
         if hasattr(model, 'inventory_cohort'):
-            for (node_id, prod, prod_date, curr_date, state) in model.inventory_cohort:
+            for (node_id, prod, prod_date, state_entry_date, curr_date, state) in model.inventory_cohort:
                 key = (node_id, prod, state)
                 if key in max_inventory_phase1:
                     # Apply conservative upper bound with safety factor
                     tight_bound = max_inventory_phase1[key] * safety_factor
-                    current_bound = model.inventory_cohort[node_id, prod, prod_date, curr_date, state].ub
+                    current_bound = model.inventory_cohort[node_id, prod, prod_date, state_entry_date, curr_date, state].ub
 
                     # Only tighten if new bound is stricter
                     if current_bound is not None and tight_bound < current_bound:
-                        model.inventory_cohort[node_id, prod, prod_date, curr_date, state].setub(tight_bound)
+                        model.inventory_cohort[node_id, prod, prod_date, state_entry_date, curr_date, state].setub(tight_bound)
                         stats['inventory_bounds_tightened'] += 1
 
         # Tighten pallet_count bounds (if exists)
@@ -1612,11 +1634,12 @@ class UnifiedNodeModel(BaseOptimizationModel):
         solution['total_mixes'] = total_mixes
 
         # Extract cohort inventory for daily snapshot
-        cohort_inventory: Dict[Tuple[str, str, Date, Date, str], float] = {}
+        # NEW (Phase A): cohort_index now includes state_entry_date (6-tuple)
+        cohort_inventory: Dict[Tuple[str, str, Date, Date, Date, str], float] = {}
         if self.use_batch_tracking:
-            for (node_id, prod, prod_date, curr_date, state) in model.cohort_index:
+            for (node_id, prod, prod_date, state_entry_date, curr_date, state) in model.cohort_index:
                 # Check if variable initialized BEFORE calling value() (prevents error spam)
-                var = model.inventory_cohort[node_id, prod, prod_date, curr_date, state]
+                var = model.inventory_cohort[node_id, prod, prod_date, state_entry_date, curr_date, state]
                 if var.stale:
                     # Not solved (expected for zero-cost storage)
                     continue
@@ -1740,10 +1763,12 @@ class UnifiedNodeModel(BaseOptimizationModel):
                 ambient_rate_per_pallet = unit_ambient_per_day * self.UNITS_PER_PALLET
 
             # Extract costs from solved model
-            for (node_id, prod, prod_date, curr_date, state) in self.cohort_index_set:
+            # NEW (Phase A): cohort_index_set now includes state_entry_date (6-tuple)
+            for (node_id, prod, prod_date, state_entry_date, curr_date, state) in self.cohort_index_set:
                 cost = 0.0
 
                 # Use pallet tracking if state is in pallet_states
+                # NOTE: pallet_count still uses 5-tuple (no state_entry_date)
                 if state in pallet_states and hasattr(model, 'pallet_count'):
                     # Check if variable initialized BEFORE calling value()
                     pallet_var = model.pallet_count[node_id, prod, prod_date, curr_date, state]
@@ -1774,7 +1799,7 @@ class UnifiedNodeModel(BaseOptimizationModel):
                 else:
                     # Use unit tracking for this state
                     # Check if variable initialized BEFORE calling value()
-                    inv_var = model.inventory_cohort[node_id, prod, prod_date, curr_date, state]
+                    inv_var = model.inventory_cohort[node_id, prod, prod_date, state_entry_date, curr_date, state]
                     if inv_var.stale:
                         continue
 
@@ -2047,9 +2072,10 @@ class UnifiedNodeModel(BaseOptimizationModel):
 
             for node_id in model.nodes:
                 for prod in model.products:
-                    for (n, p, prod_date, curr_date, state) in model.inventory_cohort:
+                    # NEW (Phase A): inventory_cohort now uses 6-tuple format
+                    for (n, p, prod_date, state_entry_date, curr_date, state) in model.inventory_cohort:
                         if n == node_id and p == prod and curr_date == last_date:
-                            inv_qty = value(model.inventory_cohort[n, p, prod_date, curr_date, state])
+                            inv_qty = value(model.inventory_cohort[n, p, prod_date, state_entry_date, curr_date, state])
                             if inv_qty and inv_qty > 0:
                                 end_inventory_units += inv_qty
 
@@ -2238,12 +2264,19 @@ class UnifiedNodeModel(BaseOptimizationModel):
         No special cases needed!
         """
 
-        def inventory_balance_rule(model, node_id, prod, prod_date, curr_date, state):
-            """Unified inventory balance for ALL nodes.
+        def inventory_balance_rule(model, node_id, prod, prod_date, state_entry_date, curr_date, state):
+            """Unified inventory balance for ALL nodes with state_entry_date tracking.
+
+            NEW (Phase A state_entry_date architecture):
+            - Cohorts track when inventory entered current state (not just production date)
+            - Production creates inventory with state_entry_date = prod_date
+            - Arrivals create inventory with state_entry_date = curr_date (arrival date)
+            - Previous inventory carries forward with SAME state_entry_date
+            - Departures can ship from ANY state_entry_date of the departure state
 
             inventory[t] = inventory[t-1] +
-                          production (if can_manufacture and prod_date==curr_date) +
-                          arrivals_in_state +
+                          production (if can_manufacture and prod_date==curr_date and state_entry_date==prod_date) +
+                          arrivals_in_state (if state_entry_date==curr_date) +
                           state_transitions_in -
                           demand (if has_demand) -
                           departures_in_state -
@@ -2251,26 +2284,29 @@ class UnifiedNodeModel(BaseOptimizationModel):
             """
             node = self.nodes[node_id]
 
-            # Previous inventory
+            # Previous inventory (SAME state_entry_date carries forward)
             prev_date = self.date_previous.get(curr_date)
             if prev_date is None:
                 # First date: use initial inventory
-                prev_inv = self.initial_inventory.get((node_id, prod, prod_date, state), 0)
+                # NEW (Phase A): initial_inventory uses 5-tuple format
+                prev_inv = self.initial_inventory.get((node_id, prod, prod_date, state_entry_date, state), 0)
             else:
-                # Previous day's inventory for this cohort
-                if (node_id, prod, prod_date, prev_date, state) in self.cohort_index_set:
-                    prev_inv = model.inventory_cohort[node_id, prod, prod_date, prev_date, state]
+                # Previous day's inventory for this cohort (SAME state_entry_date)
+                if (node_id, prod, prod_date, state_entry_date, prev_date, state) in self.cohort_index_set:
+                    prev_inv = model.inventory_cohort[node_id, prod, prod_date, state_entry_date, prev_date, state]
                 else:
                     prev_inv = 0
 
             # Production inflow (only if node can manufacture AND prod_date == curr_date)
+            # NEW (Phase A): Production creates inventory with state_entry_date = prod_date
             # Net of changeover waste (yield loss when starting production of a product)
             production_inflow = 0
             if node.can_produce() and prod_date == curr_date:
-                # Production creates cohort with prod_date = curr_date
+                # Production creates cohort with prod_date = curr_date AND state_entry_date = prod_date
                 # State of produced product matches node's production state
                 production_state = node.get_production_state()
-                if state == production_state:
+                if state == production_state and state_entry_date == prod_date:
+                    # This cohort represents FRESH production (state_entry_date = prod_date)
                     gross_production = model.production[node_id, prod, curr_date]
 
                     # Subtract changeover waste (material lost when starting this product)
@@ -2285,17 +2321,20 @@ class UnifiedNodeModel(BaseOptimizationModel):
                     production_inflow = gross_production - changeover_waste
 
             # Arrivals: shipments arriving in this state
+            # NEW (Phase A): Arrivals create inventory with state_entry_date = curr_date (arrival date)
             arrivals = 0
-            for route in self.routes_to_node[node_id]:
-                arrival_state = self._determine_arrival_state(route, node)
+            if state_entry_date == curr_date:
+                # This cohort represents inventory that JUST ARRIVED today
+                for route in self.routes_to_node[node_id]:
+                    arrival_state = self._determine_arrival_state(route, node)
 
-                if arrival_state == state:
-                    # This shipment arrives in the current state
-                    if (route.origin_node_id, route.destination_node_id, prod, prod_date, curr_date, arrival_state) in self.shipment_cohort_index_set:
-                        arrivals += model.shipment_cohort[
-                            route.origin_node_id, route.destination_node_id,
-                            prod, prod_date, curr_date, arrival_state
-                        ]
+                    if arrival_state == state:
+                        # This shipment arrives in the current state TODAY
+                        if (route.origin_node_id, route.destination_node_id, prod, prod_date, curr_date, arrival_state) in self.shipment_cohort_index_set:
+                            arrivals += model.shipment_cohort[
+                                route.origin_node_id, route.destination_node_id,
+                                prod, prod_date, curr_date, arrival_state
+                            ]
 
             # Departures: shipments leaving from this state
             # Key insight: We ship in the state matching route transport_mode
@@ -2361,8 +2400,9 @@ class UnifiedNodeModel(BaseOptimizationModel):
             # Balance equation - CRITICAL FIX: Structure to avoid sign flips
             # Write as: inflows = inventory + outflows
             # This prevents Pyomo from negating signs when moving terms
+            # NEW (Phase A): Use 6-tuple indexing with state_entry_date
             return (prev_inv + production_inflow + arrivals + state_transitions_in ==
-                    model.inventory_cohort[node_id, prod, prod_date, curr_date, state] +
+                    model.inventory_cohort[node_id, prod, prod_date, state_entry_date, curr_date, state] +
                     demand_consumption + departures + state_transitions_out)
 
         model.inventory_balance_con = Constraint(
@@ -2430,13 +2470,20 @@ class UnifiedNodeModel(BaseOptimizationModel):
 
             if prev_date is None:
                 # First date: use initial inventory
+                # NEW (Phase A): initial_inventory uses 5-tuple format (node, prod, prod_date, state_entry_date, state)
+                # Need to sum across all state_entry_dates for each state
                 for state in ['ambient', 'frozen', 'thawed']:
-                    prev_inventory += self.initial_inventory.get((node_id, prod, prod_date, state), 0)
+                    for init_key in self.initial_inventory.keys():
+                        if (init_key[0] == node_id and init_key[1] == prod and
+                            init_key[2] == prod_date and init_key[4] == state):
+                            prev_inventory += self.initial_inventory[init_key]
             else:
                 # Sum inventory from previous day across all states
+                # NEW (Phase A): Need to sum across all state_entry_dates for each state
                 for state in ['ambient', 'frozen', 'thawed']:
-                    if (node_id, prod, prod_date, prev_date, state) in self.cohort_index_set:
-                        prev_inventory += model.inventory_cohort[node_id, prod, prod_date, prev_date, state]
+                    for (n, p, pd, sed, cd, s) in self.cohort_index_set:
+                        if n == node_id and p == prod and pd == prod_date and cd == prev_date and s == state:
+                            prev_inventory += model.inventory_cohort[n, p, pd, sed, cd, s]
 
             # Arrivals on demand date
             arrivals_on_demand_date = 0
@@ -2592,15 +2639,17 @@ class UnifiedNodeModel(BaseOptimizationModel):
                     return sum(departures_today) == 0
 
             # Previous day's ending inventory
+            # NEW (Phase A): Need to iterate over all state_entry_dates
             prev_inventory_terms = []
             for prod in model.products:
                 for prod_date in model.dates:
-                    for state in ['frozen', 'ambient', 'thawed']:
-                        inv_key = (node_id, prod, prod_date, prev_date, state)
-                        if inv_key in self.cohort_index_set:
-                            prev_inventory_terms.append(
-                                model.inventory_cohort[inv_key]
-                            )
+                    for state_entry_date in model.dates:
+                        for state in ['frozen', 'ambient', 'thawed']:
+                            inv_key = (node_id, prod, prod_date, state_entry_date, prev_date, state)
+                            if inv_key in self.cohort_index_set:
+                                prev_inventory_terms.append(
+                                    model.inventory_cohort[inv_key]
+                                )
 
             # Previous day's arrivals
             prev_arrivals_terms = []
@@ -3560,8 +3609,9 @@ class UnifiedNodeModel(BaseOptimizationModel):
                     # Dramatically reduces integer variable count while maintaining accuracy
 
                     # Filter cohort indices to only those states requiring pallet tracking
+                    # NEW (Phase A): cohort_index_set now uses 6-tuple format
                     pallet_cohort_index = [
-                        (n, p, pd, cd, s) for (n, p, pd, cd, s) in self.cohort_index_set
+                        (n, p, pd, sed, cd, s) for (n, p, pd, sed, cd, s) in self.cohort_index_set
                         if s in pallet_states
                     ]
 
@@ -3625,21 +3675,26 @@ class UnifiedNodeModel(BaseOptimizationModel):
                         node_id: str,
                         prod: str,
                         prod_date: Date,
+                        state_entry_date: Date,
                         curr_date: Date,
                         state: str
                     ) -> Constraint:
                         """Pallet count must cover inventory (ceiling constraint).
 
+                        NEW (Phase A): Now uses 6-tuple cohort format with state_entry_date.
                         For hybrid formulation: only applies to small cohorts with pallet_count variable.
                         Large cohorts (>10 pallets) use linear approximation without integer variable.
-                        """
-                        cohort = (node_id, prod, prod_date, curr_date, state)
 
-                        if cohort not in small_pallet_cohorts:
+                        NOTE: pallet_count still uses 5-tuple (no state_entry_date dimension)
+                        """
+                        cohort_6 = (node_id, prod, prod_date, state_entry_date, curr_date, state)
+                        cohort_5 = (node_id, prod, prod_date, curr_date, state)
+
+                        if cohort_6 not in small_pallet_cohorts:
                             return Constraint.Skip  # Large cohort - no pallet variable
 
-                        inv_qty = model.inventory_cohort[node_id, prod, prod_date, curr_date, state]
-                        pallet_var = model.pallet_count[node_id, prod, prod_date, curr_date, state]
+                        inv_qty = model.inventory_cohort[node_id, prod, prod_date, state_entry_date, curr_date, state]
+                        pallet_var = model.pallet_count[cohort_5]  # pallet_count uses 5-tuple
                         return pallet_var * self.UNITS_PER_PALLET >= inv_qty
 
                     model.pallet_lower_bound_con = Constraint(
@@ -3655,8 +3710,9 @@ class UnifiedNodeModel(BaseOptimizationModel):
                     print(f"    - Unit-tracked states: {sorted(set(['frozen', 'ambient', 'thawed']) - pallet_states)}")
 
                 # Add holding cost to objective (state-specific logic + hybrid formulation)
-                for (node_id, prod, prod_date, curr_date, state) in self.cohort_index_set:
-                    cohort = (node_id, prod, prod_date, curr_date, state)
+                # NEW (Phase A): cohort_index_set now includes state_entry_date (6-tuple)
+                for (node_id, prod, prod_date, state_entry_date, curr_date, state) in self.cohort_index_set:
+                    cohort = (node_id, prod, prod_date, state_entry_date, curr_date, state)
 
                     # Use pallet tracking if state is in pallet_states
                     if state in pallet_states:
@@ -3787,16 +3843,18 @@ class UnifiedNodeModel(BaseOptimizationModel):
             # End-of-horizon inventory waste (all inventory on last day is discarded)
             last_date = max(model.dates)
 
+            # NEW (Phase A): Need to iterate over all state_entry_dates
             for node_id in model.nodes:
                 for prod in model.products:
                     for prod_date in model.dates:
-                        for state in ['frozen', 'ambient', 'thawed']:
-                            if (node_id, prod, prod_date, last_date, state) in model.inventory_cohort:
-                                # Treat all end-of-horizon inventory as waste
-                                waste_cost += (
-                                    waste_multiplier * prod_cost_per_unit *
-                                    model.inventory_cohort[node_id, prod, prod_date, last_date, state]
-                                )
+                        for state_entry_date in model.dates:
+                            for state in ['frozen', 'ambient', 'thawed']:
+                                if (node_id, prod, prod_date, state_entry_date, last_date, state) in model.inventory_cohort:
+                                    # Treat all end-of-horizon inventory as waste
+                                    waste_cost += (
+                                        waste_multiplier * prod_cost_per_unit *
+                                        model.inventory_cohort[node_id, prod, prod_date, state_entry_date, last_date, state]
+                                    )
 
             print(f"  End-of-horizon waste: {waste_multiplier:.2f}× production cost per unit")
             print(f"  Combined waste cost prevents stockpiling and penalizes small batches")
