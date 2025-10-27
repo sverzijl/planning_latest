@@ -32,10 +32,12 @@ from pyomo.environ import (
     minimize, quicksum, value
 )
 
-from ..models import Location, Route, Product, CostStructure
-from ..models.truck_schedule import TruckSchedule
+from ..models import Product, CostStructure
+from ..models.unified_node import UnifiedNode
+from ..models.unified_route import UnifiedRoute, TransportMode
+from ..models.unified_truck_schedule import UnifiedTruckSchedule
 from ..models.labor_calendar import LaborCalendar
-from ..models.unified_route import TransportMode
+from ..models.forecast import Forecast
 from .base_model import BaseOptimizationModel, OptimizationResult
 
 
@@ -86,15 +88,15 @@ class SlidingWindowModel(BaseOptimizationModel):
 
     def __init__(
         self,
-        locations: List[Location],
-        routes: List[Route],
-        products: Dict[str, Product],
-        demand: Dict[Tuple[str, str, Date], float],
-        truck_schedules: List[TruckSchedule],
+        nodes: List[UnifiedNode],
+        routes: List[UnifiedRoute],
+        forecast: Forecast,
         labor_calendar: LaborCalendar,
         cost_structure: CostStructure,
+        products: Dict[str, Product],
         start_date: Date,
         end_date: Date,
+        truck_schedules: Optional[List[UnifiedTruckSchedule]] = None,
         initial_inventory: Optional[Dict[Tuple, float]] = None,
         inventory_snapshot_date: Optional[Date] = None,
         allow_shortages: bool = True,
@@ -103,16 +105,18 @@ class SlidingWindowModel(BaseOptimizationModel):
     ):
         """Initialize sliding window model.
 
+        COMPATIBLE with UnifiedNodeModel interface for easy migration.
+
         Args:
-            locations: Network locations (nodes)
-            routes: Network routes (edges)
-            products: Product dictionary {id: Product}
-            demand: Demand dictionary {(node, product, date): quantity}
-            truck_schedules: Truck departure schedules
+            nodes: List of UnifiedNode objects (same as UnifiedNodeModel)
+            routes: List of UnifiedRoute objects (same as UnifiedNodeModel)
+            forecast: Forecast object with demand entries
             labor_calendar: Labor availability and costs
             cost_structure: Cost parameters
+            products: Product dictionary {id: Product}
             start_date: Planning horizon start
             end_date: Planning horizon end (inclusive)
+            truck_schedules: Optional list of truck schedules
             initial_inventory: Initial inventory {(node, product, state): quantity}
             inventory_snapshot_date: Date of inventory snapshot
             allow_shortages: Allow unmet demand (with penalty)
@@ -121,12 +125,21 @@ class SlidingWindowModel(BaseOptimizationModel):
         """
         super().__init__()
 
-        # Store inputs
-        self.locations = {loc.id: loc for loc in locations}
+        # Store inputs (compatible with UnifiedNodeModel)
+        self.nodes = {node.id: node for node in nodes}
+        self.nodes_list = nodes
         self.routes = routes
         self.products = products
-        self.demand = demand
-        self.truck_schedules = truck_schedules
+        self.products_dict = products
+
+        # Convert forecast to demand dict
+        self.demand = {}
+        for entry in forecast.entries:
+            key = (entry.location_id, entry.product_id, entry.forecast_date)
+            self.demand[key] = self.demand.get(key, 0) + entry.quantity
+
+        self.forecast = forecast
+        self.truck_schedules = truck_schedules or []
         self.labor_calendar = labor_calendar
         self.cost_structure = cost_structure
         self.start_date = start_date
@@ -151,7 +164,7 @@ class SlidingWindowModel(BaseOptimizationModel):
         self._build_network_indices()
 
         print(f"\nSliding Window Model Initialized:")
-        print(f"  Locations: {len(self.locations)}")
+        print(f"  Nodes: {len(self.nodes)}")
         print(f"  Routes: {len(self.routes)}")
         print(f"  Products: {len(self.products)}")
         print(f"  Planning horizon: {len(self.dates)} days")
@@ -185,7 +198,7 @@ class SlidingWindowModel(BaseOptimizationModel):
             if len(key) == 2:
                 node_id, prod = key
                 # Infer state from node
-                node = self.locations.get(node_id)
+                node = self.nodes.get(node_id)
                 if node and node.supports_frozen_storage() and not node.supports_ambient_storage():
                     state = 'frozen'
                 else:
@@ -226,12 +239,12 @@ class SlidingWindowModel(BaseOptimizationModel):
 
         # Nodes by capability
         self.manufacturing_nodes = [
-            loc for loc in self.locations.values()
-            if loc.can_produce()
+            node for node in self.nodes.values()
+            if node.can_produce()
         ]
         self.demand_nodes = [
-            loc for loc in self.locations.values()
-            if loc.has_demand_capability()
+            node for node in self.nodes.values()
+            if node.has_demand_capability()
         ]
 
         print(f"  Manufacturing nodes: {len(self.manufacturing_nodes)}")
@@ -250,7 +263,7 @@ class SlidingWindowModel(BaseOptimizationModel):
         model = ConcreteModel()
 
         # Define sets
-        model.nodes = PyomoSet(initialize=list(self.locations.keys()))
+        model.nodes = PyomoSet(initialize=list(self.nodes.keys()))
         model.products = PyomoSet(initialize=list(self.products.keys()))
         model.dates = PyomoSet(initialize=self.dates, ordered=True)
         model.states = PyomoSet(initialize=['ambient', 'frozen', 'thawed'])
@@ -295,7 +308,7 @@ class SlidingWindowModel(BaseOptimizationModel):
         # STATE-BASED INVENTORY VARIABLES (NEW - replaces inventory_cohort)
         # I[node, product, state, t] - end-of-day inventory in each state
         inventory_index = []
-        for node_id, node in self.locations.items():
+        for node_id, node in self.nodes.items():
             if not node.capabilities.can_store:
                 continue
             for prod in model.products:
@@ -317,7 +330,7 @@ class SlidingWindowModel(BaseOptimizationModel):
         # STATE TRANSITION VARIABLES (NEW - enables freeze/thaw flows)
         transition_index = [
             (node_id, prod, t)
-            for node_id, node in self.locations.items()
+            for node_id, node in self.nodes.items()
             for prod in model.products
             for t in model.dates
         ]
@@ -359,7 +372,7 @@ class SlidingWindowModel(BaseOptimizationModel):
         # PALLET VARIABLES (optional - for storage costs)
         if self.use_pallet_tracking:
             pallet_index = []
-            for node_id, node in self.locations.items():
+            for node_id, node in self.nodes.items():
                 if not node.capabilities.can_store:
                     continue
                 for prod in model.products:
@@ -473,7 +486,7 @@ class SlidingWindowModel(BaseOptimizationModel):
         # AMBIENT shelf life: 17 days
         def ambient_shelf_life_rule(model, node_id, prod, t):
             """Outflows in 17-day window <= inflows in same window."""
-            node = self.locations[node_id]
+            node = self.nodes[node_id]
             if not node.supports_ambient_storage():
                 return Constraint.Skip
 
@@ -525,7 +538,7 @@ class SlidingWindowModel(BaseOptimizationModel):
             return O_ambient <= Q_ambient
 
         model.ambient_shelf_life_con = Constraint(
-            [(n, p, t) for n, node in self.locations.items()
+            [(n, p, t) for n, node in self.nodes.items()
              if node.supports_ambient_storage()
              for p in model.products for t in model.dates],
             rule=ambient_shelf_life_rule,
@@ -535,7 +548,7 @@ class SlidingWindowModel(BaseOptimizationModel):
         # FROZEN shelf life: 120 days (similar structure)
         def frozen_shelf_life_rule(model, node_id, prod, t):
             """Outflows in 120-day window <= inflows in same window."""
-            node = self.locations[node_id]
+            node = self.nodes[node_id]
             if not node.supports_frozen_storage():
                 return Constraint.Skip
 
@@ -565,7 +578,7 @@ class SlidingWindowModel(BaseOptimizationModel):
             return O_frozen <= Q_frozen
 
         model.frozen_shelf_life_con = Constraint(
-            [(n, p, t) for n, node in self.locations.items()
+            [(n, p, t) for n, node in self.nodes.items()
              if node.supports_frozen_storage()
              for p in model.products for t in model.dates],
             rule=frozen_shelf_life_rule,
@@ -575,7 +588,7 @@ class SlidingWindowModel(BaseOptimizationModel):
         # THAWED shelf life: 14 days
         def thawed_shelf_life_rule(model, node_id, prod, t):
             """Outflows in 14-day window <= inflows in same window."""
-            node = self.locations[node_id]
+            node = self.nodes[node_id]
             if not node.supports_ambient_storage():  # Thawed only at ambient nodes
                 return Constraint.Skip
 
@@ -596,7 +609,7 @@ class SlidingWindowModel(BaseOptimizationModel):
             return O_thawed <= Q_thawed
 
         model.thawed_shelf_life_con = Constraint(
-            [(n, p, t) for n, node in self.locations.items()
+            [(n, p, t) for n, node in self.nodes.items()
              if node.supports_ambient_storage()
              for p in model.products for t in model.dates],
             rule=thawed_shelf_life_rule,
@@ -604,29 +617,40 @@ class SlidingWindowModel(BaseOptimizationModel):
         )
 
         shelf_life_constraints = (
-            len([n for n, node in self.locations.items() if node.supports_ambient_storage()]) * len(list(model.products)) * len(list(model.dates)) +
-            len([n for n, node in self.locations.items() if node.supports_frozen_storage()]) * len(list(model.products)) * len(list(model.dates)) +
-            len([n for n, node in self.locations.items() if node.supports_ambient_storage()]) * len(list(model.products)) * len(list(model.dates))
+            len([n for n, node in self.nodes.items() if node.supports_ambient_storage()]) * len(list(model.products)) * len(list(model.dates)) +
+            len([n for n, node in self.nodes.items() if node.supports_frozen_storage()]) * len(list(model.products)) * len(list(model.dates)) +
+            len([n for n, node in self.nodes.items() if node.supports_ambient_storage()]) * len(list(model.products)) * len(list(model.dates))
         )
         print(f"  Shelf life window constraints: {shelf_life_constraints:,}")
-        print(f"    Ambient (17d): ~{len([n for n in self.locations if self.locations[n].supports_ambient_storage()]) * len(list(model.products)) * len(list(model.dates)):,}")
-        print(f"    Frozen (120d): ~{len([n for n in self.locations if self.locations[n].supports_frozen_storage()]) * len(list(model.products)) * len(list(model.dates)):,}")
-        print(f"    Thawed (14d): ~{len([n for n in self.locations if self.locations[n].supports_ambient_storage()]) * len(list(model.products)) * len(list(model.dates)):,}")
+        print(f"    Ambient (17d): ~{len([n for n in self.nodes if self.nodes[n].supports_ambient_storage()]) * len(list(model.products)) * len(list(model.dates)):,}")
+        print(f"    Frozen (120d): ~{len([n for n in self.nodes if self.nodes[n].supports_frozen_storage()]) * len(list(model.products)) * len(list(model.dates)):,}")
+        print(f"    Thawed (14d): ~{len([n for n in self.nodes if self.nodes[n].supports_ambient_storage()]) * len(list(model.products)) * len(list(model.dates)):,}")
 
-    def _determine_arrival_state(self, route: Route, dest_node: Location) -> str:
+    def _determine_arrival_state(self, route: UnifiedRoute, dest_node: UnifiedNode) -> str:
         """Determine what state inventory arrives in at destination.
 
-        Copied from UnifiedNodeModel for compatibility.
+        Implements simplified state transition rules:
+        - Ambient transport + Ambient node → ambient (no change)
+        - Ambient transport + Frozen node → frozen (freeze on arrival)
+        - Frozen transport + Frozen node → frozen (no change)
+        - Frozen transport + Ambient node → thawed (thaw on arrival, 14d shelf life starts!)
+
+        Copied exactly from UnifiedNodeModel._determine_arrival_state
         """
         if route.transport_mode == TransportMode.FROZEN:
+            # Frozen route
             if dest_node.supports_frozen_storage():
-                return 'frozen'
-            elif dest_node.thaws_on_arrival:
-                return 'thawed'
+                return 'frozen'  # Stays frozen
             else:
-                return 'ambient'
+                # Destination is ambient-only → must thaw
+                return 'thawed'  # Critical: 6130 (WA) receives as 'thawed', 14-day clock starts!
         else:
-            return 'ambient'
+            # Ambient route
+            if dest_node.supports_ambient_storage():
+                return 'ambient'  # Stays ambient
+            else:
+                # Destination is frozen-only → freeze on arrival
+                return 'frozen'
 
     def _add_state_balance(self, model: ConcreteModel):
         """Add state balance equations (material conservation per SKU, per state).
@@ -657,7 +681,7 @@ class SlidingWindowModel(BaseOptimizationModel):
         # AMBIENT STATE BALANCE
         def ambient_balance_rule(model, node_id, prod, t):
             """Material balance for ambient state."""
-            node = self.locations[node_id]
+            node = self.nodes[node_id]
             if not node.supports_ambient_storage():
                 return Constraint.Skip
 
@@ -723,7 +747,7 @@ class SlidingWindowModel(BaseOptimizationModel):
             )
 
         model.ambient_balance_con = Constraint(
-            [(n, p, t) for n, node in self.locations.items()
+            [(n, p, t) for n, node in self.nodes.items()
              if node.supports_ambient_storage()
              for p in model.products for t in model.dates],
             rule=ambient_balance_rule,
@@ -733,7 +757,7 @@ class SlidingWindowModel(BaseOptimizationModel):
         # FROZEN STATE BALANCE
         def frozen_balance_rule(model, node_id, prod, t):
             """Material balance for frozen state."""
-            node = self.locations[node_id]
+            node = self.nodes[node_id]
             if not node.supports_frozen_storage():
                 return Constraint.Skip
 
@@ -788,7 +812,7 @@ class SlidingWindowModel(BaseOptimizationModel):
             )
 
         model.frozen_balance_con = Constraint(
-            [(n, p, t) for n, node in self.locations.items()
+            [(n, p, t) for n, node in self.nodes.items()
              if node.supports_frozen_storage()
              for p in model.products for t in model.dates],
             rule=frozen_balance_rule,
@@ -798,7 +822,7 @@ class SlidingWindowModel(BaseOptimizationModel):
         # THAWED STATE BALANCE
         def thawed_balance_rule(model, node_id, prod, t):
             """Material balance for thawed state."""
-            node = self.locations[node_id]
+            node = self.nodes[node_id]
             if not node.supports_ambient_storage():
                 return Constraint.Skip
 
@@ -850,7 +874,7 @@ class SlidingWindowModel(BaseOptimizationModel):
             )
 
         model.thawed_balance_con = Constraint(
-            [(n, p, t) for n, node in self.locations.items()
+            [(n, p, t) for n, node in self.nodes.items()
              if node.supports_ambient_storage()
              for p in model.products for t in model.dates],
             rule=thawed_balance_rule,
@@ -858,14 +882,11 @@ class SlidingWindowModel(BaseOptimizationModel):
         )
 
         balance_constraints = (
-            len([n for n in self.locations if self.locations[n].supports_ambient_storage()]) * len(list(model.products)) * len(list(model.dates)) +
-            len([n for n in self.locations if self.locations[n].supports_frozen_storage()]) * len(list(model.products)) * len(list(model.dates)) +
-            len([n for n in self.locations if self.locations[n].supports_ambient_storage()]) * len(list(model.products)) * len(list(model.dates))
+            len([n for n, node in self.nodes.items() if node.supports_ambient_storage()]) * len(list(model.products)) * len(list(model.dates)) +
+            len([n for n, node in self.nodes.items() if node.supports_frozen_storage()]) * len(list(model.products)) * len(list(model.dates)) +
+            len([n for n, node in self.nodes.items() if node.supports_ambient_storage()]) * len(list(model.products)) * len(list(model.dates))
         )
         print(f"  State balance constraints: {balance_constraints:,}")
-        print(f"    Ambient: ~{len([n for n in self.locations if self.locations[n].supports_ambient_storage()]) * len(list(model.products)) * len(list(model.dates)):,}")
-        print(f"    Frozen: ~{len([n for n in self.locations if self.locations[n].supports_frozen_storage()]) * len(list(model.products)) * len(list(model.dates)):,}")
-        print(f"    Thawed: ~{len([n for n in self.locations if self.locations[n].supports_ambient_storage()]) * len(list(model.products)) * len(list(model.dates)):,}")
 
     def _add_demand_satisfaction(self, model: ConcreteModel):
         """Add demand satisfaction constraints.
