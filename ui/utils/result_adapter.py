@@ -86,9 +86,15 @@ def _create_production_schedule(
     """Convert optimization solution to ProductionSchedule object."""
 
     # Get manufacturing site ID from unified model
-    if hasattr(model, 'manufacturing_nodes'):
-        # UnifiedNodeModel
-        manufacturing_site_id = list(model.manufacturing_nodes)[0]
+    if hasattr(model, 'manufacturing_nodes') and model.manufacturing_nodes:
+        # Both UnifiedNodeModel and SlidingWindowModel have manufacturing_nodes
+        # It's a list of UnifiedNode objects - need to get the ID
+        first_mfg_node = list(model.manufacturing_nodes)[0]
+        # Extract ID (handle both object and string)
+        if isinstance(first_mfg_node, str):
+            manufacturing_site_id = first_mfg_node
+        else:
+            manufacturing_site_id = first_mfg_node.id  # UnifiedNode object
     else:
         manufacturing_site_id = "6122"  # Fallback
 
