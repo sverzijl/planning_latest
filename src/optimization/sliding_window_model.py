@@ -1764,8 +1764,37 @@ class SlidingWindowModel(BaseOptimizationModel):
             end_date=self.end_date
         )
 
+        # Create batches from initial inventory FIRST
+        if self.initial_inventory:
+            for (node_id, product_id, state), qty in self.initial_inventory.items():
+                if qty > 0:
+                    # Create batch for initial inventory
+                    # Use a date well before planning start to ensure FEFO uses these last
+                    from src.analysis.fefo_batch_allocator import Batch
+                    import uuid
+
+                    # Production date unknown for initial inventory
+                    # Use snapshot date as production date (conservative - treats as fresh)
+                    # This prevents showing "future" dates or very old dates
+
+                    batch = Batch(
+                        id=f"INIT-{node_id}_{product_id}_{state}_{uuid.uuid4().hex[:8]}",
+                        product_id=product_id,
+                        manufacturing_site_id='INITIAL-INV',  # Mark as initial inventory
+                        production_date=self.start_date,  # Use snapshot date
+                        state_entry_date=self.start_date,  # Entered state at snapshot
+                        current_state=state,
+                        quantity=qty,
+                        initial_quantity=qty,
+                        location_id=node_id,
+                        initial_state=state
+                    )
+
+                    allocator.batches.append(batch)
+                    allocator.batch_inventory[(node_id, product_id, state)].append(batch)
+
         # Create batches from production
-        batches = allocator.create_batches_from_production(self.solution)
+        production_batches = allocator.create_batches_from_production(self.solution)
 
         # Process shipments in chronological order
         shipments_by_route = self.solution.get('shipments_by_route_product_date', {})
