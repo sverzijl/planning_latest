@@ -169,7 +169,8 @@ class FEFOBatchAllocator:
         product_id: str,
         state: str,
         quantity: float,
-        delivery_date: Date
+        delivery_date: Date,
+        use_weighted_age: bool = False
     ) -> List[Dict]:
         """Allocate shipment quantity from available batches using FEFO policy.
 
@@ -188,8 +189,20 @@ class FEFOBatchAllocator:
         inv_key = (origin_node, product_id, state)
         available_batches = self.batch_inventory.get(inv_key, [])
 
-        # Sort by state_entry_date (oldest first for FEFO)
-        sorted_batches = sorted(available_batches, key=lambda b: b.state_entry_date)
+        # Sort by age - weighted if requested, calendar age otherwise
+        if use_weighted_age:
+            # Import weighted age calculation
+            from src.analysis.lp_fefo_allocator import calculate_weighted_age_from_batch
+
+            # Sort by weighted age at delivery (oldest weighted age first)
+            sorted_batches = sorted(
+                available_batches,
+                key=lambda b: calculate_weighted_age_from_batch(b, delivery_date),
+                reverse=True  # Highest weighted age first (oldest)
+            )
+        else:
+            # Sort by state_entry_date (oldest first for traditional FEFO)
+            sorted_batches = sorted(available_batches, key=lambda b: b.state_entry_date)
 
         # Allocate from oldest batches
         allocations = []

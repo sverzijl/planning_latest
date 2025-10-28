@@ -1810,55 +1810,30 @@ class SlidingWindowModel(BaseOptimizationModel):
         # Create all production batches first
         production_batches = allocator.create_batches_from_production(self.solution)
 
-        # Process based on allocation method
-        if method == 'lp':
-            # LP OPTIMIZATION: Solve for optimal batch-to-shipment allocation
-            logger.info("Using LP FEFO with state-aware weighted aging")
+        # Determine if using weighted age (LP method uses weighted age in greedy for scalability)
+        use_weighted_age = (method == 'lp')
 
-            from src.analysis.lp_fefo_allocator import LPFEFOAllocator
+        if use_weighted_age:
+            logger.info("Using weighted-age FEFO (state-aware: frozen ages 7× slower)")
+        else:
+            logger.info("Using calendar-age FEFO (chronological, oldest first)")
 
-            # Prepare shipment list for LP
-            shipment_list = []
-            for (origin, dest, prod, delivery_date), qty in sorted(shipments_by_route.items(), key=lambda x: x[0][3]):
-                route = next((r for r in self.routes
-                             if r.origin_node_id == origin and r.destination_node_id == dest), None)
-                state = 'ambient'  # Simplified
-                shipment_list.append((origin, dest, prod, state, qty, delivery_date))
+        # GREEDY with optional weighted age sorting
+        # Process shipments chronologically, allocate using weighted or calendar age
+        for (origin, dest, prod, delivery_date), qty in sorted(shipments_by_route.items(), key=lambda x: x[0][3]):
+            route = next((r for r in self.routes
+                         if r.origin_node_id == origin and r.destination_node_id == dest), None)
+            state = 'ambient'
 
-            # Run LP optimization
-            lp_allocator = LPFEFOAllocator(
-                batches=allocator.batches,
-                shipments=shipment_list
+            allocator.allocate_shipment(
+                origin_node=origin,
+                destination_node=dest,
+                product_id=prod,
+                state=state,
+                quantity=qty,
+                delivery_date=delivery_date,
+                use_weighted_age=use_weighted_age  # LP uses weighted age for sorting
             )
-
-            lp_result = lp_allocator.optimize_allocation()
-
-            if lp_result:
-                logger.info(f"LP FEFO solved: objective={lp_result['objective_value']:.4f}, time={lp_result['solve_time']:.2f}s")
-
-                # Apply LP allocations to batches
-                lp_allocator.apply_lp_allocation(lp_result, allocator)
-            else:
-                logger.warning("LP FEFO failed, falling back to greedy")
-                method = 'greedy'  # Fallback
-
-        if method == 'greedy':
-            # GREEDY: Process events chronologically
-            logger.info("Using greedy FEFO (chronological, oldest-first)")
-
-            for (origin, dest, prod, delivery_date), qty in sorted(shipments_by_route.items(), key=lambda x: x[0][3]):
-                route = next((r for r in self.routes
-                             if r.origin_node_id == origin and r.destination_node_id == dest), None)
-                state = 'ambient'
-
-                allocator.allocate_shipment(
-                    origin_node=origin,
-                    destination_node=dest,
-                    product_id=prod,
-                    state=state,
-                    quantity=qty,
-                    delivery_date=delivery_date
-                )
 
         # Process state transitions (both methods)
         for (node_id, prod, freeze_date), qty in sorted(freeze_flows.items(), key=lambda x: x[0][2]):
