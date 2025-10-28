@@ -1435,6 +1435,17 @@ class SlidingWindowModel(BaseOptimizationModel):
         solution['production_by_date_product'] = production_by_date_product
         solution['total_production'] = sum(production_by_date_product.values())
 
+        # Create production_batches list for UI compatibility
+        production_batches = []
+        for (node_id, prod, t), qty in production_by_date_product.items():
+            production_batches.append({
+                'node': node_id,
+                'product': prod,
+                'date': t,
+                'quantity': qty
+            })
+        solution['production_batches'] = production_batches
+
         # Extract inventory by state
         inventory_by_state = {}
         if hasattr(model, 'inventory'):
