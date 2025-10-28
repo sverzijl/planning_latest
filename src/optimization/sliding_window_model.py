@@ -510,7 +510,17 @@ class SlidingWindowModel(BaseOptimizationModel):
             doc="Total labor hours used for production"
         )
 
-        print(f"  Labor variables: {len(labor_index)}")
+        # Overtime hours (for proper weekday cost model)
+        # overtime_hours >= 0 and overtime_hours >= hours_used - fixed_hours
+        # Minimization sets overtime_hours = max(0, hours_used - fixed_hours)
+        model.overtime_hours = Var(
+            labor_index,
+            within=NonNegativeReals,
+            bounds=(0, 2),  # Max 2h overtime per weekday
+            doc="Overtime hours (hours beyond fixed hours on weekdays)"
+        )
+
+        print(f"  Labor variables: {len(labor_index)} (hours + overtime)")
 
         # Mix count variables (integer production batches)
         mix_index = []
@@ -1155,6 +1165,31 @@ class SlidingWindowModel(BaseOptimizationModel):
         )
         print(f"    Production capacity constraints added")
 
+        # OVERTIME DETECTION: overtime_hours >= hours_used - fixed_hours (for weekdays)
+        if hasattr(model, 'overtime_hours'):
+            def overtime_detection_rule(model, node_id, t):
+                """Detect overtime hours on weekdays: overtime >= hours - fixed."""
+                labor_day = self.labor_calendar.get_labor_day(t)
+                if not labor_day:
+                    return Constraint.Skip
+
+                fixed_hours = labor_day.fixed_hours if hasattr(labor_day, 'fixed_hours') else 0
+
+                if fixed_hours > 0:
+                    # Weekday: overtime >= hours_used - fixed_hours
+                    # Minimization sets overtime = max(0, hours_used - fixed_hours)
+                    return model.overtime_hours[node_id, t] >= model.labor_hours_used[node_id, t] - fixed_hours
+                else:
+                    # Weekend: no overtime concept (all hours are non_fixed)
+                    return model.overtime_hours[node_id, t] == 0
+
+            model.overtime_detection_con = Constraint(
+                [(node.id, t) for node in self.manufacturing_nodes for t in model.dates],
+                rule=overtime_detection_rule,
+                doc="Overtime detection: overtime >= hours - fixed (weekdays only)"
+            )
+            print(f"    Overtime detection constraints added")
+
     def _add_changeover_detection(self, model: ConcreteModel):
         """Add changeover detection constraints (start tracking)."""
         print(f"\n  Adding changeover detection...")
@@ -1315,15 +1350,26 @@ class SlidingWindowModel(BaseOptimizationModel):
             )
             print(f"  Shortage penalty: ${penalty:.2f}/unit")
 
-        # LABOR COST (simplified - regular rate)
+        # LABOR COST (piecewise: fixed hours FREE, overtime/weekend charged)
         labor_cost = 0
-        if hasattr(model, 'labor_hours_used'):
+        if hasattr(model, 'labor_hours_used') and hasattr(model, 'overtime_hours'):
             for (node_id, t) in model.labor_hours_used:
                 labor_day = self.labor_calendar.get_labor_day(t)
                 if labor_day:
-                    rate = labor_day.regular_rate if hasattr(labor_day, 'regular_rate') else 20.0
-                    labor_cost += rate * model.labor_hours_used[node_id, t]
-            print(f"  Labor cost: hours × rate")
+                    fixed_hours = labor_day.fixed_hours if hasattr(labor_day, 'fixed_hours') else 0
+
+                    if fixed_hours > 0:
+                        # Weekday: Fixed hours (0-12h) are FREE (sunk cost)
+                        # Only overtime (>12h) costs money
+                        # Use overtime_hours variable (properly bounded >= 0)
+                        overtime_rate = labor_day.overtime_rate if hasattr(labor_day, 'overtime_rate') else 660.0
+                        labor_cost += overtime_rate * model.overtime_hours[node_id, t]
+                    else:
+                        # Weekend/holiday: ALL hours charged at non_fixed_rate
+                        non_fixed_rate = labor_day.non_fixed_rate if hasattr(labor_day, 'non_fixed_rate') else 1320.0
+                        labor_cost += non_fixed_rate * model.labor_hours_used[node_id, t]
+
+            print(f"  Labor cost: Weekday overtime ($660/h) + Weekend ($1320/h), fixed hours FREE")
 
         # TRANSPORT COST (per-route costs)
         transport_cost = 0
