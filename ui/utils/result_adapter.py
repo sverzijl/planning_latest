@@ -295,9 +295,12 @@ def _create_truck_plan_from_optimization(model: Any, shipments: List[Shipment]) 
         # Handle departure_type - might be DepartureType enum or string
         departure_type_str = truck_schedule.departure_type.value if hasattr(truck_schedule.departure_type, 'value') else truck_schedule.departure_type
 
+        # Get truck name (handle both TruckSchedule and UnifiedTruckSchedule)
+        truck_name = truck_schedule.truck_name if hasattr(truck_schedule, 'truck_name') else truck_schedule.id
+
         truck_load = TruckLoad(
             truck_schedule_id=truck_schedule.id,
-            truck_name=truck_schedule.truck_name,
+            truck_name=truck_name,
             departure_date=departure_date,
             departure_type=departure_type_str,
             departure_time=truck_schedule.departure_time,
