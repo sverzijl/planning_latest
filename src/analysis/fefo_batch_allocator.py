@@ -38,6 +38,8 @@ class Batch:
     initial_quantity: float
     location_id: str
     initial_state: str = field(default='ambient')
+    location_history: Dict[Date, str] = field(default_factory=dict)
+    quantity_history: Dict[Date, float] = field(default_factory=dict)
 
     def age_in_state(self, current_date: Date) -> int:
         """Calculate age in current state."""
@@ -46,6 +48,35 @@ class Batch:
     def total_age(self, current_date: Date) -> int:
         """Calculate total age since production."""
         return (current_date - self.production_date).days
+
+    def get_location_on_date(self, check_date: Date) -> Optional[str]:
+        """Get batch location on a specific date."""
+        if check_date in self.location_history:
+            return self.location_history[check_date]
+
+        # Find most recent date before or on check_date
+        valid_dates = [d for d in self.location_history.keys() if d <= check_date]
+        if valid_dates:
+            return self.location_history[max(valid_dates)]
+
+        return self.location_id  # Fallback to current
+
+    def get_quantity_on_date(self, check_date: Date) -> float:
+        """Get batch quantity on a specific date."""
+        if check_date in self.quantity_history:
+            return self.quantity_history[check_date]
+
+        # Find most recent date before or on check_date
+        valid_dates = [d for d in self.quantity_history.keys() if d <= check_date]
+        if valid_dates:
+            return self.quantity_history[max(valid_dates)]
+
+        return self.quantity  # Fallback to current
+
+    def record_snapshot(self, snapshot_date: Date):
+        """Record current location and quantity for a date."""
+        self.location_history[snapshot_date] = self.location_id
+        self.quantity_history[snapshot_date] = self.quantity
 
 
 class FEFOBatchAllocator:
@@ -119,6 +150,9 @@ class FEFOBatchAllocator:
                 initial_state=initial_state
             )
 
+            # Record initial location and quantity on production date
+            batch.record_snapshot(prod_date)
+
             batches.append(batch)
             self.batches.append(batch)
 
@@ -184,6 +218,7 @@ class FEFOBatchAllocator:
             batch.quantity -= allocated_qty
             remaining_to_allocate -= allocated_qty
 
+            # Record location AFTER shipment (on delivery_date)
             # Update batch location (move to destination)
             # Remove from origin inventory
             if batch in self.batch_inventory[inv_key]:
@@ -191,6 +226,9 @@ class FEFOBatchAllocator:
 
             # Update location
             batch.location_id = destination_node
+
+            # Record snapshot at delivery (batch now at destination)
+            batch.record_snapshot(delivery_date)
 
             # Add to destination inventory (only if quantity remains)
             dest_inv_key = (destination_node, product_id, state)

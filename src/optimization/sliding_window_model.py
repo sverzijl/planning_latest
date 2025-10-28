@@ -1764,25 +1764,26 @@ class SlidingWindowModel(BaseOptimizationModel):
             end_date=self.end_date
         )
 
-        # Create batches from initial inventory FIRST
+        # Process events DAY BY DAY to build accurate location history
+        # Group all events by date
+        production_events = self.solution.get('production_by_date_product', {})
+        shipments_by_route = self.solution.get('shipments_by_route_product_date', {})
+        freeze_flows = self.solution.get('freeze_flows', {})
+        thaw_flows = self.solution.get('thaw_flows', {})
+
+        # Create batches from initial inventory (at start_date)
         if self.initial_inventory:
             for (node_id, product_id, state), qty in self.initial_inventory.items():
                 if qty > 0:
-                    # Create batch for initial inventory
-                    # Use a date well before planning start to ensure FEFO uses these last
                     from src.analysis.fefo_batch_allocator import Batch
                     import uuid
 
-                    # Production date unknown for initial inventory
-                    # Use snapshot date as production date (conservative - treats as fresh)
-                    # This prevents showing "future" dates or very old dates
-
                     batch = Batch(
-                        id=f"INIT_{product_id[:15]}_{state}_{uuid.uuid4().hex[:6]}",  # No location in ID
+                        id=f"INIT_{product_id[:15]}_{state}_{uuid.uuid4().hex[:6]}",
                         product_id=product_id,
-                        manufacturing_site_id=node_id,  # Original location (for tracking)
-                        production_date=self.start_date,  # Use snapshot date
-                        state_entry_date=self.start_date,  # Entered state at snapshot
+                        manufacturing_site_id=node_id,
+                        production_date=self.start_date,
+                        state_entry_date=self.start_date,
                         current_state=state,
                         quantity=qty,
                         initial_quantity=qty,
@@ -1790,51 +1791,61 @@ class SlidingWindowModel(BaseOptimizationModel):
                         initial_state=state
                     )
 
+                    # Record initial snapshot
+                    batch.record_snapshot(self.start_date)
+
                     allocator.batches.append(batch)
                     allocator.batch_inventory[(node_id, product_id, state)].append(batch)
 
-        # Create batches from production
-        production_batches = allocator.create_batches_from_production(self.solution)
+        # Process each date in order
+        current_date = self.start_date
+        while current_date <= self.end_date:
+            # 1. Production events on this date
+            for (node_id, product_id, prod_date), qty in production_events.items():
+                if prod_date == current_date:
+                    # Create batch via allocator (records production_date snapshot)
+                    allocator.create_batches_from_production({
+                        'production_by_date_product': {(node_id, product_id, prod_date): qty}
+                    })
 
-        # Process shipments in chronological order
-        shipments_by_route = self.solution.get('shipments_by_route_product_date', {})
-        for (origin, dest, prod, delivery_date), qty in sorted(shipments_by_route.items(), key=lambda x: x[0][3]):
-            # Determine state from route
-            route = next((r for r in self.routes
-                         if r.origin_node_id == origin and r.destination_node_id == dest), None)
-            state = 'ambient'  # Simplified - would need transport mode from route
+            # 2. Shipments arriving on this date
+            for (origin, dest, prod, delivery_date), qty in shipments_by_route.items():
+                if delivery_date == current_date:
+                    route = next((r for r in self.routes
+                                 if r.origin_node_id == origin and r.destination_node_id == dest), None)
+                    state = 'ambient'
 
-            allocator.allocate_shipment(
-                origin_node=origin,
-                destination_node=dest,
-                product_id=prod,
-                state=state,
-                quantity=qty,
-                delivery_date=delivery_date
-            )
+                    allocator.allocate_shipment(
+                        origin_node=origin,
+                        destination_node=dest,
+                        product_id=prod,
+                        state=state,
+                        quantity=qty,
+                        delivery_date=delivery_date
+                    )
 
-        # Process state transitions
-        freeze_flows = self.solution.get('freeze_flows', {})
-        for (node_id, prod, freeze_date), qty in sorted(freeze_flows.items(), key=lambda x: x[0][2]):
-            allocator.apply_freeze_transition(
-                node_id=node_id,
-                product_id=prod,
-                quantity=qty,
-                freeze_date=freeze_date
-            )
+            # 3. State transitions on this date
+            for (node_id, prod, freeze_date), qty in freeze_flows.items():
+                if freeze_date == current_date:
+                    allocator.apply_freeze_transition(node_id, prod, qty, freeze_date)
 
-        thaw_flows = self.solution.get('thaw_flows', {})
-        for (node_id, prod, thaw_date), qty in sorted(thaw_flows.items(), key=lambda x: x[0][2]):
-            allocator.apply_thaw_transition(
-                node_id=node_id,
-                product_id=prod,
-                quantity=qty,
-                thaw_date=thaw_date
-            )
+            for (node_id, prod, thaw_date), qty in thaw_flows.items():
+                if thaw_date == current_date:
+                    allocator.apply_thaw_transition(node_id, prod, qty, thaw_date)
+
+            # 4. Take snapshot of ALL batches at end of day
+            for batch in allocator.batches:
+                batch.record_snapshot(current_date)
+
+            current_date += timedelta(days=1)
 
         # Convert batches to serializable dicts
         batch_dicts = []
         for batch in allocator.batches:
+            # Convert location_history dates to ISO strings
+            location_history_iso = {d.isoformat(): loc for d, loc in batch.location_history.items()}
+            quantity_history_iso = {d.isoformat(): qty for d, qty in batch.quantity_history.items()}
+
             batch_dicts.append({
                 'id': batch.id,
                 'product_id': batch.product_id,
@@ -1846,6 +1857,8 @@ class SlidingWindowModel(BaseOptimizationModel):
                 'initial_quantity': batch.initial_quantity,
                 'location_id': batch.location_id,
                 'initial_state': batch.initial_state,
+                'location_history': location_history_iso,  # Full path through network!
+                'quantity_history': quantity_history_iso,  # Quantity at each date
             })
 
         # Return batch detail (as serializable dicts)

@@ -477,29 +477,50 @@ class DailySnapshotGenerator:
                 fefo_batches = self.model_solution.get('fefo_batches', [])
 
             if fefo_batches:
-                # Use FEFO batches for accurate production dates and ages
-                # Find batches at this location on this date
+                # Use FEFO batches with location history for accurate tracking
+                # Find batches that were AT THIS LOCATION ON THIS DATE
                 for batch in fefo_batches:
                     # Handle both Batch objects and dicts
                     if isinstance(batch, dict):
                         batch_id = batch['id']
                         product_id = batch['product_id']
-                        quantity = batch['quantity']
-                        location_id_batch = batch['location_id']
                         current_state = batch['current_state']
-                        # Parse ISO date string
                         from datetime import datetime
                         production_date = datetime.fromisoformat(batch['production_date']).date()
+
+                        # Get location and quantity on snapshot_date from history
+                        location_history = batch.get('location_history', {})
+                        quantity_history = batch.get('quantity_history', {})
+
+                        # Find location on snapshot_date
+                        snapshot_date_iso = snapshot_date.isoformat()
+                        if snapshot_date_iso in location_history:
+                            location_id_batch = location_history[snapshot_date_iso]
+                            quantity = quantity_history.get(snapshot_date_iso, batch['quantity'])
+                        else:
+                            # Find most recent date before snapshot_date
+                            valid_dates = [d for d in location_history.keys() if d <= snapshot_date_iso]
+                            if valid_dates:
+                                most_recent = max(valid_dates)
+                                location_id_batch = location_history[most_recent]
+                                quantity = quantity_history.get(most_recent, batch['quantity'])
+                            else:
+                                continue  # Batch doesn't exist yet on this date
                     else:
                         # Batch object
                         batch_id = batch.id
                         product_id = batch.product_id
-                        quantity = batch.quantity
-                        location_id_batch = batch.location_id
                         current_state = batch.current_state
                         production_date = batch.production_date
 
-                    # Filter by location
+                        # Use methods to get location/quantity on date
+                        location_id_batch = batch.get_location_on_date(snapshot_date)
+                        quantity = batch.get_quantity_on_date(snapshot_date)
+
+                        if location_id_batch is None:
+                            continue  # Batch doesn't exist on this date
+
+                    # Filter by location AND check quantity > 0 on this date
                     if location_id_batch == location_id and quantity > 0.01:
                         # Calculate age
                         age_days = (snapshot_date - production_date).days
@@ -507,9 +528,9 @@ class DailySnapshotGenerator:
                         batch_inv = BatchInventory(
                             batch_id=batch_id,
                             product_id=product_id,
-                            quantity=quantity,
-                            production_date=production_date,  # Accurate!
-                            age_days=age_days,  # Accurate!
+                            quantity=quantity,  # Quantity on THIS date
+                            production_date=production_date,
+                            age_days=age_days,
                             state=current_state
                         )
                         loc_inv.add_batch(batch_inv)
