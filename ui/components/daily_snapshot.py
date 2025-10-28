@@ -114,8 +114,10 @@ def render_daily_snapshot(
             key=f"{key_prefix}_date_slider"
         )
 
-        # Update session state
-        st.session_state[session_key] = selected_date
+        # Check if date changed and force rerun
+        if selected_date != st.session_state[session_key]:
+            st.session_state[session_key] = selected_date
+            st.rerun()  # Force refresh when slider moves
 
     with col2:
         # Quick navigation buttons
