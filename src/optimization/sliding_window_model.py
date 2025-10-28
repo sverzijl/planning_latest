@@ -1283,8 +1283,23 @@ class SlidingWindowModel(BaseOptimizationModel):
 
         # TRUCK CAPACITY: Sum of pallet loads <= 44 pallets
         def truck_capacity_rule(model, truck_idx, departure_date):
-            """Total pallets on this specific truck departure <= 44 pallets."""
+            """Total pallets on this specific truck departure <= 44 pallets.
+
+            Only applies on days when this truck actually operates.
+            """
             truck = self.truck_schedules[truck_idx]
+
+            # Check if truck operates on this day of week
+            day_of_week_map = {
+                0: 'monday', 1: 'tuesday', 2: 'wednesday', 3: 'thursday',
+                4: 'friday', 5: 'saturday', 6: 'sunday'
+            }
+            actual_day_of_week = day_of_week_map[departure_date.weekday()]
+
+            # Skip if truck doesn't operate on this day
+            if truck.day_of_week.lower() != actual_day_of_week:
+                return Constraint.Skip
+
             truck_dest = truck.destination_node_id
 
             # Find routes TO this truck's destination
