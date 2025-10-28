@@ -137,95 +137,100 @@ class LPFEFOAllocator:
 
         model = ConcreteModel()
 
-        # Sets
-        model.batches = range(len(self.batches))
-        model.shipments = range(len(self.shipments))
+        # Pre-compute compatible (batch, shipment) pairs
+        compatible_pairs = []
+        for b_idx, batch in enumerate(self.batches):
+            for s_idx, shipment in enumerate(self.shipments):
+                (origin, dest, product, state, qty, delivery_date) = shipment
 
-        # Decision variables: x[b,s] = quantity of batch b allocated to shipment s
+                # Check compatibility
+                if (batch.location_id == origin and
+                    batch.product_id == product and
+                    batch.current_state == state and
+                    batch.quantity > 0.01):
+                    compatible_pairs.append((b_idx, s_idx))
+
+        logger.info(f"LP FEFO: {len(self.batches)} batches × {len(self.shipments)} shipments = {len(compatible_pairs)} compatible pairs")
+
+        # Decision variables: Only for compatible pairs
         model.x = Var(
-            model.batches,
-            model.shipments,
+            compatible_pairs,
             within=NonNegativeReals,
-            doc="Batch to shipment allocation"
+            doc="Batch to shipment allocation (compatible pairs only)"
         )
 
         # Objective: Minimize weighted age at destination
         def objective_rule(model):
             total_weighted_age = 0
 
-            for b_idx in model.batches:
+            for (b_idx, s_idx) in compatible_pairs:
                 batch = self.batches[b_idx]
+                shipment = self.shipments[s_idx]
+                (origin, dest, product, state, qty, delivery_date) = shipment
 
-                for s_idx in model.shipments:
-                    shipment = self.shipments[s_idx]
-                    (origin, dest, product, state, qty, delivery_date) = shipment
+                # Calculate weighted age at delivery using state-aware calculation
+                weighted_age = calculate_weighted_age_from_batch(batch, delivery_date)
 
-                    # Check if batch can serve this shipment
-                    if (batch.location_id != origin or
-                        batch.product_id != product or
-                        batch.current_state != state):
-                        continue  # Incompatible
-
-                    # Calculate weighted age at delivery using state-aware calculation
-                    # This properly values frozen storage (120 day shelf life vs 17 ambient)
-                    weighted_age = calculate_weighted_age_from_batch(batch, delivery_date)
-
-                    # Add to objective: weighted_age × quantity allocated
-                    total_weighted_age += weighted_age * model.x[b_idx, s_idx]
+                # Add to objective
+                total_weighted_age += weighted_age * model.x[b_idx, s_idx]
 
             return total_weighted_age
 
         model.obj = Objective(rule=objective_rule, sense=minimize)
 
-        # Pre-compute compatible batches for each shipment
-        compatible_batches = {}
-        for s_idx in model.shipments:
-            shipment = self.shipments[s_idx]
-            (origin, dest, product, state, qty, delivery_date) = shipment
+        # Build batch-to-shipment index for constraints
+        batches_for_shipment = {s_idx: [] for s_idx in range(len(self.shipments))}
+        shipments_for_batch = {b_idx: [] for b_idx in range(len(self.batches))}
 
-            compatible = []
-            for b_idx in model.batches:
-                batch = self.batches[b_idx]
-                if (batch.location_id == origin and
-                    batch.product_id == product and
-                    batch.current_state == state and
-                    batch.quantity > 0.01):
-                    compatible.append(b_idx)
+        for (b_idx, s_idx) in compatible_pairs:
+            batches_for_shipment[s_idx].append(b_idx)
+            shipments_for_batch[b_idx].append(s_idx)
 
-            compatible_batches[s_idx] = compatible
+        # Check feasibility before building constraints
+        for s_idx, compatible_b in batches_for_shipment.items():
+            if not compatible_b:
+                shipment = self.shipments[s_idx]
+                logger.warning(f"Shipment {s_idx} has NO compatible batches: {shipment}")
 
-            # Check if shipment can be satisfied
-            total_available = sum(self.batches[b_idx].quantity for b_idx in compatible)
-            if total_available < qty - 0.01:
-                logger.warning(f"Shipment {s_idx} ({origin}→{dest}, {product[:20]}, {qty:.0f}) has insufficient batches: {total_available:.0f} available")
+            total_available = sum(self.batches[b].quantity for b in compatible_b)
+            shipment_qty = self.shipments[s_idx][4]
+
+            if total_available < shipment_qty - 0.01:
+                shipment = self.shipments[s_idx]
+                logger.warning(f"Shipment {s_idx} insufficient supply: need {shipment_qty:.0f}, have {total_available:.0f}")
 
         # Constraint 1: Each shipment must be satisfied
         def shipment_satisfaction_rule(model, s_idx):
-            compatible = compatible_batches[s_idx]
+            compatible_b = batches_for_shipment[s_idx]
 
-            if not compatible:
-                # No compatible batches - constraint infeasible
+            if not compatible_b:
                 return Constraint.Skip
 
-            return sum(model.x[b_idx, s_idx] for b_idx in compatible) == self.shipments[s_idx][4]  # qty
+            return sum(model.x[b_idx, s_idx] for b_idx in compatible_b if (b_idx, s_idx) in compatible_pairs) == self.shipments[s_idx][4]
 
         model.shipment_satisfaction = Constraint(
-            model.shipments,
+            range(len(self.shipments)),
             rule=shipment_satisfaction_rule,
             doc="Each shipment must be fully satisfied"
         )
 
         # Constraint 2: Batch capacity (can't allocate more than available)
         def batch_capacity_rule(model, b_idx):
+            compatible_s = shipments_for_batch[b_idx]
+
+            if not compatible_s:
+                return Constraint.Skip
+
             batch = self.batches[b_idx]
 
             return sum(
                 model.x[b_idx, s_idx]
-                for s_idx in model.shipments
+                for s_idx in compatible_s
+                if (b_idx, s_idx) in compatible_pairs
             ) <= batch.quantity
 
         model.batch_capacity = Constraint(
-            model.batches,
+            range(len(self.batches)),
             rule=batch_capacity_rule,
             doc="Cannot allocate more than batch has"
         )
@@ -247,23 +252,22 @@ class LPFEFOAllocator:
 
             # Extract allocations
             allocations = []
-            for b_idx in model.batches:
-                for s_idx in model.shipments:
-                    qty = value(model.x[b_idx, s_idx])
-                    if qty > 0.01:
-                        allocations.append({
-                            'batch_id': self.batches[b_idx].id,
-                            'shipment_idx': s_idx,
-                            'quantity': qty,
-                            'batch_idx': b_idx
-                        })
+            for (b_idx, s_idx) in compatible_pairs:
+                qty = value(model.x[b_idx, s_idx])
+                if qty > 0.01:
+                    allocations.append({
+                        'batch_id': self.batches[b_idx].id,
+                        'shipment_idx': s_idx,
+                        'quantity': qty,
+                        'batch_idx': b_idx
+                    })
 
             result = {
                 'allocations': allocations,
                 'objective_value': value(model.obj),
                 'solve_time': solve_time,
                 'method': 'LP',
-                'num_variables': len(model.batches) * len(model.shipments),
+                'num_variables': len(compatible_pairs),
                 'num_nonzero': len(allocations)
             }
 
