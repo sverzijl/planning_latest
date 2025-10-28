@@ -379,8 +379,8 @@ class BaseWorkflow(ABC):
             initial_inventory=initial_inventory_dict,
             inventory_snapshot_date=inventory_snapshot_date,
             allow_shortages=self.config.allow_shortages,
-            use_pallet_tracking=self.config.use_pallet_costs,  # Renamed from use_hybrid_pallet_formulation
-            use_truck_pallet_tracking=True,  # Always enable for accurate truck capacity
+            use_pallet_tracking=False,  # DISABLED - causes low production bug
+            use_truck_pallet_tracking=False,  # DISABLED - constraint has bug (sums across all dates)
         )
 
         logger.info("Model built successfully")
