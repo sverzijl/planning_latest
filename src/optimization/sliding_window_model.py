@@ -1726,6 +1726,17 @@ class SlidingWindowModel(BaseOptimizationModel):
         solution['model_type'] = 'sliding_window'
         solution['has_aggregate_inventory'] = True  # Signal to use 'inventory' not 'cohort_inventory'
 
+        # Extract route/leg states for labeling (which routes are frozen vs ambient)
+        # This is needed by ProductionLabelingReportGenerator
+        self.route_arrival_state = {}
+        for route in self.routes:
+            # Determine arrival state based on transport mode and destination
+            dest_node = self.nodes.get(route.destination_node_id)
+            if dest_node:
+                arrival_state = self._determine_arrival_state(route, dest_node)
+                route_key = (route.origin_node_id, route.destination_node_id)
+                self.route_arrival_state[route_key] = arrival_state
+
         return solution
 
     def apply_fefo_allocation(self):
