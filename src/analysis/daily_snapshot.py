@@ -470,29 +470,53 @@ class DailySnapshotGenerator:
         )
 
         if self.is_aggregate_model:
-            # AGGREGATE MODEL (SlidingWindowModel): inventory by (node, product, state, date)
-            aggregate_inventory = self.model_solution.get('inventory', {})
+            # AGGREGATE MODEL (SlidingWindowModel): Use FEFO batches if available
+            fefo_batches = self.model_solution.get('fefo_batches')
+            fefo_batch_inventory = self.model_solution.get('fefo_batch_inventory', {})
 
-            # Filter for this location and date
-            # Format: {(node_id, product, state, date): qty}
-            location_inventory = [
-                (node_id, product_id, state, qty)
-                for (node_id, product_id, state, inv_date), qty in aggregate_inventory.items()
-                if node_id == location_id and inv_date == snapshot_date and qty > 0.01
-            ]
+            if fefo_batches:
+                # Use FEFO batches for accurate production dates and ages
+                inv_key = (location_id, None, None)  # Will filter by location
 
-            # Create simplified BatchInventory objects (no actual batch detail in aggregate)
-            for (node_id, product_id, state, qty) in location_inventory:
-                # Approximate age (no production date in aggregate model)
-                batch_inv = BatchInventory(
-                    batch_id=f"AGG-{product_id}-{state}",
-                    product_id=product_id,
-                    quantity=qty,
-                    production_date=snapshot_date,  # Unknown in aggregate model
-                    age_days=0,  # Unknown in aggregate model
-                    state=state
-                )
-                loc_inv.add_batch(batch_inv)
+                # Find batches at this location on this date
+                for batch in fefo_batches:
+                    # Check if batch is at this location on this date
+                    # FEFO batches track location as they move through network
+                    if batch.location_id == location_id and batch.quantity > 0.01:
+                        # Calculate age
+                        age_days = (snapshot_date - batch.production_date).days
+
+                        batch_inv = BatchInventory(
+                            batch_id=batch.id,
+                            product_id=batch.product_id,
+                            quantity=batch.quantity,
+                            production_date=batch.production_date,  # Accurate!
+                            age_days=age_days,  # Accurate!
+                            state=batch.current_state
+                        )
+                        loc_inv.add_batch(batch_inv)
+            else:
+                # Fallback: Use aggregate inventory (approximate ages)
+                aggregate_inventory = self.model_solution.get('inventory', {})
+
+                # Filter for this location and date
+                location_inventory = [
+                    (node_id, product_id, state, qty)
+                    for (node_id, product_id, state, inv_date), qty in aggregate_inventory.items()
+                    if node_id == location_id and inv_date == snapshot_date and qty > 0.01
+                ]
+
+                # Create simplified BatchInventory objects
+                for (node_id, product_id, state, qty) in location_inventory:
+                    batch_inv = BatchInventory(
+                        batch_id=f"AGG-{product_id}-{state}",
+                        product_id=product_id,
+                        quantity=qty,
+                        production_date=snapshot_date,  # Unknown without FEFO
+                        age_days=0,  # Unknown without FEFO
+                        state=state
+                    )
+                    loc_inv.add_batch(batch_inv)
 
         else:
             # COHORT MODEL (UnifiedNodeModel): cohort_inventory with batch detail

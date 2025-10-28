@@ -336,6 +336,20 @@ class BaseOptimizationModel(ABC):
                 # Get objective from solution if not set
                 if result.objective_value is None and 'total_cost' in self.solution:
                     result.objective_value = self.solution['total_cost']
+
+                # Apply FEFO allocation if available (for batch-level detail)
+                if hasattr(self, 'apply_fefo_allocation'):
+                    try:
+                        fefo_detail = self.apply_fefo_allocation()
+                        if fefo_detail:
+                            self.solution['fefo_batches'] = fefo_detail['batches']
+                            self.solution['fefo_batch_inventory'] = fefo_detail['batch_inventory']
+                            self.solution['fefo_shipment_allocations'] = fefo_detail['shipment_allocations']
+                    except Exception as e:
+                        # FEFO is optional - don't fail if it errors
+                        logger = logging.getLogger(__name__)
+                        logger.warning(f"FEFO allocation failed: {e}")
+
             except Exception as e:
                 # Log solution extraction error but DON'T override solver success
                 # The solve succeeded - solution extraction is a separate concern
