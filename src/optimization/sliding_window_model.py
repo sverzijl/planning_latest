@@ -1472,6 +1472,21 @@ class SlidingWindowModel(BaseOptimizationModel):
         solution['thaw_flows'] = thaw_flows
         solution['freeze_flows'] = freeze_flows
 
+        # Extract shipments (aggregate by route for UI compatibility)
+        shipments_by_route = {}
+        if hasattr(model, 'shipment'):
+            for (origin, dest, prod, delivery_date, state) in model.shipment:
+                try:
+                    qty = value(model.shipment[origin, dest, prod, delivery_date, state])
+                    if qty and qty > 0.01:
+                        # Aggregate by route (ignoring state for UI simplicity)
+                        route_key = (origin, dest, prod, delivery_date)
+                        shipments_by_route[route_key] = shipments_by_route.get(route_key, 0) + qty
+                except:
+                    pass
+
+        solution['shipments_by_route_product_date'] = shipments_by_route
+
         # Extract shortages
         total_shortage = 0
         shortages_by_location = {}
@@ -1500,3 +1515,66 @@ class SlidingWindowModel(BaseOptimizationModel):
             solution['total_cost'] = 0
 
         return solution
+
+    def extract_shipments(self):
+        """Extract shipments from solution for UI compatibility.
+
+        Returns:
+            List of Shipment objects for UI display
+        """
+        if not self.solution:
+            return []
+
+        from src.models.shipment import Shipment
+        from src.shelf_life.tracker import RouteLeg
+        from src.network.route_finder import RoutePath
+
+        shipments_by_route = self.solution.get('shipments_by_route_product_date', {})
+
+        shipments = []
+        shipment_counter = 1
+
+        for (origin, dest, prod, delivery_date), qty in shipments_by_route.items():
+            # Find route
+            route = next((r for r in self.routes
+                         if r.origin_node_id == origin and r.destination_node_id == dest), None)
+
+            if not route:
+                continue
+
+            # Create simple single-leg route
+            leg = RouteLeg(
+                from_location_id=origin,
+                to_location_id=dest,
+                transport_mode='ambient',  # Simplified (would need state tracking for accuracy)
+                transit_days=route.transit_days
+            )
+
+            route_path = RoutePath(
+                path=[origin, dest],
+                total_transit_days=route.transit_days,
+                total_cost=route.cost_per_unit * qty if hasattr(route, 'cost_per_unit') else 0,
+                transport_modes=['ambient'],
+                route_legs=[leg],
+                intermediate_stops=[]
+            )
+
+            # Calculate departure date
+            departure_date = delivery_date - timedelta(days=route.transit_days)
+
+            shipment = Shipment(
+                id=f"SHIP-{shipment_counter:04d}",
+                batch_id=f"BATCH-AGGREGATE",  # Aggregate flows (use FEFO for batch detail)
+                product_id=prod,
+                quantity=qty,
+                origin_id=origin,
+                destination_id=dest,
+                delivery_date=delivery_date,
+                route=route_path,
+                production_date=departure_date,  # Approximate (actual production may be earlier)
+            )
+
+            shipments.append(shipment)
+            shipment_counter += 1
+
+        return shipments
