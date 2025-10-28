@@ -925,16 +925,54 @@ class DailySnapshotGenerator:
         """
         production_activity = []
 
-        batches = self._batches_by_date.get(snapshot_date, [])
-        for batch in batches:
-            batch_inv = BatchInventory(
-                batch_id=batch.id,
-                product_id=batch.product_id,
-                quantity=batch.quantity,
-                production_date=batch.production_date,
-                age_days=0  # Just produced
-            )
-            production_activity.append(batch_inv)
+        # For aggregate models with FEFO batches, use those
+        if self.is_aggregate_model and self.model_solution:
+            fefo_batches = self.model_solution.get('fefo_batch_objects')
+            if not fefo_batches:
+                fefo_batches = self.model_solution.get('fefo_batches', [])
+
+            for batch in fefo_batches:
+                # Handle both Batch objects and dicts
+                if isinstance(batch, dict):
+                    prod_date = batch.get('production_date')
+                    if isinstance(prod_date, str):
+                        from datetime import datetime
+                        prod_date = datetime.fromisoformat(prod_date).date()
+
+                    if prod_date == snapshot_date:
+                        batch_inv = BatchInventory(
+                            batch_id=batch['id'],
+                            product_id=batch['product_id'],
+                            quantity=batch['quantity'],
+                            production_date=prod_date,
+                            age_days=0,  # Just produced
+                            state=batch.get('current_state', 'ambient')
+                        )
+                        production_activity.append(batch_inv)
+                else:
+                    # Batch object
+                    if batch.production_date == snapshot_date:
+                        batch_inv = BatchInventory(
+                            batch_id=batch.id,
+                            product_id=batch.product_id,
+                            quantity=batch.initial_quantity,  # Original production quantity
+                            production_date=batch.production_date,
+                            age_days=0,
+                            state=batch.current_state
+                        )
+                        production_activity.append(batch_inv)
+        else:
+            # Use production_schedule batches
+            batches = self._batches_by_date.get(snapshot_date, [])
+            for batch in batches:
+                batch_inv = BatchInventory(
+                    batch_id=batch.id,
+                    product_id=batch.product_id,
+                    quantity=batch.quantity,
+                    production_date=batch.production_date,
+                    age_days=0  # Just produced
+                )
+                production_activity.append(batch_inv)
 
         return production_activity
 
