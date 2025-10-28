@@ -446,6 +446,8 @@ class ExcelParser:
             freshness_incentive_weight=cost_dict.get("freshness_incentive_weight", 0.0),
             # Changeover cost (2025-10-22)
             changeover_cost_per_start=cost_dict.get("changeover_cost_per_start", 0.0),
+            # Changeover waste/yield loss (2025-10-27)
+            changeover_waste_units=cost_dict.get("changeover_waste_units", 0.0),
         )
 
     def parse_products(self, sheet_name: str = "Products") -> dict[str, Product]:

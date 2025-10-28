@@ -1220,20 +1220,43 @@ class SlidingWindowModel(BaseOptimizationModel):
             ambient_fixed_cost = self.cost_structure.storage_cost_fixed_per_pallet_ambient or 0
 
             if frozen_daily_cost > 0 or frozen_fixed_cost > 0:
-                holding_cost += sum(
-                    (frozen_fixed_cost + frozen_daily_cost) * model.pallet_count[node_id, prod, 'frozen', t]
-                    for (node_id, prod, state, t) in model.pallet_count
-                    if state == 'frozen'
-                )
-                print(f"  Frozen pallet cost: ${frozen_fixed_cost + frozen_daily_cost:.4f}/pallet/day")
+                # Daily cost: Applied every day to every pallet
+                if frozen_daily_cost > 0:
+                    holding_cost += sum(
+                        frozen_daily_cost * model.pallet_count[node_id, prod, 'frozen', t]
+                        for (node_id, prod, state, t) in model.pallet_count
+                        if state == 'frozen'
+                    )
+
+                # Fixed cost: Only applied when NEW pallets enter storage
+                # NOTE: This requires pallet entry detection (pallet_count[t] - pallet_count[t-1])
+                # For now, using daily cost only. Fixed costs should be amortized into daily rate.
+                # TODO: Implement proper pallet entry tracking for fixed costs
+                if frozen_fixed_cost > 0:
+                    # DISABLED: Adding fixed cost every day is incorrect
+                    # Should only apply when pallet_count increases
+                    pass
+
+                print(f"  Frozen pallet cost: ${frozen_daily_cost:.4f}/pallet/day (daily only)")
+                if frozen_fixed_cost > 0:
+                    print(f"  Frozen pallet fixed cost: ${frozen_fixed_cost:.4f}/pallet (DISABLED - needs entry tracking)")
 
             if ambient_daily_cost > 0 or ambient_fixed_cost > 0:
-                holding_cost += sum(
-                    (ambient_fixed_cost + ambient_daily_cost) * model.pallet_count[node_id, prod, 'ambient', t]
-                    for (node_id, prod, state, t) in model.pallet_count
-                    if state == 'ambient'
-                )
-                print(f"  Ambient pallet cost: ${ambient_fixed_cost + ambient_daily_cost:.4f}/pallet/day")
+                # Daily cost: Applied every day to every pallet
+                if ambient_daily_cost > 0:
+                    holding_cost += sum(
+                        ambient_daily_cost * model.pallet_count[node_id, prod, 'ambient', t]
+                        for (node_id, prod, state, t) in model.pallet_count
+                        if state == 'ambient'
+                    )
+
+                # Fixed cost: DISABLED (same as frozen - needs entry tracking)
+                if ambient_fixed_cost > 0:
+                    pass
+
+                print(f"  Ambient pallet cost: ${ambient_daily_cost:.4f}/pallet/day (daily only)")
+                if ambient_fixed_cost > 0:
+                    print(f"  Ambient pallet fixed cost: ${ambient_fixed_cost:.4f}/pallet (DISABLED - needs entry tracking)")
 
         # SHORTAGE COST
         shortage_cost = 0
@@ -1266,16 +1289,30 @@ class SlidingWindowModel(BaseOptimizationModel):
             if transport_cost > 0:
                 print(f"  Transport cost: route costs included")
 
-        # CHANGEOVER COST (per product start)
+        # CHANGEOVER COST (per product start) + YIELD LOSS
         changeover_cost = 0
-        if hasattr(model, 'product_start') and hasattr(self.cost_structure, 'changeover_cost_per_start'):
-            changeover_cost_per_start = self.cost_structure.changeover_cost_per_start or 0
+        changeover_waste_cost = 0
+
+        if hasattr(model, 'product_start'):
+            # Direct changeover cost ($)
+            changeover_cost_per_start = getattr(self.cost_structure, 'changeover_cost_per_start', 0) or 0
             if changeover_cost_per_start > 0:
                 changeover_cost = changeover_cost_per_start * sum(
                     model.product_start[node_id, prod, t]
                     for (node_id, prod, t) in model.product_start
                 )
                 print(f"  Changeover cost: ${changeover_cost_per_start:.2f} per start")
+
+            # Changeover waste (yield loss in units)
+            changeover_waste_units = getattr(self.cost_structure, 'changeover_waste_units', 0) or 0
+            if changeover_waste_units > 0:
+                production_cost_per_unit = self.cost_structure.production_cost_per_unit or 0
+                changeover_waste_cost = production_cost_per_unit * changeover_waste_units * sum(
+                    model.product_start[node_id, prod, t]
+                    for (node_id, prod, t) in model.product_start
+                )
+                print(f"  Changeover waste: {changeover_waste_units:.0f} units per start × ${production_cost_per_unit:.2f}/unit = ${production_cost_per_unit * changeover_waste_units:.2f} per start")
+                print(f"  Changeover waste cost: ${changeover_waste_cost:.2f} total")
 
         # WASTE COST (end-of-horizon inventory)
         waste_cost = 0
@@ -1299,6 +1336,7 @@ class SlidingWindowModel(BaseOptimizationModel):
             holding_cost +
             shortage_cost +
             changeover_cost +
+            changeover_waste_cost +  # Yield loss from product switches
             waste_cost
         )
 
@@ -1309,8 +1347,8 @@ class SlidingWindowModel(BaseOptimizationModel):
         )
 
         print(f"\n✅ Objective built")
-        print(f"  Active components: holding + shortage")
-        print(f"  TODO: labor, transport, changeover, waste")
+        print(f"  Active components: labor + transport + holding + shortage + changeover (cost + waste)")
+        print(f"  Optional: waste (end-of-horizon penalty)")
         print(f"  Staleness: IMPLICIT via holding costs (inventory costs money)")
 
     def extract_solution(self, model: ConcreteModel) -> Dict[str, Any]:
