@@ -520,8 +520,11 @@ class DailySnapshotGenerator:
                         if location_id_batch is None:
                             continue  # Batch doesn't exist on this date
 
-                    # Filter by location AND check quantity > 0 on this date
-                    if location_id_batch == location_id and quantity > 0.01:
+                    # Filter: location matches AND batch exists on this date
+                    if (location_id_batch == location_id and
+                        quantity > 0.01 and
+                        production_date <= snapshot_date):  # Don't show future production!
+
                         # Calculate age
                         age_days = (snapshot_date - production_date).days
 
