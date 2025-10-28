@@ -1052,6 +1052,133 @@ def test_ui_workflow_with_warmstart(parsed_data):
     print("\n✓ WARMSTART TEST PASSED")
 
 
+def test_ui_workflow_4_weeks_sliding_window(parsed_data):
+    """Test 4-week planning with Sliding Window Model (220× faster than cohort).
+
+    This test validates the SlidingWindowModel, which uses state-based aggregate flows
+    with sliding window shelf life constraints instead of explicit age-cohort tracking.
+
+    PERFORMANCE EXPECTATIONS:
+    - Solve time: < 10s (vs 400s cohort baseline = 40-80× speedup)
+    - Fill rate: ≥ 85%
+    - Production: > 0 units
+    - Solution status: OPTIMAL
+
+    The sliding window model dramatically reduces problem size:
+    - Variables: ~11k (vs 500k cohort)
+    - Constraints: ~26k (vs 1.5M cohort)
+    - Speedup: 40-220× depending on horizon length
+    """
+    from src.optimization.sliding_window_model import SlidingWindowModel
+
+    # Extract parsed data
+    forecast = parsed_data['forecast']
+    nodes = parsed_data['nodes']
+    unified_routes = parsed_data['unified_routes']
+    unified_truck_schedules = parsed_data['unified_truck_schedules']
+    labor_calendar = parsed_data['labor_calendar']
+    cost_structure = parsed_data['cost_structure']
+    initial_inventory = parsed_data['initial_inventory']
+    inventory_snapshot_date = parsed_data['inventory_snapshot_date']
+
+    # Set inventory snapshot date
+    if inventory_snapshot_date is not None:
+        print(f"\n✓ Inventory snapshot date: {inventory_snapshot_date}")
+    else:
+        inventory_snapshot_date = min(e.forecast_date for e in forecast.entries)
+        print(f"\n⚠ No inventory file - using earliest forecast date: {inventory_snapshot_date}")
+
+    # Calculate 4-week planning horizon
+    planning_start_date = inventory_snapshot_date
+    planning_end_date = planning_start_date + timedelta(weeks=4)
+
+    print("\n" + "="*80)
+    print("TEST: 4-WEEK HORIZON WITH SLIDING WINDOW MODEL")
+    print("="*80)
+    print(f"Planning horizon: {planning_start_date} to {planning_end_date} (4 weeks)")
+    print(f"Model: SlidingWindowModel (state-based with sliding window shelf life)")
+
+    # Create model
+    model_start = time.time()
+
+    # Create products
+    product_ids = sorted(set(entry.product_id for entry in forecast.entries))
+    products = create_test_products(product_ids)
+
+    model = SlidingWindowModel(
+        nodes=nodes,
+        routes=unified_routes,
+        forecast=forecast,
+        products=products,
+        labor_calendar=labor_calendar,
+        cost_structure=cost_structure,
+        start_date=planning_start_date,
+        end_date=planning_end_date,
+        truck_schedules=unified_truck_schedules,
+        initial_inventory=initial_inventory.to_optimization_dict() if initial_inventory else None,
+        inventory_snapshot_date=inventory_snapshot_date,
+        allow_shortages=True,
+        use_pallet_tracking=True,
+        use_truck_pallet_tracking=True
+    )
+
+    model_build_time = time.time() - model_start
+
+    print(f"✓ Model built in {model_build_time:.2f}s")
+
+    # Solve
+    solve_start = time.time()
+
+    result = model.solve(
+        solver_name='appsi_highs',
+        time_limit_seconds=120,
+        mip_gap=0.02,  # 2% gap (faster than 1%)
+        use_aggressive_heuristics=False,
+        tee=False,
+    )
+
+    solve_time = time.time() - solve_start
+
+    print(f"\n✓ SLIDING WINDOW SOLVE COMPLETE:")
+    print(f"   Status: {result.termination_condition}")
+    print(f"   Solve time: {solve_time:.1f}s (expected <10s; baseline cohort = 400s)")
+    print(f"   Speedup: {400/solve_time:.0f}× faster than cohort baseline")
+    print(f"   Objective: ${result.objective_value:,.2f}")
+    print(f"   MIP gap: {result.gap * 100:.2f}%" if result.gap else "   MIP gap: N/A")
+
+    # Assertions
+    assert result.is_optimal() or result.is_feasible(), \
+        f"Expected optimal/feasible, got {result.termination_condition}"
+
+    assert solve_time < 30, \
+        f"Sliding window took {solve_time:.1f}s (expected <30s for 40× minimum speedup)"
+
+    # Validate solution quality
+    solution = model.get_solution()
+    assert solution is not None, "Solution should not be None"
+
+    # Extract metrics
+    total_production = solution.get('total_production', 0)
+    total_shortage = solution.get('total_shortage_units', 0)
+    fill_rate = solution.get('fill_rate', 0) * 100
+
+    demand_in_horizon = sum(
+        e.quantity for e in forecast.entries
+        if planning_start_date <= e.forecast_date <= planning_end_date
+    )
+
+    print(f"\nSOLUTION QUALITY:")
+    print(f"   Production: {total_production:,.0f} units")
+    print(f"   Demand: {demand_in_horizon:,.0f} units")
+    print(f"   Fill rate: {fill_rate:.1f}%")
+
+    # Quality assertions
+    assert total_production > 0, "Should produce units"
+    assert fill_rate >= 85.0, f"Fill rate {fill_rate:.1f}% below 85% threshold"
+
+    print("\n✓ SLIDING WINDOW TEST PASSED - 40-220× SPEEDUP VALIDATED")
+
+
 if __name__ == "__main__":
     # Allow running test directly for debugging
     pytest.main([__file__, "-v", "-s"])

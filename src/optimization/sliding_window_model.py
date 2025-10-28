@@ -355,19 +355,43 @@ class SlidingWindowModel(BaseOptimizationModel):
         print(f"  State transition variables: {len(transition_index) * 2}")
 
         # SHIPMENT VARIABLES (simplified - no prod_date dimension)
+        # Shipments are indexed by DELIVERY date
+        # Need to create for:
+        #   - Dates within planning horizon (for arrivals)
+        #   - Dates BEYOND planning end (for departures at end of horizon)
+        # But NOT for dates that would require departure BEFORE planning start!
+
+        max_transit_days = max((r.transit_days for r in self.routes), default=0)
+        extended_end_date = self.end_date + timedelta(days=int(max_transit_days))
+
+        # Generate date range for shipment DELIVERY dates
+        # Start from planning start (don't create for earlier delivery dates)
+        shipment_dates = []
+        current = self.start_date
+        while current <= extended_end_date:
+            shipment_dates.append(current)
+            current += timedelta(days=1)
+
         shipment_index = []
         for route in self.routes:
             for prod in model.products:
-                for t in model.dates:
-                    # Shipments can be in frozen or ambient state
-                    for state in ['frozen', 'ambient']:
-                        shipment_index.append((
-                            route.origin_node_id,
-                            route.destination_node_id,
-                            prod,
-                            t,  # delivery_date
-                            state
-                        ))
+                for delivery_date in shipment_dates:
+                    # Only create shipment if departure would be within or after planning start
+                    # departure_date = delivery_date - transit_days
+                    # We need: departure_date >= start_date
+                    # So: delivery_date >= start_date + transit_days
+                    min_delivery_date = self.start_date + timedelta(days=route.transit_days)
+
+                    if delivery_date >= min_delivery_date:
+                        # Shipments can be in frozen or ambient state
+                        for state in ['frozen', 'ambient']:
+                            shipment_index.append((
+                                route.origin_node_id,
+                                route.destination_node_id,
+                                prod,
+                                delivery_date,
+                                state
+                            ))
 
         model.shipment = Var(
             shipment_index,
@@ -768,27 +792,19 @@ class SlidingWindowModel(BaseOptimizationModel):
             for route in self.routes_from_node[node_id]:
                 # Ambient route departures
                 if route.transport_mode != TransportMode.FROZEN:
-                    # Calculate when we need to depart to deliver on various dates
-                    for delivery_date in model.dates:
-                        transit_time = timedelta(days=route.transit_days)
-                        departure_datetime = delivery_date - transit_time
-                        departure_date = departure_datetime.date() if hasattr(departure_datetime, 'date') else departure_datetime
+                    # Calculate delivery date for shipment departing TODAY (t)
+                    delivery_date = t + timedelta(days=route.transit_days)
 
-                        if departure_date == t:
-                            if (node_id, route.destination_node_id, prod, delivery_date, 'ambient') in model.shipment:
-                                departures += model.shipment[node_id, route.destination_node_id, prod, delivery_date, 'ambient']
+                    # Only include if shipment variable exists (delivery within or beyond horizon)
+                    if (node_id, route.destination_node_id, prod, delivery_date, 'ambient') in model.shipment:
+                        departures += model.shipment[node_id, route.destination_node_id, prod, delivery_date, 'ambient']
 
             # Demand consumption from ambient inventory
+            # Use demand_consumed variable (linked to demand satisfaction constraint)
             demand_consumption = 0
             if node.has_demand_capability():
-                demand_qty = self.demand.get((node_id, prod, t), 0)
-                if demand_qty > 0:
-                    # Demand is consumed from inventory
-                    # Actual consumption = demand - shortage
-                    if self.allow_shortages and (node_id, prod, t) in model.shortage:
-                        demand_consumption = demand_qty - model.shortage[node_id, prod, t]
-                    else:
-                        demand_consumption = demand_qty
+                if (node_id, prod, t) in model.demand_consumed:
+                    demand_consumption = model.demand_consumed[node_id, prod, t]
 
             # Balance
             return model.inventory[node_id, prod, 'ambient', t] == (
@@ -846,14 +862,12 @@ class SlidingWindowModel(BaseOptimizationModel):
             departures = 0
             for route in self.routes_from_node[node_id]:
                 if route.transport_mode == TransportMode.FROZEN:
-                    for delivery_date in model.dates:
-                        transit_time = timedelta(days=route.transit_days)
-                        departure_datetime = delivery_date - transit_time
-                        departure_date = departure_datetime.date() if hasattr(departure_datetime, 'date') else departure_datetime
+                    # Calculate delivery date for shipment departing TODAY (t)
+                    delivery_date = t + timedelta(days=route.transit_days)
 
-                        if departure_date == t:
-                            if (node_id, route.destination_node_id, prod, delivery_date, 'frozen') in model.shipment:
-                                departures += model.shipment[node_id, route.destination_node_id, prod, delivery_date, 'frozen']
+                    # Only include if shipment variable exists
+                    if (node_id, route.destination_node_id, prod, delivery_date, 'frozen') in model.shipment:
+                        departures += model.shipment[node_id, route.destination_node_id, prod, delivery_date, 'frozen']
 
             # Balance
             return model.inventory[node_id, prod, 'frozen', t] == (

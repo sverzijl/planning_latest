@@ -270,15 +270,28 @@ class BaseOptimizationModel(ABC):
         # Convert APPSI Results to our OptimizationResult
         # Check termination condition by name (APPSI has: optimal, infeasible, unbounded, etc.)
         from pyomo.contrib.appsi.base import TerminationCondition as AppsiTC
-        success = results.termination_condition in [
-            AppsiTC.optimal,
-            # Note: APPSI doesn't have 'feasible' - only optimal or infeasible
-            # maxTimeLimit with valid solution is treated as success
-        ]
-        # Also accept maxTimeLimit if we have an objective value
-        if results.termination_condition == AppsiTC.maxTimeLimit:
-            if hasattr(results, 'best_feasible_objective') and results.best_feasible_objective is not None:
-                success = True
+
+        # Map APPSI termination conditions to legacy pyomo.opt.TerminationCondition
+        # (OptimizationResult uses legacy enum for compatibility)
+        appsi_tc = results.termination_condition
+        if appsi_tc == AppsiTC.optimal:
+            legacy_tc = TerminationCondition.optimal
+            success = True
+        elif appsi_tc == AppsiTC.infeasible:
+            legacy_tc = TerminationCondition.infeasible
+            success = False
+        elif appsi_tc == AppsiTC.unbounded:
+            legacy_tc = TerminationCondition.unbounded
+            success = False
+        elif appsi_tc == AppsiTC.maxTimeLimit:
+            # Hit time limit - check if we have a feasible solution
+            legacy_tc = TerminationCondition.maxTimeLimit
+            success = (hasattr(results, 'best_feasible_objective') and
+                      results.best_feasible_objective is not None)
+        else:
+            # Unknown or error condition
+            legacy_tc = TerminationCondition.unknown
+            success = False
 
         objective_value = getattr(results, 'best_feasible_objective', None)
 
@@ -302,7 +315,7 @@ class BaseOptimizationModel(ABC):
             success=success,
             objective_value=objective_value,
             solver_status=None,  # APPSI doesn't have solver_status
-            termination_condition=results.termination_condition,
+            termination_condition=legacy_tc,  # Use converted legacy enum for compatibility
             solve_time_seconds=solve_time,
             solver_name='appsi_highs',
             gap=gap,

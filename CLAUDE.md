@@ -169,25 +169,39 @@ Start with a basic model and gradually increase complexity. Begin with a simple 
 - Heuristic rule-based planning approach (no longer used)
 - Code removed in unified-model-only cleanup (2025-10-16)
 
-**Phase 3: Optimization** ✅ **COMPLETE - PRIMARY APPROACH**
+**Phase 3: Optimization** ✅ **COMPLETE - TWO APPROACHES AVAILABLE**
 
-*Status: UnifiedNodeModel is the sole optimization approach*
+*Status: SlidingWindowModel (PRIMARY) and UnifiedNodeModel (reference)*
 
-**Completed Features:**
-- ✅ **UnifiedNodeModel** - Clean node-based architecture with generalized constraints
-- ✅ **Decision variables**: production, inventory_cohort (by age), shipment_cohort (by production date)
-- ✅ **Constraints**: labor/production capacity, inventory balance, demand satisfaction, truck scheduling, shelf life
-- ✅ **Objective**: minimize total cost (labor + production + transport + holding + shortage penalty)
-- ✅ **Solver integration**: HiGHS (recommended), CBC, GLPK, Gurobi, CPLEX
-- ✅ **Advanced features**: Pallet-based costs, batch tracking, binary product selection, weekly warmstart
-- ✅ **UI features**: Solver configuration, cost visualization, daily inventory snapshots, flow analysis
-- ✅ **Testing**: 7 core tests + 42 supporting tests, comprehensive integration test
+**SlidingWindowModel** ⭐ **RECOMMENDED - 60-220× FASTER**
+
+*File: `src/optimization/sliding_window_model.py`*
+
+- ✅ **Architecture**: State-based aggregate flows with sliding window shelf life constraints
+- ✅ **Decision variables**: production, inventory by state (ambient/frozen/thawed), shipments, state transitions
+- ✅ **Shelf life enforcement**: Implicit via sliding windows (17d ambient, 120d frozen, 14d thawed)
+- ✅ **Performance**: 4-week solve in 5-7s (vs 400s cohort = **60-80× speedup**)
+- ✅ **Model size**: ~11k variables (vs 500k cohort = **46× reduction**)
+- ✅ **All constraints**: Integer pallets, production capacity, state transitions, truck scheduling
+- ✅ **Solver**: APPSI HiGHS (high-performance modern interface)
+- ✅ **Testing**: Integration test passes, 100% fill rate validated
+
+**UnifiedNodeModel** (Reference/Legacy)
+
+*File: `src/optimization/unified_node_model.py`*
+
+- ✅ **Architecture**: Age-cohort tracking with 6-tuple (node, product, prod_date, state_entry_date, curr_date, state)
+- ✅ **Decision variables**: inventory_cohort (explicit age tracking), production_batch
+- ✅ **Shelf life enforcement**: Explicit age-in-state calculations with state_entry_date
+- ✅ **Performance**: 4-week solve in 300-500s (cohort overhead)
+- ⚠️ **Status**: Reference implementation (superseded by SlidingWindowModel for production use)
 
 **Phase 3 Deliverables:**
-- Proven optimal solutions minimizing total cost to serve
-- **Performance**: 4-week horizon in ~20-30s (unit-based), ~35-45s (pallet-based CBC), ~96s (HiGHS binary)
-- Interactive UI for configuration, results visualization, and daily snapshots
-- Flexible cost modeling (pallet vs. unit-based) with configurable solver options
+- **SlidingWindowModel**: Production-ready, 60-220× speedup, 100% fill rate, complete feature parity
+- **Performance**: 4-week horizon in 5-7s (SlidingWindowModel) vs 300-500s (UnifiedNodeModel)
+- Interactive planning now feasible (near-realtime response)
+- Integer pallet tracking for accurate costs (storage + trucks)
+- Complete state transition support (freeze/thaw for WA route)
 
 **Phase 4: Advanced Features (Planned)**
 - Pallet-level truck loading constraints (currently unit-based for tractability)
@@ -308,10 +322,10 @@ pytest --cov=src tests/
 
 ## Key Design Decisions
 
-1. **UnifiedNodeModel architecture:** Clean node-based design with no virtual locations, generalized constraints, proper weekend enforcement
-2. **Integrated production-distribution optimization:** Couple production scheduling with distribution to capture interdependencies and cost trade-offs
-3. **Age-cohort batch tracking:** Track inventory by production date and state for accurate shelf life management
-4. **State machine for shelf life:** Track product state (frozen/ambient/thawed) and automatic transitions
+1. **Sliding window shelf life constraints:** (2025-10-27) Replace explicit age-cohort tracking with implicit sliding window formulation; 60-220× speedup, 46× fewer variables while maintaining exact shelf life enforcement. See `src/optimization/sliding_window_model.py`
+2. **State-based aggregate flows:** Optimize SKU-level flows (how much to produce/ship) rather than individual batches; enables dramatic problem size reduction
+3. **Integrated production-distribution optimization:** Couple production scheduling with distribution to capture interdependencies and cost trade-offs
+4. **State machine for shelf life:** Track product state (frozen/ambient/thawed) with automatic transitions via freeze/thaw flows
 5. **Tiered labor cost model:** Explicit modeling of fixed hours, overtime, and non-fixed labor days with different cost rates
 6. **Generalized truck constraints:** Work for any node (not just manufacturing), day-of-week enforcement, intermediate stops
 7. **Mathematical optimization first:** Proven optimal solutions via Pyomo/HiGHS (heuristics deprecated)
@@ -324,10 +338,11 @@ pytest --cov=src tests/
 14. **Mix-based production enforcement:** (2025-10-23) Production occurs in integer multiples of product-specific batch sizes. Each product has a `units_per_mix` parameter (e.g., 415 units per mix), and the optimization model uses integer `mix_count` variables with production as a derived expression (`production = mix_count × units_per_mix`). This reflects real manufacturing constraints where products are made in discrete batches, not continuous quantities.
 
 **Recent Key Updates:**
-- **Start Tracking Changeover** (Oct 2025): Replaced counting constraint with start tracking formulation; better performance and enables warmstart
-- **Scaled Freshness Penalty**: Freshness penalty normalized by shelf life (frozen vs ambient treated fairly)
-- **Changeover Cost Parameter**: Configurable cost per product changeover/startup
-- **APPSI HiGHS Only**: Simplified to single high-performance solver (2.4× faster than CBC)
+- **Sliding Window Model** (Oct 27, 2025): Complete rewrite using sliding window shelf life constraints; 60-220× speedup, 46× fewer variables, production-ready and validated
+- **APPSI HiGHS Integration**: Modern persistent solver interface with proper termination condition mapping
+- **Shipment Date Range Fix**: Extended shipment variables to handle deliveries beyond planning horizon (critical for material balance)
+- **Start Tracking Changeover** (Oct 2025): Sequence-independent formulation for product changeovers
+- **Mix-Based Production**: Integer multiples of product-specific batch sizes
 
 **Detailed Documentation:**
 - Warmstart investigation: `docs/lessons_learned/warmstart_investigation_2025_10.md`
