@@ -423,6 +423,20 @@ class SlidingWindowModel(BaseOptimizationModel):
             )
             print(f"  Pallet storage variables: {len(pallet_index)} integers")
 
+            # Pallet entry variables (for fixed entry costs)
+            # Only create if fixed costs are configured
+            frozen_fixed = self.cost_structure.storage_cost_fixed_per_pallet_frozen or 0
+            ambient_fixed = self.cost_structure.storage_cost_fixed_per_pallet_ambient or 0
+
+            if frozen_fixed > 0 or ambient_fixed > 0:
+                model.pallet_entry = Var(
+                    pallet_index,
+                    within=NonNegativeIntegers,
+                    bounds=(0, 62),
+                    doc="New pallets entering storage (for fixed entry costs)"
+                )
+                print(f"  Pallet entry variables: {len(pallet_index)} integers (for fixed costs)")
+
         # TRUCK PALLET VARIABLES (optional - for truck capacity)
         if self.use_truck_pallet_tracking and self.truck_schedules:
             truck_pallet_index = []
@@ -1018,6 +1032,38 @@ class SlidingWindowModel(BaseOptimizationModel):
         )
         print(f"    Storage pallet ceiling constraints added")
 
+        # Pallet entry detection (for fixed costs)
+        if hasattr(model, 'pallet_entry'):
+            # Build date lookup for previous day
+            date_list = list(model.dates)
+            date_to_prev = {}
+            for i, d in enumerate(date_list):
+                if i > 0:
+                    date_to_prev[d] = date_list[i-1]
+
+            def pallet_entry_detection_rule(model, node_id, prod, state, t):
+                """Detect new pallets entering storage: entry >= count[t] - count[t-1]."""
+                prev_date = date_to_prev.get(t)
+
+                if prev_date and (node_id, prod, state, prev_date) in model.pallet_count:
+                    # pallet_entry[t] >= pallet_count[t] - pallet_count[t-1]
+                    # If count increases, entry must cover the increase
+                    # If count decreases, minimization sets entry = 0
+                    return model.pallet_entry[node_id, prod, state, t] >= \
+                           model.pallet_count[node_id, prod, state, t] - \
+                           model.pallet_count[node_id, prod, state, prev_date]
+                else:
+                    # First day: entry = full count (all pallets are new)
+                    return model.pallet_entry[node_id, prod, state, t] >= \
+                           model.pallet_count[node_id, prod, state, t]
+
+            model.pallet_entry_detection_con = Constraint(
+                model.pallet_entry.index_set(),
+                rule=pallet_entry_detection_rule,
+                doc="Detect new pallets entering storage for fixed costs"
+            )
+            print(f"    Pallet entry detection constraints added")
+
         # Truck pallet ceiling (if enabled)
         if self.use_truck_pallet_tracking:
             def truck_pallet_ceiling_rule(model, truck_idx, dest, prod, delivery_date):
@@ -1228,18 +1274,16 @@ class SlidingWindowModel(BaseOptimizationModel):
                         if state == 'frozen'
                     )
 
-                # Fixed cost: Only applied when NEW pallets enter storage
-                # NOTE: This requires pallet entry detection (pallet_count[t] - pallet_count[t-1])
-                # For now, using daily cost only. Fixed costs should be amortized into daily rate.
-                # TODO: Implement proper pallet entry tracking for fixed costs
-                if frozen_fixed_cost > 0:
-                    # DISABLED: Adding fixed cost every day is incorrect
-                    # Should only apply when pallet_count increases
-                    pass
+                # Fixed cost: Applied when NEW pallets enter storage
+                if frozen_fixed_cost > 0 and hasattr(model, 'pallet_entry'):
+                    holding_cost += sum(
+                        frozen_fixed_cost * model.pallet_entry[node_id, prod, 'frozen', t]
+                        for (node_id, prod, state, t) in model.pallet_entry
+                        if state == 'frozen'
+                    )
+                    print(f"  Frozen pallet fixed cost: ${frozen_fixed_cost:.4f}/pallet (on entry)")
 
-                print(f"  Frozen pallet cost: ${frozen_daily_cost:.4f}/pallet/day (daily only)")
-                if frozen_fixed_cost > 0:
-                    print(f"  Frozen pallet fixed cost: ${frozen_fixed_cost:.4f}/pallet (DISABLED - needs entry tracking)")
+                print(f"  Frozen pallet daily cost: ${frozen_daily_cost:.4f}/pallet/day")
 
             if ambient_daily_cost > 0 or ambient_fixed_cost > 0:
                 # Daily cost: Applied every day to every pallet
@@ -1250,13 +1294,16 @@ class SlidingWindowModel(BaseOptimizationModel):
                         if state == 'ambient'
                     )
 
-                # Fixed cost: DISABLED (same as frozen - needs entry tracking)
-                if ambient_fixed_cost > 0:
-                    pass
+                # Fixed cost: Applied when NEW pallets enter storage
+                if ambient_fixed_cost > 0 and hasattr(model, 'pallet_entry'):
+                    holding_cost += sum(
+                        ambient_fixed_cost * model.pallet_entry[node_id, prod, 'ambient', t]
+                        for (node_id, prod, state, t) in model.pallet_entry
+                        if state == 'ambient'
+                    )
+                    print(f"  Ambient pallet fixed cost: ${ambient_fixed_cost:.4f}/pallet (on entry)")
 
-                print(f"  Ambient pallet cost: ${ambient_daily_cost:.4f}/pallet/day (daily only)")
-                if ambient_fixed_cost > 0:
-                    print(f"  Ambient pallet fixed cost: ${ambient_fixed_cost:.4f}/pallet (DISABLED - needs entry tracking)")
+                print(f"  Ambient pallet daily cost: ${ambient_daily_cost:.4f}/pallet/day")
 
         # SHORTAGE COST
         shortage_cost = 0
@@ -1312,7 +1359,6 @@ class SlidingWindowModel(BaseOptimizationModel):
                     for (node_id, prod, t) in model.product_start
                 )
                 print(f"  Changeover waste: {changeover_waste_units:.0f} units per start × ${production_cost_per_unit:.2f}/unit = ${production_cost_per_unit * changeover_waste_units:.2f} per start")
-                print(f"  Changeover waste cost: ${changeover_waste_cost:.2f} total")
 
         # WASTE COST (end-of-horizon inventory)
         waste_cost = 0
