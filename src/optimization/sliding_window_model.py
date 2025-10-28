@@ -1535,11 +1535,17 @@ class SlidingWindowModel(BaseOptimizationModel):
             for (origin, dest, prod, delivery_date, state) in model.shipment:
                 try:
                     var = model.shipment[origin, dest, prod, delivery_date, state]
-                    # Skip uninitialized variables (not part of optimal solution)
+
+                    # Check if variable has a value assigned (skip uninitialized)
+                    # Pyomo variables have .stale attribute: True if not assigned by solver
+                    if hasattr(var, 'stale') and var.stale:
+                        continue  # Skip - solver didn't assign this variable
+
+                    # Safe value extraction
                     if hasattr(var, 'value') and var.value is not None:
                         qty = var.value
                     else:
-                        qty = value(var)
+                        continue  # No value, skip
 
                     if qty and qty > 0.01:
                         # Aggregate by route (ignoring state for UI simplicity)
