@@ -1778,9 +1778,9 @@ class SlidingWindowModel(BaseOptimizationModel):
                     # This prevents showing "future" dates or very old dates
 
                     batch = Batch(
-                        id=f"INIT-{node_id}_{product_id}_{state}_{uuid.uuid4().hex[:8]}",
+                        id=f"INIT_{product_id[:15]}_{state}_{uuid.uuid4().hex[:6]}",  # No location in ID
                         product_id=product_id,
-                        manufacturing_site_id='INITIAL-INV',  # Mark as initial inventory
+                        manufacturing_site_id=node_id,  # Original location (for tracking)
                         production_date=self.start_date,  # Use snapshot date
                         state_entry_date=self.start_date,  # Entered state at snapshot
                         current_state=state,
@@ -1832,9 +1832,26 @@ class SlidingWindowModel(BaseOptimizationModel):
                 thaw_date=thaw_date
             )
 
-        # Return batch detail
+        # Convert batches to serializable dicts
+        batch_dicts = []
+        for batch in allocator.batches:
+            batch_dicts.append({
+                'id': batch.id,
+                'product_id': batch.product_id,
+                'manufacturing_site_id': batch.manufacturing_site_id,
+                'production_date': batch.production_date.isoformat(),
+                'state_entry_date': batch.state_entry_date.isoformat(),
+                'current_state': batch.current_state,
+                'quantity': batch.quantity,
+                'initial_quantity': batch.initial_quantity,
+                'location_id': batch.location_id,
+                'initial_state': batch.initial_state,
+            })
+
+        # Return batch detail (as serializable dicts)
         return {
-            'batches': allocator.batches,
+            'batches': batch_dicts,  # List of dicts (JSON-serializable)
+            'batch_objects': allocator.batches,  # Keep objects for in-memory use
             'batch_inventory': dict(allocator.batch_inventory),
             'shipment_allocations': allocator.shipment_allocations,
         }

@@ -471,28 +471,46 @@ class DailySnapshotGenerator:
 
         if self.is_aggregate_model:
             # AGGREGATE MODEL (SlidingWindowModel): Use FEFO batches if available
-            fefo_batches = self.model_solution.get('fefo_batches')
-            fefo_batch_inventory = self.model_solution.get('fefo_batch_inventory', {})
+            # Try batch objects first (in-memory), then batch dicts (from JSON)
+            fefo_batches = self.model_solution.get('fefo_batch_objects')
+            if not fefo_batches:
+                fefo_batches = self.model_solution.get('fefo_batches', [])
 
             if fefo_batches:
                 # Use FEFO batches for accurate production dates and ages
-                inv_key = (location_id, None, None)  # Will filter by location
-
                 # Find batches at this location on this date
                 for batch in fefo_batches:
-                    # Check if batch is at this location on this date
-                    # FEFO batches track location as they move through network
-                    if batch.location_id == location_id and batch.quantity > 0.01:
+                    # Handle both Batch objects and dicts
+                    if isinstance(batch, dict):
+                        batch_id = batch['id']
+                        product_id = batch['product_id']
+                        quantity = batch['quantity']
+                        location_id_batch = batch['location_id']
+                        current_state = batch['current_state']
+                        # Parse ISO date string
+                        from datetime import datetime
+                        production_date = datetime.fromisoformat(batch['production_date']).date()
+                    else:
+                        # Batch object
+                        batch_id = batch.id
+                        product_id = batch.product_id
+                        quantity = batch.quantity
+                        location_id_batch = batch.location_id
+                        current_state = batch.current_state
+                        production_date = batch.production_date
+
+                    # Filter by location
+                    if location_id_batch == location_id and quantity > 0.01:
                         # Calculate age
-                        age_days = (snapshot_date - batch.production_date).days
+                        age_days = (snapshot_date - production_date).days
 
                         batch_inv = BatchInventory(
-                            batch_id=batch.id,
-                            product_id=batch.product_id,
-                            quantity=batch.quantity,
-                            production_date=batch.production_date,  # Accurate!
+                            batch_id=batch_id,
+                            product_id=product_id,
+                            quantity=quantity,
+                            production_date=production_date,  # Accurate!
                             age_days=age_days,  # Accurate!
-                            state=batch.current_state
+                            state=current_state
                         )
                         loc_inv.add_batch(batch_inv)
             else:

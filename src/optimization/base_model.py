@@ -342,11 +342,14 @@ class BaseOptimizationModel(ABC):
                     try:
                         fefo_detail = self.apply_fefo_allocation()
                         if fefo_detail:
-                            self.solution['fefo_batches'] = fefo_detail['batches']
-                            self.solution['fefo_batch_inventory'] = fefo_detail['batch_inventory']
-                            self.solution['fefo_shipment_allocations'] = fefo_detail['shipment_allocations']
+                            # Store dicts (JSON-serializable) and objects (for in-memory use)
+                            self.solution['fefo_batches'] = fefo_detail['batches']  # Dicts for JSON
+                            self.solution['fefo_batch_objects'] = fefo_detail.get('batch_objects', [])  # Objects for UI
+                            self.solution['fefo_batch_inventory'] = fefo_detail.get('batch_inventory', {})
+                            self.solution['fefo_shipment_allocations'] = fefo_detail.get('shipment_allocations', [])
                     except Exception as e:
                         # FEFO is optional - don't fail if it errors
+                        import logging
                         logger = logging.getLogger(__name__)
                         logger.warning(f"FEFO allocation failed: {e}")
 
