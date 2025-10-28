@@ -455,11 +455,13 @@ class SlidingWindowModel(BaseOptimizationModel):
         if self.use_truck_pallet_tracking and self.truck_schedules:
             truck_pallet_index = []
             for truck_idx, truck in enumerate(self.truck_schedules):
+                # Get truck's destination
+                truck_dest = truck.destination_node_id if hasattr(truck, 'destination_node_id') else truck.destination_id
+
                 for t in model.dates:
-                    # For each destination this truck can reach
-                    # (determined by truck schedule and routes)
+                    # For each product this truck might carry
                     for prod in model.products:
-                        truck_pallet_index.append((truck_idx, truck.destination_node_id, prod, t))
+                        truck_pallet_index.append((truck_idx, truck_dest, prod, t))
 
             model.truck_pallet_load = Var(
                 truck_pallet_index,
@@ -1281,35 +1283,35 @@ class SlidingWindowModel(BaseOptimizationModel):
 
         # TRUCK CAPACITY: Sum of pallet loads <= 44 pallets
         def truck_capacity_rule(model, truck_idx, departure_date):
-            """Total pallets loaded on THIS truck departure cannot exceed capacity.
-
-            For a truck departing on 'departure_date', sum pallets for shipments
-            that DEPART on this date (deliver on departure_date + transit_time).
-            """
+            """Total pallets on this specific truck departure <= 44 pallets."""
             truck = self.truck_schedules[truck_idx]
+            truck_dest = truck.destination_node_id
 
-            # Find routes from this truck's origin to various destinations
-            # Truck origin is where it picks up (usually manufacturing)
-            # For each route, calculate delivery date from this departure
-            total_pallets = 0
+            # Find routes TO this truck's destination
+            routes_to_dest = [r for r in self.routes if r.destination_node_id == truck_dest]
 
-            # truck_pallet_load is indexed by (truck_idx, dest, prod, delivery_date)
-            # We need to sum only those with delivery_date = departure_date + transit_time
-            # But we don't store transit time per truck, only per route
+            if not routes_to_dest:
+                return Constraint.Skip
 
-            # SIMPLIFIED: Sum truck_pallet_load for deliveries on or after departure_date
-            # This is conservative (over-counts) but prevents the bug
-            # Better: Link trucks to specific routes
-            for dest in model.nodes:
+            # Build list of pallet variables to sum
+            pallet_vars = []
+
+            for route in routes_to_dest:
+                # Calculate delivery date for shipment departing on this date
+                delivery_date = departure_date + timedelta(days=route.transit_days)
+
+                # Collect pallet variables for this delivery
                 for prod in model.products:
-                    # Only count deliveries that could originate from this departure
-                    # delivery_date should be >= departure_date
-                    for delivery_date in model.dates:
-                        if delivery_date >= departure_date:
-                            if (truck_idx, dest, prod, delivery_date) in model.truck_pallet_load:
-                                total_pallets += model.truck_pallet_load[truck_idx, dest, prod, delivery_date]
+                    if (truck_idx, truck_dest, prod, delivery_date) in model.truck_pallet_load:
+                        pallet_vars.append(model.truck_pallet_load[truck_idx, truck_dest, prod, delivery_date])
 
-            return total_pallets <= self.PALLETS_PER_TRUCK
+            # If no variables to sum, skip constraint
+            if len(pallet_vars) == 0:
+                return Constraint.Skip
+
+            # Use quicksum for proper Pyomo expression
+            from pyomo.environ import quicksum
+            return quicksum(pallet_vars) <= self.PALLETS_PER_TRUCK
 
         # Truck capacity constraints (one per truck per departure date)
         truck_index = [(i, t) for i, truck in enumerate(self.truck_schedules) for t in model.dates]
