@@ -1487,6 +1487,26 @@ class SlidingWindowModel(BaseOptimizationModel):
 
         solution['shipments_by_route_product_date'] = shipments_by_route
 
+        # Extract labor hours by date (for UI)
+        labor_hours_by_date = {}
+        labor_cost_by_date = {}
+        if hasattr(model, 'labor_hours_used'):
+            for (node_id, t) in model.labor_hours_used:
+                try:
+                    hours = value(model.labor_hours_used[node_id, t])
+                    if hours and hours > 0.01:
+                        labor_hours_by_date[t] = hours
+
+                        # Calculate labor cost (simplified - use regular rate)
+                        labor_day = self.labor_calendar.get_labor_day(t)
+                        rate = labor_day.regular_rate if labor_day else 20.0
+                        labor_cost_by_date[t] = hours * rate
+                except:
+                    pass
+
+        solution['labor_hours_by_date'] = labor_hours_by_date
+        solution['labor_cost_by_date'] = labor_cost_by_date
+
         # Extract shortages
         total_shortage = 0
         shortages_by_location = {}
@@ -1513,6 +1533,37 @@ class SlidingWindowModel(BaseOptimizationModel):
             solution['total_cost'] = value(model.obj) if hasattr(model, 'obj') else 0
         except:
             solution['total_cost'] = 0
+
+        # Calculate individual cost components for UI breakdown
+        # Labor cost
+        total_labor_hours = sum(labor_hours_by_date.values())
+        avg_rate = sum(labor_cost_by_date.values()) / total_labor_hours if total_labor_hours > 0 else 20.0
+        solution['total_labor_cost'] = sum(labor_cost_by_date.values())
+
+        # Production cost
+        total_production = solution['total_production']
+        production_cost_per_unit = self.cost_structure.production_cost_per_unit or 1.3
+        solution['total_production_cost'] = total_production * production_cost_per_unit
+
+        # Transport cost (from routes if available)
+        total_transport = 0
+        for (origin, dest, prod, delivery_date), qty in shipments_by_route.items():
+            route = next((r for r in self.routes
+                         if r.origin_node_id == origin and r.destination_node_id == dest), None)
+            if route and hasattr(route, 'cost_per_unit'):
+                total_transport += route.cost_per_unit * qty
+        solution['total_transport_cost'] = total_transport
+        solution['total_truck_cost'] = 0  # Not separately tracked
+
+        # Shortage cost
+        shortage_penalty = self.cost_structure.shortage_penalty_per_unit or 10.0
+        solution['total_shortage_cost'] = total_shortage * shortage_penalty
+
+        # Holding cost (pallet-based if tracking enabled)
+        # Would need to extract from pallet_count variables - simplified for now
+        solution['total_holding_cost'] = 0  # Placeholder
+        solution['frozen_holding_cost'] = 0  # Placeholder
+        solution['ambient_holding_cost'] = 0  # Placeholder
 
         return solution
 
