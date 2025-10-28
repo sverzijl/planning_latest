@@ -134,7 +134,13 @@ class ProductionLabelingReportGenerator:
         else:
             # Fallback: Use production totals (no routing detail available)
             # This happens when batch_tracking is disabled
-            for (prod_date, product_id), qty in self.production_batches.items():
+            for key, qty in self.production_batches.items():
+                # Handle both formats: (date, product) or (node, product, date)
+                if len(key) == 2:
+                    prod_date, product_id = key
+                else:  # len(key) == 3
+                    node, product_id, prod_date = key
+
                 # Without batch tracking, we can't determine labeling split
                 # Default to ambient for all
                 aggregated[(prod_date, product_id)]['ambient'] += qty
@@ -142,7 +148,12 @@ class ProductionLabelingReportGenerator:
 
         # Convert to LabelingRequirement objects
         requirements = []
-        for (prod_date, product_id), data in aggregated.items():
+        for key, data in aggregated.items():
+            # Handle both aggregated key formats
+            if len(key) == 2:
+                prod_date, product_id = key
+            else:  # Shouldn't happen but handle it
+                continue
             frozen_qty = data['frozen']
             ambient_qty = data['ambient']
             total = frozen_qty + ambient_qty
