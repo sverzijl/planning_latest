@@ -1616,6 +1616,29 @@ class SlidingWindowModel(BaseOptimizationModel):
 
         solution['shipments_by_route_product_date'] = shipments_by_route
 
+        # Extract truck assignments (if truck pallet tracking enabled)
+        truck_assignments = {}  # {(origin, dest, product, delivery_date): truck_idx}
+        if hasattr(model, 'truck_pallet_load'):
+            for (truck_idx, dest, prod, delivery_date) in model.truck_pallet_load:
+                try:
+                    var = model.truck_pallet_load[truck_idx, dest, prod, delivery_date]
+                    if hasattr(var, 'stale') and var.stale:
+                        continue
+
+                    pallets = value(var) if hasattr(var, 'value') and var.value is not None else 0
+                    if pallets and pallets > 0.01:
+                        # This shipment is assigned to this truck
+                        # Need to find origin for this dest
+                        for origin in model.nodes:
+                            route_key = (origin, dest, prod, delivery_date)
+                            if route_key in shipments_by_route and shipments_by_route[route_key] > 0:
+                                truck_assignments[route_key] = truck_idx
+                                break
+                except:
+                    pass
+
+        solution['truck_assignments'] = truck_assignments
+
         # Extract labor hours by date (for UI)
         labor_hours_by_date = {}
         labor_cost_by_date = {}
@@ -1694,7 +1717,83 @@ class SlidingWindowModel(BaseOptimizationModel):
         solution['frozen_holding_cost'] = 0  # Placeholder
         solution['ambient_holding_cost'] = 0  # Placeholder
 
+        # OPTIONAL: Apply FEFO allocator for batch-level detail
+        # This converts aggregate flows to individual batches with traceability
+        # Only do if requested (adds ~1 second processing time)
+        solution['fefo_batches'] = None  # Placeholder for future integration
+
         return solution
+
+    def apply_fefo_allocation(self):
+        """Apply FEFO batch allocator to convert aggregate flows to batch detail.
+
+        This is OPTIONAL post-processing that provides:
+        - Batch-level traceability
+        - state_entry_date tracking
+        - FEFO (First-Expired-First-Out) allocation
+        - Batch genealogy
+
+        Returns:
+            Dictionary with batch detail, or None if solution not available
+        """
+        if not self.solution:
+            return None
+
+        from src.analysis.fefo_batch_allocator import FEFOBatchAllocator
+
+        # Create allocator
+        allocator = FEFOBatchAllocator(
+            nodes=self.nodes,
+            products=self.products,
+            start_date=self.start_date,
+            end_date=self.end_date
+        )
+
+        # Create batches from production
+        batches = allocator.create_batches_from_production(self.solution)
+
+        # Process shipments in chronological order
+        shipments_by_route = self.solution.get('shipments_by_route_product_date', {})
+        for (origin, dest, prod, delivery_date), qty in sorted(shipments_by_route.items(), key=lambda x: x[0][3]):
+            # Determine state from route
+            route = next((r for r in self.routes
+                         if r.origin_node_id == origin and r.destination_node_id == dest), None)
+            state = 'ambient'  # Simplified - would need transport mode from route
+
+            allocator.allocate_shipment(
+                origin_node=origin,
+                destination_node=dest,
+                product_id=prod,
+                state=state,
+                quantity=qty,
+                delivery_date=delivery_date
+            )
+
+        # Process state transitions
+        freeze_flows = self.solution.get('freeze_flows', {})
+        for (node_id, prod, freeze_date), qty in sorted(freeze_flows.items(), key=lambda x: x[0][2]):
+            allocator.apply_freeze_transition(
+                node_id=node_id,
+                product_id=prod,
+                quantity=qty,
+                freeze_date=freeze_date
+            )
+
+        thaw_flows = self.solution.get('thaw_flows', {})
+        for (node_id, prod, thaw_date), qty in sorted(thaw_flows.items(), key=lambda x: x[0][2]):
+            allocator.apply_thaw_transition(
+                node_id=node_id,
+                product_id=prod,
+                quantity=qty,
+                thaw_date=thaw_date
+            )
+
+        # Return batch detail
+        return {
+            'batches': allocator.batches,
+            'batch_inventory': dict(allocator.batch_inventory),
+            'shipment_allocations': allocator.shipment_allocations,
+        }
 
     def extract_shipments(self):
         """Extract shipments from solution for UI compatibility.
@@ -1710,6 +1809,7 @@ class SlidingWindowModel(BaseOptimizationModel):
         from src.network.route_finder import RoutePath
 
         shipments_by_route = self.solution.get('shipments_by_route_product_date', {})
+        truck_assignments = self.solution.get('truck_assignments', {})
 
         shipments = []
         shipment_counter = 1
@@ -1742,6 +1842,17 @@ class SlidingWindowModel(BaseOptimizationModel):
             # Calculate departure date
             departure_date = delivery_date - timedelta(days=route.transit_days)
 
+            # Check if shipment has truck assignment
+            route_key = (origin, dest, prod, delivery_date)
+            truck_idx = truck_assignments.get(route_key)
+            assigned_truck_id = None
+
+            if truck_idx is not None and self.truck_schedules:
+                # Get truck ID from truck schedule
+                if truck_idx < len(self.truck_schedules):
+                    truck = self.truck_schedules[truck_idx]
+                    assigned_truck_id = truck.id
+
             shipment = Shipment(
                 id=f"SHIP-{shipment_counter:04d}",
                 batch_id=f"BATCH-AGGREGATE",  # Aggregate flows (use FEFO for batch detail)
@@ -1752,6 +1863,7 @@ class SlidingWindowModel(BaseOptimizationModel):
                 delivery_date=delivery_date,
                 route=route_path,
                 production_date=departure_date,  # Approximate (actual production may be earlier)
+                assigned_truck_id=assigned_truck_id,  # Truck assignment from optimization
             )
 
             shipments.append(shipment)
