@@ -1842,12 +1842,13 @@ class SlidingWindowModel(BaseOptimizationModel):
         for (node_id, prod, thaw_date), qty in sorted(thaw_flows.items(), key=lambda x: x[0][2]):
             allocator.apply_thaw_transition(node_id, prod, qty, thaw_date)
 
-        # Fill in daily snapshots for complete history
-        current_date = self.start_date
-        while current_date <= self.end_date:
-            for batch in allocator.batches:
-                batch.record_snapshot(current_date)
-            current_date += timedelta(days=1)
+        # Daily snapshots are now recorded during processing:
+        # - At production_date when batch created
+        # - At delivery_date when batch ships
+        # - At freeze/thaw dates when state changes
+        #
+        # Daily Snapshot uses get_location_on_date() which finds
+        # most recent snapshot ≤ query date, so gaps are handled automatically
 
         # Convert batches to serializable dicts
         batch_dicts = []
