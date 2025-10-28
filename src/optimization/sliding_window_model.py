@@ -1477,12 +1477,19 @@ class SlidingWindowModel(BaseOptimizationModel):
         if hasattr(model, 'shipment'):
             for (origin, dest, prod, delivery_date, state) in model.shipment:
                 try:
-                    qty = value(model.shipment[origin, dest, prod, delivery_date, state])
+                    var = model.shipment[origin, dest, prod, delivery_date, state]
+                    # Skip uninitialized variables (not part of optimal solution)
+                    if hasattr(var, 'value') and var.value is not None:
+                        qty = var.value
+                    else:
+                        qty = value(var)
+
                     if qty and qty > 0.01:
                         # Aggregate by route (ignoring state for UI simplicity)
                         route_key = (origin, dest, prod, delivery_date)
                         shipments_by_route[route_key] = shipments_by_route.get(route_key, 0) + qty
-                except:
+                except (ValueError, AttributeError, TypeError):
+                    # Uninitialized variable - not used in solution, skip
                     pass
 
         solution['shipments_by_route_product_date'] = shipments_by_route
