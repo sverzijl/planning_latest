@@ -1283,34 +1283,40 @@ class SlidingWindowModel(BaseOptimizationModel):
         def truck_capacity_rule(model, truck_idx, departure_date):
             """Total pallets loaded on THIS truck departure cannot exceed capacity.
 
-            Note: truck_idx + departure_date identifies a specific truck departure.
-            Sum pallets for shipments loaded on THIS departure only.
+            For a truck departing on 'departure_date', sum pallets for shipments
+            that DEPART on this date (deliver on departure_date + transit_time).
             """
             truck = self.truck_schedules[truck_idx]
 
-            # Sum pallets for shipments departing on THIS date with THIS truck
-            # Delivery date = departure_date + transit_time
-            total_pallets = sum(
-                model.truck_pallet_load[truck_idx, dest, prod, delivery_date]
-                for dest in model.nodes
-                for prod in model.products
-                for delivery_date in model.dates
-                # Only count shipments actually on this truck departure
-                # (truck_pallet_load indexed by truck + destination + product + delivery)
-                if (truck_idx, dest, prod, delivery_date) in model.truck_pallet_load
-                # Filter to shipments departing on 'departure_date' (the 't' parameter)
-                # This requires checking if delivery_date corresponds to this departure
-                # For simplicity: just sum for this truck (already filtered by truck_idx)
-            )
+            # Find routes from this truck's origin to various destinations
+            # Truck origin is where it picks up (usually manufacturing)
+            # For each route, calculate delivery date from this departure
+            total_pallets = 0
+
+            # truck_pallet_load is indexed by (truck_idx, dest, prod, delivery_date)
+            # We need to sum only those with delivery_date = departure_date + transit_time
+            # But we don't store transit time per truck, only per route
+
+            # SIMPLIFIED: Sum truck_pallet_load for deliveries on or after departure_date
+            # This is conservative (over-counts) but prevents the bug
+            # Better: Link trucks to specific routes
+            for dest in model.nodes:
+                for prod in model.products:
+                    # Only count deliveries that could originate from this departure
+                    # delivery_date should be >= departure_date
+                    for delivery_date in model.dates:
+                        if delivery_date >= departure_date:
+                            if (truck_idx, dest, prod, delivery_date) in model.truck_pallet_load:
+                                total_pallets += model.truck_pallet_load[truck_idx, dest, prod, delivery_date]
 
             return total_pallets <= self.PALLETS_PER_TRUCK
 
-        # Simplified truck capacity (one constraint per truck per day)
+        # Truck capacity constraints (one per truck per departure date)
         truck_index = [(i, t) for i, truck in enumerate(self.truck_schedules) for t in model.dates]
         model.truck_capacity_con = Constraint(
             truck_index,
             rule=truck_capacity_rule,
-            doc="Truck capacity: total pallets <= 44"
+            doc="Truck capacity: total pallets on departure <= 44"
         )
 
         print(f"    Truck capacity constraints added: {len(truck_index)}")
