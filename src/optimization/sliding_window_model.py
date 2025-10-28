@@ -1739,7 +1739,7 @@ class SlidingWindowModel(BaseOptimizationModel):
 
         return solution
 
-    def apply_fefo_allocation(self):
+    def apply_fefo_allocation(self, method: str = 'greedy'):
         """Apply FEFO batch allocator to convert aggregate flows to batch detail.
 
         This is OPTIONAL post-processing that provides:
@@ -1748,11 +1748,18 @@ class SlidingWindowModel(BaseOptimizationModel):
         - FEFO (First-Expired-First-Out) allocation
         - Batch genealogy
 
+        Args:
+            method: 'greedy' (fast, chronological FEFO) or
+                   'lp' (optimal, weighted-age minimization with state awareness)
+
         Returns:
             Dictionary with batch detail, or None if solution not available
         """
         if not self.solution:
             return None
+
+        # Store allocation method for later reference
+        self.fefo_allocation_method = method
 
         from src.analysis.fefo_batch_allocator import FEFOBatchAllocator
 
