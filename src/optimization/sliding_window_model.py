@@ -335,24 +335,38 @@ class SlidingWindowModel(BaseOptimizationModel):
         print(f"  Inventory variables: {len(inventory_index)}")
 
         # STATE TRANSITION VARIABLES (NEW - enables freeze/thaw flows)
-        transition_index = [
+        # Only create where transitions make sense!
+
+        # Thaw: frozen → thawed (only for nodes WITH frozen storage capability)
+        # Ambient-only nodes receiving frozen shipments: thaw happens automatically on arrival (no thaw variable)
+        thaw_index = [
             (node_id, prod, t)
             for node_id, node in self.nodes.items()
+            if node.supports_frozen_storage()  # Only nodes that can HOLD frozen inventory
+            for prod in model.products
+            for t in model.dates
+        ]
+
+        # Freeze: ambient → frozen (only for nodes with BOTH frozen AND ambient storage)
+        freeze_index = [
+            (node_id, prod, t)
+            for node_id, node in self.nodes.items()
+            if node.supports_frozen_storage() and node.supports_ambient_storage()
             for prod in model.products
             for t in model.dates
         ]
 
         model.thaw = Var(
-            transition_index,
+            thaw_index,
             within=NonNegativeReals,
             doc="Thawing flow: frozen → thawed"
         )
         model.freeze = Var(
-            transition_index,
+            freeze_index,
             within=NonNegativeReals,
             doc="Freezing flow: ambient → frozen"
         )
-        print(f"  State transition variables: {len(transition_index) * 2}")
+        print(f"  State transition variables: {len(thaw_index)} thaw + {len(freeze_index)} freeze")
 
         # SHIPMENT VARIABLES (simplified - no prod_date dimension)
         # Shipments are indexed by DELIVERY date
@@ -540,7 +554,7 @@ class SlidingWindowModel(BaseOptimizationModel):
 
         print(f"\n✅ Variables created")
         total_vars = (len(production_index) + len(inventory_index) +
-                     len(transition_index) * 2 + len(shipment_index))
+                     len(thaw_index) + len(freeze_index) + len(shipment_index))
         total_integers = len(pallet_index) if self.use_pallet_tracking else 0
         total_binaries = len(product_produced_index) * 2
         print(f"  Continuous: {total_vars:,}")
@@ -610,14 +624,13 @@ class SlidingWindowModel(BaseOptimizationModel):
             # Outflows from ambient: shipments + freeze + demand
             O_ambient = 0
             for tau in window_dates:
-                # Departures in ambient state
+                # Departures in ambient state (shipments departing on tau)
                 for route in self.routes_from_node[node_id]:
                     if route.transport_mode != TransportMode.FROZEN:  # Ambient route
-                        # Calculate departure date for delivery on tau
-                        departure_date = tau - timedelta(days=route.transit_days)
-                        if departure_date.date() if hasattr(departure_date, 'date') else departure_date == tau:
-                            if (node_id, route.destination_node_id, prod, tau, 'ambient') in model.shipment:
-                                O_ambient += model.shipment[node_id, route.destination_node_id, prod, tau, 'ambient']
+                        # Calculate delivery date for shipment departing on tau
+                        delivery_date = tau + timedelta(days=route.transit_days)
+                        if (node_id, route.destination_node_id, prod, delivery_date, 'ambient') in model.shipment:
+                            O_ambient += model.shipment[node_id, route.destination_node_id, prod, delivery_date, 'ambient']
 
                 # Freeze flow
                 if (node_id, prod, tau) in model.freeze:
@@ -628,6 +641,14 @@ class SlidingWindowModel(BaseOptimizationModel):
                     # Demand comes from ambient inventory
                     # (In state balance, this will be explicit variable)
                     pass  # Handle in state balance
+
+            # Skip if no activity to avoid trivial True constraint
+            # Check if expressions are non-zero (handle Pyomo expressions)
+            try:
+                if Q_ambient is 0 and O_ambient is 0:
+                    return Constraint.Skip
+            except:
+                pass  # Pyomo expressions can't be compared to 0 easily
 
             return O_ambient <= Q_ambient
 
@@ -698,9 +719,14 @@ class SlidingWindowModel(BaseOptimizationModel):
             )
 
             # Outflows from thawed: shipments + demand
-            O_thawed = 0  # Will implement with state balance
+            # For now, thawed shelf life is implicitly enforced by state balance
+            # Proper implementation would track thawed outflows here
+            # Skip constraint if no outflows tracked
+            if Q_thawed == 0:
+                return Constraint.Skip  # No thaw inflows, skip constraint
 
-            return O_thawed <= Q_thawed
+            # Simplified: Allow any outflows (state balance handles material conservation)
+            return Constraint.Skip  # TODO: Implement thawed outflow tracking
 
         model.thawed_shelf_life_con = Constraint(
             [(n, p, t) for n, node in self.nodes.items()
