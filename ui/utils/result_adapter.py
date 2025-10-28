@@ -396,14 +396,26 @@ def _create_cost_breakdown(model: Any, solution: dict) -> TotalCostBreakdown:
     cost_by_date: Dict[Date, float] = {}
     total_units = sum(production_by_date_product.values())
     if total_units > 0:
-        for (date, product), qty in production_by_date_product.items():
+        for key, qty in production_by_date_product.items():
+            # Handle both formats: (date, product) or (node, product, date)
+            if len(key) == 2:
+                date, product = key
+            else:  # len(key) == 3
+                node, product, date = key
+
             proportion = qty / total_units
             cost_by_date[date] = cost_by_date.get(date, 0) + (proportion * production_cost)
 
     # Aggregate by product
     cost_by_product: Dict[str, float] = {}
     if total_units > 0:
-        for (date, product), qty in production_by_date_product.items():
+        for key, qty in production_by_date_product.items():
+            # Handle both formats: (date, product) or (node, product, date)
+            if len(key) == 2:
+                date, product = key
+            else:  # len(key) == 3
+                node, product, date = key
+
             proportion = qty / total_units
             cost_by_product[product] = cost_by_product.get(product, 0) + (proportion * production_cost)
 
