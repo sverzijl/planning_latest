@@ -312,7 +312,20 @@ class DailySnapshotGenerator:
         self.locations_dict = locations_dict
         self.forecast = forecast
         self.model_solution = model_solution
-        self.use_model_inventory = model_solution is not None and model_solution.get('use_batch_tracking', False)
+
+        # Detect if model solution has inventory data (cohort OR aggregate)
+        self.use_model_inventory = False
+        self.is_aggregate_model = False
+        if model_solution is not None:
+            # UnifiedNodeModel: has cohort_inventory
+            if model_solution.get('use_batch_tracking', False):
+                self.use_model_inventory = True
+                self.is_aggregate_model = False
+            # SlidingWindowModel: has aggregate inventory
+            elif model_solution.get('has_aggregate_inventory', False):
+                self.use_model_inventory = True
+                self.is_aggregate_model = True
+
         self.verbose = verbose
 
         # Build efficient lookup structures
@@ -455,60 +468,86 @@ class DailySnapshotGenerator:
             location_id=location_id,
             location_name=location_name
         )
-        
-        # Get cohort inventory from model solution
-        cohort_inventory = self.model_solution.get('cohort_inventory', {})
-        production_batches_data = self.model_solution.get('production_batches', [])
-        
-        # Build batch lookup
-        batch_lookup = {}
-        for batch_data in production_batches_data:
-            batch_date = batch_data['date']
-            batch_product = batch_data['product']
-            batch_qty = batch_data['quantity']
-            batch_id = f"BATCH-{batch_date}-{batch_product}"
-            batch_lookup[(batch_date, batch_product)] = {
-                'id': batch_id,
-                'quantity': batch_qty,
-                'date': batch_date,
-                'product': batch_product
-            }
-        
-        # Filter cohorts for this location and date
-        # cohort_inventory format: {(loc, prod, prod_date, curr_date, state): qty}
-        location_cohorts = [
-            (loc, prod, prod_date, curr_date, state, qty)
-            for (loc, prod, prod_date, curr_date, state), qty in cohort_inventory.items()
-            if loc == location_id and curr_date == snapshot_date and qty > 0.01
-        ]
-        
-        # Group by batch (production_date + product + state = unique cohort)
-        batches_at_location = {}
-        for (loc, product_id, prod_date, curr_date, state, qty) in location_cohorts:
-            batch_key = (prod_date, product_id, state)
-            if batch_key not in batches_at_location:
-                batches_at_location[batch_key] = 0.0
-            batches_at_location[batch_key] += qty
 
-        # Create BatchInventory objects
-        for (prod_date, product_id, state), total_qty in batches_at_location.items():
-            age_days = (snapshot_date - prod_date).days
-            batch_info = batch_lookup.get((prod_date, product_id))
-            batch_id = batch_info['id'] if batch_info else f"BATCH-{prod_date}-{product_id}"
+        if self.is_aggregate_model:
+            # AGGREGATE MODEL (SlidingWindowModel): inventory by (node, product, state, date)
+            aggregate_inventory = self.model_solution.get('inventory', {})
 
-            # Append state indicator to batch_id for clarity
-            batch_id_with_state = f"{batch_id}-{state}"
+            # Filter for this location and date
+            # Format: {(node_id, product, state, date): qty}
+            location_inventory = [
+                (node_id, product_id, state, qty)
+                for (node_id, product_id, state, inv_date), qty in aggregate_inventory.items()
+                if node_id == location_id and inv_date == snapshot_date and qty > 0.01
+            ]
 
-            batch_inv = BatchInventory(
-                batch_id=batch_id_with_state,
-                product_id=product_id,
-                quantity=total_qty,
-                production_date=prod_date,
-                age_days=age_days,
-                state=state
-            )
+            # Create simplified BatchInventory objects (no actual batch detail in aggregate)
+            for (node_id, product_id, state, qty) in location_inventory:
+                # Approximate age (no production date in aggregate model)
+                batch_inv = BatchInventory(
+                    batch_id=f"AGG-{product_id}-{state}",
+                    product_id=product_id,
+                    quantity=qty,
+                    production_date=snapshot_date,  # Unknown in aggregate model
+                    age_days=0,  # Unknown in aggregate model
+                    state=state
+                )
+                loc_inv.add_batch(batch_inv)
 
-            loc_inv.add_batch(batch_inv)
+        else:
+            # COHORT MODEL (UnifiedNodeModel): cohort_inventory with batch detail
+            cohort_inventory = self.model_solution.get('cohort_inventory', {})
+            production_batches_data = self.model_solution.get('production_batches', [])
+
+            # Build batch lookup
+            batch_lookup = {}
+            for batch_data in production_batches_data:
+                batch_date = batch_data['date']
+                batch_product = batch_data['product']
+                batch_qty = batch_data['quantity']
+                batch_id = f"BATCH-{batch_date}-{batch_product}"
+                batch_lookup[(batch_date, batch_product)] = {
+                    'id': batch_id,
+                    'quantity': batch_qty,
+                    'date': batch_date,
+                    'product': batch_product
+                }
+
+            # Filter cohorts for this location and date
+            # cohort_inventory format: {(loc, prod, prod_date, curr_date, state): qty}
+            location_cohorts = [
+                (loc, prod, prod_date, curr_date, state, qty)
+                for (loc, prod, prod_date, curr_date, state), qty in cohort_inventory.items()
+                if loc == location_id and curr_date == snapshot_date and qty > 0.01
+            ]
+
+            # Group by batch (production_date + product + state = unique cohort)
+            batches_at_location = {}
+            for (loc, product_id, prod_date, curr_date, state, qty) in location_cohorts:
+                batch_key = (prod_date, product_id, state)
+                if batch_key not in batches_at_location:
+                    batches_at_location[batch_key] = 0.0
+                batches_at_location[batch_key] += qty
+
+            # Create BatchInventory objects
+            for (prod_date, product_id, state), total_qty in batches_at_location.items():
+                age_days = (snapshot_date - prod_date).days
+                batch_info = batch_lookup.get((prod_date, product_id))
+                batch_id = batch_info['id'] if batch_info else f"BATCH-{prod_date}-{product_id}"
+
+                # Append state indicator to batch_id for clarity
+                batch_id_with_state = f"{batch_id}-{state}"
+
+                batch_inv = BatchInventory(
+                    batch_id=batch_id_with_state,
+                    product_id=product_id,
+                    quantity=total_qty,
+                    production_date=prod_date,
+                    age_days=age_days,
+                    state=state
+                )
+
+                loc_inv.add_batch(batch_inv)
         
         return loc_inv
 

@@ -1722,6 +1722,10 @@ class SlidingWindowModel(BaseOptimizationModel):
         # Only do if requested (adds ~1 second processing time)
         solution['fefo_batches'] = None  # Placeholder for future integration
 
+        # Flag for Daily Snapshot: indicates this is aggregate (not cohort) inventory
+        solution['model_type'] = 'sliding_window'
+        solution['has_aggregate_inventory'] = True  # Signal to use 'inventory' not 'cohort_inventory'
+
         return solution
 
     def apply_fefo_allocation(self):
