@@ -314,7 +314,7 @@ class BaseWorkflow(ABC):
         Args:
             input_data: Prepared input data from prepare_input_data()
         """
-        from ..optimization.unified_node_model import UnifiedNodeModel
+        from ..optimization.sliding_window_model import SlidingWindowModel
         from ..optimization.legacy_to_unified_converter import LegacyToUnifiedConverter
 
         # Convert legacy data structures to unified format
@@ -357,8 +357,16 @@ class BaseWorkflow(ABC):
             elif isinstance(self.initial_inventory, dict):
                 initial_inventory_dict = self.initial_inventory
 
-        # Build model
-        self.model = UnifiedNodeModel(
+        # Get inventory snapshot date if available
+        inventory_snapshot_date = None
+        if self.initial_inventory:
+            if hasattr(self.initial_inventory, 'snapshot_date'):
+                inventory_snapshot_date = self.initial_inventory.snapshot_date
+            elif 'inventory_snapshot_date' in input_data:
+                inventory_snapshot_date = input_data['inventory_snapshot_date']
+
+        # Build model (using SlidingWindowModel for 60-220× speedup!)
+        self.model = SlidingWindowModel(
             nodes=nodes,
             routes=unified_routes,
             forecast=self.forecast,
@@ -369,9 +377,10 @@ class BaseWorkflow(ABC):
             end_date=input_data["planning_end_date"],
             truck_schedules=unified_trucks,
             initial_inventory=initial_inventory_dict,
-            use_batch_tracking=self.config.track_batches,
+            inventory_snapshot_date=inventory_snapshot_date,
             allow_shortages=self.config.allow_shortages,
-            use_hybrid_pallet_formulation=self.config.use_pallet_costs,
+            use_pallet_tracking=self.config.use_pallet_costs,  # Renamed from use_hybrid_pallet_formulation
+            use_truck_pallet_tracking=True,  # Always enable for accurate truck capacity
         )
 
         logger.info("Model built successfully")
