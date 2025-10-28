@@ -177,18 +177,37 @@ class LPFEFOAllocator:
 
         model.obj = Objective(rule=objective_rule, sense=minimize)
 
-        # Constraint 1: Each shipment must be satisfied
-        def shipment_satisfaction_rule(model, s_idx):
+        # Pre-compute compatible batches for each shipment
+        compatible_batches = {}
+        for s_idx in model.shipments:
             shipment = self.shipments[s_idx]
             (origin, dest, product, state, qty, delivery_date) = shipment
 
-            return sum(
-                model.x[b_idx, s_idx]
-                for b_idx in model.batches
-                if (self.batches[b_idx].location_id == origin and
-                    self.batches[b_idx].product_id == product and
-                    self.batches[b_idx].current_state == state)
-            ) == qty
+            compatible = []
+            for b_idx in model.batches:
+                batch = self.batches[b_idx]
+                if (batch.location_id == origin and
+                    batch.product_id == product and
+                    batch.current_state == state and
+                    batch.quantity > 0.01):
+                    compatible.append(b_idx)
+
+            compatible_batches[s_idx] = compatible
+
+            # Check if shipment can be satisfied
+            total_available = sum(self.batches[b_idx].quantity for b_idx in compatible)
+            if total_available < qty - 0.01:
+                logger.warning(f"Shipment {s_idx} ({origin}→{dest}, {product[:20]}, {qty:.0f}) has insufficient batches: {total_available:.0f} available")
+
+        # Constraint 1: Each shipment must be satisfied
+        def shipment_satisfaction_rule(model, s_idx):
+            compatible = compatible_batches[s_idx]
+
+            if not compatible:
+                # No compatible batches - constraint infeasible
+                return Constraint.Skip
+
+            return sum(model.x[b_idx, s_idx] for b_idx in compatible) == self.shipments[s_idx][4]  # qty
 
         model.shipment_satisfaction = Constraint(
             model.shipments,
@@ -239,16 +258,90 @@ class LPFEFOAllocator:
                             'batch_idx': b_idx
                         })
 
-            return {
+            result = {
                 'allocations': allocations,
                 'objective_value': value(model.obj),
                 'solve_time': solve_time,
-                'method': 'LP'
+                'method': 'LP',
+                'num_variables': len(model.batches) * len(model.shipments),
+                'num_nonzero': len(allocations)
             }
+
+            logger.info(f"LP FEFO: {len(allocations)} non-zero allocations, objective={value(model.obj):.4f}")
+
+            return result
 
         except Exception as e:
             logger.error(f"LP FEFO failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return None
+
+    def apply_lp_allocation(self, lp_result: Dict, fefo_allocator) -> None:
+        """Apply LP allocation results to FEFO batch allocator.
+
+        Takes LP solution and updates batch locations/quantities accordingly.
+
+        Args:
+            lp_result: Result dict from optimize_allocation()
+            fefo_allocator: FEFOBatchAllocator instance to update
+        """
+        if not lp_result:
+            return
+
+        allocations = lp_result['allocations']
+
+        # Group allocations by shipment
+        by_shipment = {}
+        for alloc in allocations:
+            s_idx = alloc['shipment_idx']
+            if s_idx not in by_shipment:
+                by_shipment[s_idx] = []
+            by_shipment[s_idx].append(alloc)
+
+        # Apply allocations shipment by shipment
+        for s_idx in sorted(by_shipment.keys()):
+            shipment = self.shipments[s_idx]
+            (origin, dest, product, state, qty, delivery_date) = shipment
+
+            # Apply all batch allocations for this shipment
+            for alloc in by_shipment[s_idx]:
+                b_idx = alloc['batch_idx']
+                alloc_qty = alloc['quantity']
+
+                batch = self.batches[b_idx]
+
+                # Update batch similar to greedy allocate_shipment
+                inv_key = (batch.location_id, batch.product_id, batch.current_state)
+
+                # Remove from current location inventory
+                if batch in fefo_allocator.batch_inventory[inv_key]:
+                    fefo_allocator.batch_inventory[inv_key].remove(batch)
+
+                # Update quantity
+                batch.quantity -= alloc_qty
+
+                # Move to destination
+                batch.location_id = dest
+
+                # Record snapshot at delivery
+                batch.record_snapshot(delivery_date)
+
+                # Add to destination inventory (if quantity remains)
+                dest_inv_key = (dest, product, state)
+                if batch.quantity > 0:
+                    fefo_allocator.batch_inventory[dest_inv_key].append(batch)
+
+                # Record allocation
+                fefo_allocator.shipment_allocations.append({
+                    'batch_id': batch.id,
+                    'quantity': alloc_qty,
+                    'origin': origin,
+                    'destination': dest,
+                    'delivery_date': delivery_date,
+                    'state': state,
+                    'method': 'LP'
+                })
 
 
 def allocate_batches_lp(

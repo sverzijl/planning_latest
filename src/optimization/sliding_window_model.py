@@ -25,12 +25,15 @@ Architecture based on:
 from datetime import date as Date, timedelta
 from typing import Dict, List, Set, Tuple, Optional, Any
 import warnings
+import logging
 
 from pyomo.environ import (
     ConcreteModel, Var, Constraint, Objective, Set as PyomoSet,
     NonNegativeReals, NonNegativeIntegers, Binary, Integers,
     minimize, quicksum, value
 )
+
+logger = logging.getLogger(__name__)
 
 from ..models import Product, CostStructure
 from ..models.unified_node import UnifiedNode
@@ -1804,46 +1807,71 @@ class SlidingWindowModel(BaseOptimizationModel):
                     allocator.batches.append(batch)
                     allocator.batch_inventory[(node_id, product_id, state)].append(batch)
 
-        # Process each date in order
+        # Create all production batches first
+        production_batches = allocator.create_batches_from_production(self.solution)
+
+        # Process based on allocation method
+        if method == 'lp':
+            # LP OPTIMIZATION: Solve for optimal batch-to-shipment allocation
+            logger.info("Using LP FEFO with state-aware weighted aging")
+
+            from src.analysis.lp_fefo_allocator import LPFEFOAllocator
+
+            # Prepare shipment list for LP
+            shipment_list = []
+            for (origin, dest, prod, delivery_date), qty in sorted(shipments_by_route.items(), key=lambda x: x[0][3]):
+                route = next((r for r in self.routes
+                             if r.origin_node_id == origin and r.destination_node_id == dest), None)
+                state = 'ambient'  # Simplified
+                shipment_list.append((origin, dest, prod, state, qty, delivery_date))
+
+            # Run LP optimization
+            lp_allocator = LPFEFOAllocator(
+                batches=allocator.batches,
+                shipments=shipment_list
+            )
+
+            lp_result = lp_allocator.optimize_allocation()
+
+            if lp_result:
+                logger.info(f"LP FEFO solved: objective={lp_result['objective_value']:.4f}, time={lp_result['solve_time']:.2f}s")
+
+                # Apply LP allocations to batches
+                lp_allocator.apply_lp_allocation(lp_result, allocator)
+            else:
+                logger.warning("LP FEFO failed, falling back to greedy")
+                method = 'greedy'  # Fallback
+
+        if method == 'greedy':
+            # GREEDY: Process events chronologically
+            logger.info("Using greedy FEFO (chronological, oldest-first)")
+
+            for (origin, dest, prod, delivery_date), qty in sorted(shipments_by_route.items(), key=lambda x: x[0][3]):
+                route = next((r for r in self.routes
+                             if r.origin_node_id == origin and r.destination_node_id == dest), None)
+                state = 'ambient'
+
+                allocator.allocate_shipment(
+                    origin_node=origin,
+                    destination_node=dest,
+                    product_id=prod,
+                    state=state,
+                    quantity=qty,
+                    delivery_date=delivery_date
+                )
+
+        # Process state transitions (both methods)
+        for (node_id, prod, freeze_date), qty in sorted(freeze_flows.items(), key=lambda x: x[0][2]):
+            allocator.apply_freeze_transition(node_id, prod, qty, freeze_date)
+
+        for (node_id, prod, thaw_date), qty in sorted(thaw_flows.items(), key=lambda x: x[0][2]):
+            allocator.apply_thaw_transition(node_id, prod, qty, thaw_date)
+
+        # Fill in daily snapshots for complete history
         current_date = self.start_date
         while current_date <= self.end_date:
-            # 1. Production events on this date
-            for (node_id, product_id, prod_date), qty in production_events.items():
-                if prod_date == current_date:
-                    # Create batch via allocator (records production_date snapshot)
-                    allocator.create_batches_from_production({
-                        'production_by_date_product': {(node_id, product_id, prod_date): qty}
-                    })
-
-            # 2. Shipments arriving on this date
-            for (origin, dest, prod, delivery_date), qty in shipments_by_route.items():
-                if delivery_date == current_date:
-                    route = next((r for r in self.routes
-                                 if r.origin_node_id == origin and r.destination_node_id == dest), None)
-                    state = 'ambient'
-
-                    allocator.allocate_shipment(
-                        origin_node=origin,
-                        destination_node=dest,
-                        product_id=prod,
-                        state=state,
-                        quantity=qty,
-                        delivery_date=delivery_date
-                    )
-
-            # 3. State transitions on this date
-            for (node_id, prod, freeze_date), qty in freeze_flows.items():
-                if freeze_date == current_date:
-                    allocator.apply_freeze_transition(node_id, prod, qty, freeze_date)
-
-            for (node_id, prod, thaw_date), qty in thaw_flows.items():
-                if thaw_date == current_date:
-                    allocator.apply_thaw_transition(node_id, prod, qty, thaw_date)
-
-            # 4. Take snapshot of ALL batches at end of day
             for batch in allocator.batches:
                 batch.record_snapshot(current_date)
-
             current_date += timedelta(days=1)
 
         # Convert batches to serializable dicts
