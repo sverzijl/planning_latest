@@ -225,18 +225,34 @@ class TestUIComponentsWithPydantic:
     """Test UI components handle Pydantic models correctly."""
 
     def test_cost_charts_accepts_total_cost_breakdown(self, mock_optimization_solution):
-        """Test cost charts can handle TotalCostBreakdown."""
-        from ui.components.cost_charts import render_cost_breakdown_chart
+        """Test ALL cost chart functions can handle TotalCostBreakdown."""
+        from ui.components.cost_charts import (
+            render_cost_breakdown_chart,
+            render_cost_pie_chart,
+            render_daily_cost_chart
+        )
 
         cost_breakdown = mock_optimization_solution.costs
 
-        # Should not raise AttributeError about .total vs .total_cost
+        # Test all chart rendering functions
+        # Should not raise AttributeError about .total vs .total_cost or missing fields
         try:
             with patch('streamlit.plotly_chart'):
-                fig = render_cost_breakdown_chart(cost_breakdown)
-                assert fig is not None
+                # Test breakdown chart
+                fig1 = render_cost_breakdown_chart(cost_breakdown)
+                assert fig1 is not None
+
+                # Test pie chart
+                fig2 = render_cost_pie_chart(cost_breakdown)
+                assert fig2 is not None
+
+                # Test daily cost chart (requires daily_breakdown)
+                fig3 = render_daily_cost_chart(cost_breakdown)
+                assert fig3 is not None
+
         except AttributeError as e:
-            pytest.fail(f"Cost chart raised AttributeError: {e}")
+            pytest.fail(f"Cost chart raised AttributeError: {e}\n"
+                       f"This indicates missing field or wrong attribute name")
 
     def test_production_labeling_accepts_optimization_solution(self, mock_optimization_solution):
         """Test production labeling accepts OptimizationSolution."""

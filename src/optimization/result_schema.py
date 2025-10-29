@@ -104,6 +104,10 @@ class LaborCostBreakdown(BaseModel):
     overtime_cost: float = Field(default=0.0, ge=0, description="Cost for overtime (Mon-Fri 12-14h)")
     non_fixed_cost: float = Field(default=0.0, ge=0, description="Cost for non-fixed days (weekends/holidays)")
     by_date: Optional[Dict[Date, float]] = Field(None, description="Daily labor costs")
+    daily_breakdown: Optional[Dict[Date, Dict[str, float]]] = Field(
+        None,
+        description="Daily cost breakdown with hours and costs per date"
+    )
 
     model_config = ConfigDict(extra="allow")
 
