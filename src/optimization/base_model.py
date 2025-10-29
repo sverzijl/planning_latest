@@ -409,17 +409,35 @@ class BaseOptimizationModel(ABC):
                         logger.error(error_msg)
                         raise ValueError(error_msg) from e
 
-            except ValidationError as ve:
-                # Validation errors indicate a BUG in the model's extract_solution()
-                # These should NOT be swallowed - they indicate programming errors
+            except (ValidationError, ValueError, TypeError) as e:
+                # Validation/structural errors indicate BUGS in extract_solution() or apply_fefo_allocation()
+                # These should NOT be swallowed - mark solve as FAILED so UI shows error
                 import logging
                 logger = logging.getLogger(__name__)
-                logger.error(f"CRITICAL: Model violates OptimizationSolution schema: {ve}")
-                raise  # Re-raise to fail fast
+
+                error_type = type(e).__name__
+                logger.error(f"CRITICAL: Solution extraction/validation failed ({error_type}): {e}")
+
+                # Mark solve as FAILED (even though solver succeeded)
+                result.success = False
+                result.infeasibility_message = (
+                    f"Solution extraction failed - data structure invalid:\n{e}\n\n"
+                    f"The solver found a solution, but extracting it failed. "
+                    f"This is a BUG in the model code that needs fixing."
+                )
+                result.metadata['solution_extraction_failed'] = True
+                result.metadata['extraction_error'] = str(e)
+                result.metadata['error_type'] = error_type
+
+                # DO NOT re-raise - return failed result so UI can display error message
             except Exception as e:
-                # Other exceptions (e.g., solver-specific issues) can be logged
-                result.infeasibility_message = f"Warning: Solution extraction failed: {e}. Solve was successful but solution data unavailable."
-                # Keep result.success = True (solver succeeded)
+                # Unexpected exceptions
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Unexpected error during solution extraction: {e}")
+
+                result.success = False
+                result.infeasibility_message = f"Unexpected error during solution extraction: {e}"
                 result.metadata['solution_extraction_failed'] = True
 
         return result
@@ -630,17 +648,30 @@ class BaseOptimizationModel(ABC):
                 # If objective value is still missing, try to get it from extracted solution
                 if result.objective_value is None and hasattr(self.solution, 'total_cost'):
                     result.objective_value = self.solution.total_cost
-            except ValidationError as ve:
-                # Validation errors indicate a BUG in the model's extract_solution()
-                # These should NOT be swallowed - they indicate programming errors
+            except (ValidationError, ValueError, TypeError) as e:
+                # Validation/structural errors indicate BUGS - mark solve as FAILED
                 import logging
                 logger = logging.getLogger(__name__)
-                logger.error(f"CRITICAL: Model violates OptimizationSolution schema: {ve}")
-                raise  # Re-raise to fail fast
+
+                error_type = type(e).__name__
+                logger.error(f"CRITICAL: Solution extraction/validation failed ({error_type}): {e}")
+
+                result.success = False
+                result.infeasibility_message = (
+                    f"Solution extraction failed - data structure invalid:\n{e}\n\n"
+                    f"The solver found a solution, but extracting it failed. "
+                    f"This is a BUG in the model code that needs fixing."
+                )
+                result.metadata['solution_extraction_failed'] = True
+                result.metadata['extraction_error'] = str(e)
             except Exception as e:
-                # Other exceptions (e.g., solver-specific issues) can be logged
-                result.infeasibility_message = f"Warning: Solution extraction failed: {e}. Solve was successful but solution data unavailable."
-                # Keep result.success = True (solver succeeded)
+                # Unexpected exceptions
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Unexpected error during solution extraction: {e}")
+
+                result.success = False
+                result.infeasibility_message = f"Unexpected error during solution extraction: {e}"
                 result.metadata['solution_extraction_failed'] = True
 
         return result
