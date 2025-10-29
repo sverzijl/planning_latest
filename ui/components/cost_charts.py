@@ -21,10 +21,10 @@ def render_cost_pie_chart(cost_breakdown: TotalCostBreakdown, height: int = 400)
 
     labels = ['Labor', 'Production', 'Transport', 'Waste']
     values = [
-        cost_breakdown.labor.total_cost,
-        cost_breakdown.production.total_cost,
-        cost_breakdown.transport.total_cost,
-        cost_breakdown.waste.total_cost,
+        cost_breakdown.labor.total,
+        cost_breakdown.production.total,
+        cost_breakdown.transport.total,
+        cost_breakdown.waste.total,
     ]
     colors = ['#FF6B6B', '#4ECDC4', '#95E1D3', '#FFE66D']
 
@@ -60,10 +60,10 @@ def render_cost_breakdown_chart(cost_breakdown: TotalCostBreakdown, height: int 
     """
     components = ['Labor', 'Production', 'Transport', 'Waste']
     costs = [
-        cost_breakdown.labor.total_cost,
-        cost_breakdown.production.total_cost,
-        cost_breakdown.transport.total_cost,
-        cost_breakdown.waste.total_cost,
+        cost_breakdown.labor.total,
+        cost_breakdown.production.total,
+        cost_breakdown.transport.total,
+        cost_breakdown.waste.total,
     ]
     colors = ['#FF6B6B', '#4ECDC4', '#95E1D3', '#FFE66D']
 
@@ -305,10 +305,10 @@ def render_cost_waterfall(cost_breakdown: TotalCostBreakdown, height: int = 400)
         total_units = 1  # Avoid division by zero
 
     # Calculate per-unit costs
-    labor_per_unit = labor.total_cost / total_units
-    production_per_unit = production.total_cost / total_units
-    transport_per_unit = transport.total_cost / total_units
-    waste_per_unit = waste.total_cost / total_units
+    labor_per_unit = labor.total / total_units
+    production_per_unit = production.total / total_units
+    transport_per_unit = transport.total / total_units
+    waste_per_unit = waste.total / total_units
 
     fig = go.Figure(go.Waterfall(
         name='Cost Components',
