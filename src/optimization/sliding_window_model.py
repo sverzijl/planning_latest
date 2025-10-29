@@ -1714,11 +1714,65 @@ class SlidingWindowModel(BaseOptimizationModel):
         shortage_penalty = self.cost_structure.shortage_penalty_per_unit or 10.0
         solution['total_shortage_cost'] = total_shortage * shortage_penalty
 
-        # Holding cost (pallet-based if tracking enabled)
-        # Would need to extract from pallet_count variables - simplified for now
-        solution['total_holding_cost'] = 0  # Placeholder
-        solution['frozen_holding_cost'] = 0  # Placeholder
-        solution['ambient_holding_cost'] = 0  # Placeholder
+        # Holding cost, changeover costs, waste cost extraction
+        # Extract from model if available, otherwise use residual from total_cost
+        solution['total_holding_cost'] = 0
+        solution['frozen_holding_cost'] = 0
+        solution['ambient_holding_cost'] = 0
+        solution['total_changeover_cost'] = 0
+        solution['total_changeover_waste_cost'] = 0
+        solution['total_waste_cost'] = 0
+
+        # Try to extract holding cost from pallet variables
+        if hasattr(model, 'pallet_count'):
+            try:
+                frozen_cost_per_pallet_day = getattr(self.cost_structure, 'storage_cost_per_pallet_day_frozen', 0) or 0
+                ambient_cost_per_pallet_day = getattr(self.cost_structure, 'storage_cost_per_pallet_day_ambient', 0) or 0
+
+                for (node_id, prod, state, t) in model.pallet_count:
+                    pallets = value(model.pallet_count[node_id, prod, state, t])
+                    if pallets > 0.01:
+                        if state == 'frozen':
+                            solution['frozen_holding_cost'] += pallets * frozen_cost_per_pallet_day
+                        elif state in ['ambient', 'thawed']:
+                            solution['ambient_holding_cost'] += pallets * ambient_cost_per_pallet_day
+
+                solution['total_holding_cost'] = solution['frozen_holding_cost'] + solution['ambient_holding_cost']
+            except:
+                pass
+
+        # Try to extract changeover costs
+        if hasattr(model, 'product_start'):
+            try:
+                changeover_cost_per_start = getattr(self.cost_structure, 'changeover_cost_per_start', 0) or 0
+                changeover_waste_units = getattr(self.cost_structure, 'changeover_waste_units', 0) or 0
+                production_cost_per_unit = self.cost_structure.production_cost_per_unit or 0
+
+                total_starts = sum(
+                    value(model.product_start[node_id, prod, t])
+                    for (node_id, prod, t) in model.product_start
+                    if value(model.product_start[node_id, prod, t]) > 0.01
+                )
+
+                solution['total_changeover_cost'] = changeover_cost_per_start * total_starts
+                solution['total_changeover_waste_cost'] = production_cost_per_unit * changeover_waste_units * total_starts
+            except:
+                pass
+
+        # Try to extract end-of-horizon waste cost
+        waste_multiplier = self.cost_structure.waste_cost_multiplier or 0
+        if waste_multiplier > 0 and hasattr(model, 'inventory'):
+            try:
+                last_date = max(model.dates)
+                end_inventory = sum(
+                    value(model.inventory[node_id, prod, state, last_date])
+                    for (node_id, prod, state, t) in model.inventory
+                    if t == last_date and value(model.inventory[node_id, prod, state, last_date]) > 0.01
+                )
+                prod_cost = self.cost_structure.production_cost_per_unit or 1.3
+                solution['total_waste_cost'] = waste_multiplier * prod_cost * end_inventory
+            except:
+                pass
 
         # OPTIONAL: Apply FEFO allocator for batch-level detail
         # This converts aggregate flows to individual batches with traceability
