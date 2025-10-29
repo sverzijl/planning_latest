@@ -415,31 +415,31 @@ with tab_overview:
             st.markdown("#### Cost Components")
 
             # Labor
-            labor_pct = (cost_breakdown.labor.total_cost / cost_breakdown.total_cost * 100) if cost_breakdown.total_cost > 0 else 0
+            labor_pct = (cost_breakdown.labor.total / cost_breakdown.total_cost * 100) if cost_breakdown.total_cost > 0 else 0
             st.markdown(f"""
             <div style="padding: 8px; margin-bottom: 8px; border-left: 3px solid #3b82f6; background: #3b82f610;">
                 <div style="font-size: 12px; color: #64748b;">LABOR</div>
-                <div style="font-size: 18px; font-weight: 600;">${cost_breakdown.labor.total_cost:,.2f}</div>
+                <div style="font-size: 18px; font-weight: 600;">${cost_breakdown.labor.total:,.2f}</div>
                 <div style="font-size: 12px; color: #64748b;">{labor_pct:.1f}% of total</div>
             </div>
             """, unsafe_allow_html=True)
 
             # Production
-            prod_pct = (cost_breakdown.production.total_cost / cost_breakdown.total_cost * 100) if cost_breakdown.total_cost > 0 else 0
+            prod_pct = (cost_breakdown.production.total / cost_breakdown.total_cost * 100) if cost_breakdown.total_cost > 0 else 0
             st.markdown(f"""
             <div style="padding: 8px; margin-bottom: 8px; border-left: 3px solid #10b981; background: #10b98110;">
                 <div style="font-size: 12px; color: #64748b;">PRODUCTION</div>
-                <div style="font-size: 18px; font-weight: 600;">${cost_breakdown.production.total_cost:,.2f}</div>
+                <div style="font-size: 18px; font-weight: 600;">${cost_breakdown.production.total:,.2f}</div>
                 <div style="font-size: 12px; color: #64748b;">{prod_pct:.1f}% of total</div>
             </div>
             """, unsafe_allow_html=True)
 
             # Transport
-            transport_pct = (cost_breakdown.transport.total_cost / cost_breakdown.total_cost * 100) if cost_breakdown.total_cost > 0 else 0
+            transport_pct = (cost_breakdown.transport.total / cost_breakdown.total_cost * 100) if cost_breakdown.total_cost > 0 else 0
             st.markdown(f"""
             <div style="padding: 8px; margin-bottom: 8px; border-left: 3px solid #f59e0b; background: #f59e0b10;">
                 <div style="font-size: 12px; color: #64748b;">TRANSPORT</div>
-                <div style="font-size: 18px; font-weight: 600;">${cost_breakdown.transport.total_cost:,.2f}</div>
+                <div style="font-size: 18px; font-weight: 600;">${cost_breakdown.transport.total:,.2f}</div>
                 <div style="font-size: 12px; color: #64748b;">{transport_pct:.1f}% of total</div>
             </div>
             """, unsafe_allow_html=True)
@@ -464,9 +464,9 @@ with tab_overview:
     # Cost insights
     if cost_breakdown:
         dominant_cost = max(
-            [('Labor', cost_breakdown.labor.total_cost),
-             ('Production', cost_breakdown.production.total_cost),
-             ('Transport', cost_breakdown.transport.total_cost)],
+            [('Labor', cost_breakdown.labor.total),
+             ('Production', cost_breakdown.production.total),
+             ('Transport', cost_breakdown.transport.total)],
             key=lambda x: x[1]
         )
         insights.append(f"💰 **Largest cost driver:** {dominant_cost[0]} (${dominant_cost[1]:,.2f})")
@@ -818,24 +818,24 @@ with tab_costs:
 
         with col1:
             st.markdown(colored_metric("Total Cost", f"${cost_breakdown.total_cost:,.2f}", "primary"), unsafe_allow_html=True)
-            st.markdown(colored_metric("Production", f"${cost_breakdown.production.total_cost:,.2f}", "primary"), unsafe_allow_html=True)
+            st.markdown(colored_metric("Production", f"${cost_breakdown.production.total:,.2f}", "primary"), unsafe_allow_html=True)
 
         with col2:
-            st.markdown(colored_metric("Labor", f"${cost_breakdown.labor.total_cost:,.2f}", "secondary"), unsafe_allow_html=True)
-            st.markdown(colored_metric("Transport", f"${cost_breakdown.transport.total_cost:,.2f}", "secondary"), unsafe_allow_html=True)
+            st.markdown(colored_metric("Labor", f"${cost_breakdown.labor.total:,.2f}", "secondary"), unsafe_allow_html=True)
+            st.markdown(colored_metric("Transport", f"${cost_breakdown.transport.total:,.2f}", "secondary"), unsafe_allow_html=True)
 
         with col3:
             total_units = sum(s.quantity for s in results.get('shipments', []))
             cost_per_unit = cost_breakdown.total_cost / total_units if total_units > 0 else 0
             st.markdown(colored_metric("Cost/Unit", f"${cost_per_unit:.2f}", "accent"), unsafe_allow_html=True)
-            st.markdown(colored_metric("Waste", f"${cost_breakdown.waste.total_cost:,.2f}", "accent"), unsafe_allow_html=True)
+            st.markdown(colored_metric("Waste", f"${cost_breakdown.waste.total:,.2f}", "accent"), unsafe_allow_html=True)
 
         with col4:
             # Cost breakdown percentages
             if cost_breakdown.total_cost > 0:
-                labor_pct = (cost_breakdown.labor.total_cost / cost_breakdown.total_cost) * 100
+                labor_pct = (cost_breakdown.labor.total / cost_breakdown.total_cost) * 100
                 st.caption(f"**Labor:** {labor_pct:.1f}%")
-                prod_pct = (cost_breakdown.production.total_cost / cost_breakdown.total_cost) * 100
+                prod_pct = (cost_breakdown.production.total / cost_breakdown.total_cost) * 100
                 st.caption(f"**Production:** {prod_pct:.1f}%")
 
         st.divider()
@@ -975,9 +975,9 @@ with tab_comparison:
             ],
             'Heuristic': [
                 f"${heuristic_cost:,.2f}",
-                f"${heuristic_results['cost_breakdown'].production.total_cost:,.2f}",
-                f"${heuristic_results['cost_breakdown'].labor.total_cost:,.2f}",
-                f"${heuristic_results['cost_breakdown'].transport.total_cost:,.2f}",
+                f"${heuristic_results['cost_breakdown'].production.total:,.2f}",
+                f"${heuristic_results['cost_breakdown'].labor.total:,.2f}",
+                f"${heuristic_results['cost_breakdown'].transport.total:,.2f}",
                 str(len(heuristic_results['production_schedule'].daily_totals)),
                 f"{heuristic_results['production_schedule'].total_units:,.0f}",
                 f"${heuristic_cost / heuristic_results['production_schedule'].total_units:.2f}" if heuristic_results['production_schedule'].total_units > 0 else "N/A"

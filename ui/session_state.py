@@ -342,10 +342,10 @@ def get_planning_summary() -> dict:
     if costs:
         summary['total_cost'] = costs.total_cost
         summary['cost_per_unit'] = costs.cost_per_unit_delivered
-        summary['labor_cost'] = costs.labor.total_cost
-        summary['production_cost'] = costs.production.total_cost
-        summary['transport_cost'] = costs.transport.total_cost
-        summary['waste_cost'] = costs.waste.total_cost
+        summary['labor_cost'] = costs.labor.total
+        summary['production_cost'] = costs.production.total
+        summary['transport_cost'] = costs.transport.total
+        summary['waste_cost'] = costs.waste.total
 
     return summary
 

@@ -190,10 +190,10 @@ def render_cost_summary_table(cost_breakdown):
         cost_breakdown: TotalCostBreakdown instance
     """
     data = [
-        {'Component': 'Labor', 'Cost': cost_breakdown.labor.total_cost},
-        {'Component': 'Production', 'Cost': cost_breakdown.production.total_cost},
-        {'Component': 'Transport', 'Cost': cost_breakdown.transport.total_cost},
-        {'Component': 'Waste', 'Cost': cost_breakdown.waste.total_cost},
+        {'Component': 'Labor', 'Cost': cost_breakdown.labor.total},
+        {'Component': 'Production', 'Cost': cost_breakdown.production.total},
+        {'Component': 'Transport', 'Cost': cost_breakdown.transport.total},
+        {'Component': 'Waste', 'Cost': cost_breakdown.waste.total},
         {'Component': '**TOTAL**', 'Cost': cost_breakdown.total_cost},
     ]
 
@@ -242,7 +242,7 @@ def render_labor_breakdown_table(cost_breakdown):
         {
             'Category': '**TOTAL**',
             'Hours': f"**{labor.total_hours:.1f}**",
-            'Cost': f"**${labor.total_cost:,.2f}**"
+            'Cost': f"**${labor.total:,.2f}**"
         },
     ]
 
