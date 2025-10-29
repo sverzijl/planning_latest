@@ -355,9 +355,12 @@ class DailySnapshotGenerator:
         - Current location of each batch over time
         """
         # Index batches by production date
+        # FILTER OUT initial inventory (INIT-*) - they're not production activity!
         self._batches_by_date: Dict[Date, List[ProductionBatch]] = defaultdict(list)
         for batch in self.production_schedule.production_batches:
-            self._batches_by_date[batch.production_date].append(batch)
+            # Only index actual production batches, not initial inventory
+            if not batch.id.startswith('INIT-'):
+                self._batches_by_date[batch.production_date].append(batch)
 
         # Index shipments by departure date
         self._shipments_by_departure: Dict[Date, List[Shipment]] = defaultdict(list)

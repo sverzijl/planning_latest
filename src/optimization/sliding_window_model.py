@@ -1952,7 +1952,73 @@ class SlidingWindowModel(BaseOptimizationModel):
         # Pydantic allows extra fields with Extra.allow configuration
         opt_solution.shipments_by_route_product_date = solution_dict.get('shipments_by_route_product_date', {})
 
+        # Validate solution before returning (fail-fast on data issues)
+        self._validate_solution(opt_solution)
+
         return opt_solution
+
+    def _validate_solution(self, solution: 'OptimizationSolution') -> None:
+        """Validate OptimizationSolution for common data issues.
+
+        This method performs sanity checks to catch data extraction bugs early,
+        before they cause confusing UI errors.
+
+        Args:
+            solution: OptimizationSolution to validate
+
+        Raises:
+            ValueError: If validation fails with descriptive error message
+        """
+        errors = []
+
+        # Check 1: Shipments must exist if there's production
+        if solution.total_production > 0.01 and len(solution.shipments) == 0:
+            errors.append(
+                f"Production exists ({solution.total_production:.0f} units) but no shipments found. "
+                "Check that extract_solution() properly converts shipments_by_route to ShipmentResult objects."
+            )
+
+        # Check 2: Production batches must match total_production
+        batch_sum = sum(b.quantity for b in solution.production_batches)
+        if abs(batch_sum - solution.total_production) > 1.0:
+            errors.append(
+                f"Production batch sum ({batch_sum:.0f}) != total_production ({solution.total_production:.0f}). "
+                "Mismatch indicates data extraction bug."
+            )
+
+        # Check 3: Labor hours must exist if there's production
+        if solution.total_production > 0.01 and len(solution.labor_hours_by_date) == 0:
+            errors.append(
+                "Production exists but no labor hours found. "
+                "Check that labor_hours_by_date is properly populated."
+            )
+
+        # Check 4: Model-specific validation
+        if solution.model_type == "sliding_window":
+            # SlidingWindowModel should have aggregate inventory
+            if not solution.has_aggregate_inventory:
+                errors.append(
+                    "SlidingWindowModel must set has_aggregate_inventory=True"
+                )
+
+        # Log warnings (don't fail on these)
+        if solution.costs.cost_per_unit_delivered is None and solution.total_production > 0:
+            logger.warning(
+                "cost_per_unit_delivered is None despite production > 0. "
+                "This may indicate no units were delivered (demand = 0)."
+            )
+
+        if errors:
+            error_msg = "OptimizationSolution validation failed:\n" + "\n".join(f"  - {e}" for e in errors)
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+        logger.info(
+            f"OptimizationSolution validation passed: "
+            f"{len(solution.production_batches)} batches, "
+            f"{len(solution.shipments)} shipments, "
+            f"fill_rate={solution.fill_rate:.1%}"
+        )
 
     def apply_fefo_allocation(self, method: str = 'greedy'):
         """Apply FEFO batch allocator to convert aggregate flows to batch detail.
@@ -2098,6 +2164,9 @@ class SlidingWindowModel(BaseOptimizationModel):
     def extract_shipments(self):
         """Extract shipments from solution for UI compatibility.
 
+        REFACTORED: Use Pydantic-validated shipments from solution.
+        The solution.shipments field already contains converted ShipmentResult objects.
+
         Returns:
             List of Shipment objects for UI display
         """
@@ -2108,66 +2177,62 @@ class SlidingWindowModel(BaseOptimizationModel):
         from src.shelf_life.tracker import RouteLeg
         from src.network.route_finder import RoutePath
 
-        # Note: self.solution is now OptimizationSolution (Pydantic model)
-        shipments_by_route = getattr(self.solution, 'shipments_by_route_product_date', {})
-        truck_assignments = self.solution.truck_assignments or {}
+        # Use Pydantic-validated shipments (already converted in extract_solution)
+        shipment_results = self.solution.shipments
+
+        if not shipment_results:
+            logger.warning("No shipments found in OptimizationSolution.shipments")
+            return []
 
         shipments = []
-        shipment_counter = 1
 
-        for (origin, dest, prod, delivery_date), qty in shipments_by_route.items():
-            # Find route
+        # Convert ShipmentResult (Pydantic) → Shipment (legacy model) for UI compatibility
+        for idx, shipment_result in enumerate(shipment_results, start=1):
+            # Find route for complete path information
             route = next((r for r in self.routes
-                         if r.origin_node_id == origin and r.destination_node_id == dest), None)
+                         if r.origin_node_id == shipment_result.origin and
+                            r.destination_node_id == shipment_result.destination), None)
 
             if not route:
+                logger.warning(f"No route found for shipment {shipment_result.origin} → {shipment_result.destination}")
                 continue
 
-            # Create simple single-leg route
+            # Create single-leg route path
             leg = RouteLeg(
-                from_location_id=origin,
-                to_location_id=dest,
-                transport_mode='ambient',  # Simplified (would need state tracking for accuracy)
+                from_location_id=shipment_result.origin,
+                to_location_id=shipment_result.destination,
+                transport_mode=shipment_result.state.value if shipment_result.state else 'ambient',
                 transit_days=route.transit_days
             )
 
             route_path = RoutePath(
-                path=[origin, dest],
+                path=[shipment_result.origin, shipment_result.destination],
                 total_transit_days=route.transit_days,
-                total_cost=route.cost_per_unit * qty if hasattr(route, 'cost_per_unit') else 0,
-                transport_modes=['ambient'],
+                total_cost=route.cost_per_unit * shipment_result.quantity if hasattr(route, 'cost_per_unit') else 0,
+                transport_modes=[shipment_result.state.value if shipment_result.state else 'ambient'],
                 route_legs=[leg],
                 intermediate_stops=[]
             )
 
-            # Calculate departure date
-            departure_date = delivery_date - timedelta(days=route.transit_days)
-
-            # Check if shipment has truck assignment
-            route_key = (origin, dest, prod, delivery_date)
-            truck_idx = truck_assignments.get(route_key)
-            assigned_truck_id = None
-
-            if truck_idx is not None and self.truck_schedules:
-                # Get truck ID from truck schedule
-                if truck_idx < len(self.truck_schedules):
-                    truck = self.truck_schedules[truck_idx]
-                    assigned_truck_id = truck.id
+            # Calculate departure date from delivery date and transit time
+            departure_date = shipment_result.departure_date
+            if not departure_date:
+                departure_date = shipment_result.delivery_date - timedelta(days=route.transit_days)
 
             shipment = Shipment(
-                id=f"SHIP-{shipment_counter:04d}",
-                batch_id=f"BATCH-AGGREGATE",  # Aggregate flows (use FEFO for batch detail)
-                product_id=prod,
-                quantity=qty,
-                origin_id=origin,
-                destination_id=dest,
-                delivery_date=delivery_date,
+                id=f"SHIP-{idx:04d}",
+                batch_id=f"BATCH-AGGREGATE",  # Aggregate flows (no batch tracking in sliding window)
+                product_id=shipment_result.product,
+                quantity=shipment_result.quantity,
+                origin_id=shipment_result.origin,
+                destination_id=shipment_result.destination,
+                delivery_date=shipment_result.delivery_date,
                 route=route_path,
-                production_date=departure_date,  # Approximate (actual production may be earlier)
-                assigned_truck_id=assigned_truck_id,  # Truck assignment from optimization
+                production_date=shipment_result.production_date or departure_date,
+                assigned_truck_id=shipment_result.assigned_truck_id,
             )
 
             shipments.append(shipment)
-            shipment_counter += 1
 
+        logger.info(f"Converted {len(shipments)} ShipmentResult objects to Shipment objects")
         return shipments
