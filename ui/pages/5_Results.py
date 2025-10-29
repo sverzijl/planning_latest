@@ -352,9 +352,9 @@ with tab_overview:
         model = opt_results.get('model')
         solution = model.get_solution() if model else None
 
-        if solution and 'shortages_by_dest_product_date' in solution:
-            total_shortage = solution.get('total_shortage_units', 0)
-            shortage_cost = solution.get('total_shortage_cost', 0)
+        if solution and hasattr(solution, 'shortages'):
+            total_shortage = solution.total_shortage_units
+            shortage_cost = solution.costs.waste.shortage_penalty
 
             # Calculate total demand (would need to get from model.demand)
             # For now, show shortage metrics
@@ -379,7 +379,7 @@ with tab_overview:
             # Show shortage details if any
             if total_shortage > 0:
                 with st.expander("⚠️ Shortage Details", expanded=False):
-                    shortages = solution.get('shortages_by_dest_product_date', {})
+                    shortages = solution.shortages or {}
                     shortage_data = []
                     for (dest, product, date), qty in shortages.items():
                         if qty > 0:
@@ -904,7 +904,7 @@ with tab_comparison:
         heuristic_cost = heuristic_results['cost_breakdown'].total_cost
         # Use properly calculated total_cost from model solution, not raw solver objective_value
         model_solution = opt_results['model'].get_solution()
-        opt_cost = model_solution.get('total_cost', 0) if model_solution else 0
+        opt_cost = model_solution.total_cost if model_solution else 0
 
         # Validate opt_cost is finite
         if opt_cost is None or math.isinf(opt_cost) or math.isnan(opt_cost):
@@ -931,17 +931,17 @@ with tab_comparison:
             # Use model_solution already obtained above
             if model_solution:
                 production_days = len(set(
-                    batch['date'] for batch in model_solution.get('production_batches', [])
-                )) if 'production_batches' in model_solution else 0
+                    batch.date for batch in model_solution.production_batches
+                )) if model_solution.production_batches else 0
                 total_production = sum(
-                    batch['quantity'] for batch in model_solution.get('production_batches', [])
-                ) if 'production_batches' in model_solution else 0
+                    batch.quantity for batch in model_solution.production_batches
+                ) if model_solution.production_batches else 0
 
                 # Extract cost components
-                opt_production_cost = model_solution.get('total_production_cost', 0)
-                opt_labor_cost = model_solution.get('total_labor_cost', 0)
-                opt_transport_cost = model_solution.get('total_transport_cost', 0)
-                opt_truck_cost = model_solution.get('total_truck_cost', 0)
+                opt_production_cost = model_solution.costs.production.total
+                opt_labor_cost = model_solution.costs.labor.total
+                opt_transport_cost = model_solution.costs.transport.total
+                opt_truck_cost = model_solution.costs.transport.truck_fixed_cost
             else:
                 production_days = 0
                 total_production = 0

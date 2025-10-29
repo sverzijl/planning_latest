@@ -399,26 +399,37 @@ with tab4:
 
         # Extract and display production data if model available
         if result.model and hasattr(result.model, 'get_solution'):
-            solution_dict = result.model.get_solution()
+            solution = result.model.get_solution()  # Now OptimizationSolution (Pydantic)
 
-            if solution_dict:
+            if solution:
                 st.subheader("Production Summary")
 
-                # Production by product
-                production_by_product = solution_dict.get('production_by_product', {})
-                if production_by_product:
-                    st.write("**Total Production by SKU:**")
-                    import pandas as pd
-                    prod_df = pd.DataFrame([
-                        {"Product": prod, "Quantity": qty}
-                        for prod, qty in production_by_product.items()
-                    ]).sort_values("Quantity", ascending=False)
-                    st.dataframe(prod_df, hide_index=True, use_container_width=True)
+                # Production by product (from production_by_date_product)
+                production_by_date_product = solution.production_by_date_product or {}
+                if production_by_date_product:
+                    # Aggregate by product
+                    from collections import defaultdict
+                    production_by_product = defaultdict(float)
+                    for (node, prod, date_val), qty in production_by_date_product.items():
+                        production_by_product[prod] += qty
+
+                    if production_by_product:
+                        st.write("**Total Production by SKU:**")
+                        import pandas as pd
+                        prod_df = pd.DataFrame([
+                            {"Product": prod, "Quantity": qty}
+                            for prod, qty in production_by_product.items()
+                        ]).sort_values("Quantity", ascending=False)
+                        st.dataframe(prod_df, hide_index=True, use_container_width=True)
 
                 st.divider()
 
-                # Production by date
-                production_by_date = solution_dict.get('production_by_date', {})
+                # Production by date (aggregate from production_by_date_product)
+                if production_by_date_product:
+                    from collections import defaultdict
+                    production_by_date = defaultdict(float)
+                    for (node, prod, date_val), qty in production_by_date_product.items():
+                        production_by_date[date_val] += qty
                 if production_by_date:
                     st.subheader("Daily Production")
                     import pandas as pd
@@ -443,10 +454,8 @@ with tab4:
                 st.divider()
 
                 # Cost breakdown
-                cost_breakdown = solution_dict.get('cost_breakdown', {})
-                # Also check metadata directly (cost_breakdown might not exist)
-                if not cost_breakdown and solution_dict:
-                    cost_breakdown = solution_dict
+                # Cost breakdown from Pydantic model
+                cost_breakdown = solution.costs if hasattr(solution, 'costs') else None
 
                 if cost_breakdown:
                     st.subheader("Cost Breakdown (Incremental Costs)")
@@ -454,37 +463,37 @@ with tab4:
                     # Primary operational costs (Row 1)
                     col1, col2, col3, col4 = st.columns(4)
                     with col1:
-                        labor_cost = cost_breakdown.get('total_labor_cost', 0)
+                        labor_cost = cost_breakdown.labor.total
                         st.metric("Labor Cost", f"${labor_cost:,.2f}")
                     with col2:
-                        shortage_cost = cost_breakdown.get('total_shortage_cost', 0)
+                        shortage_cost = cost_breakdown.waste.shortage_penalty
                         st.metric("Shortage Penalty", f"${shortage_cost:,.2f}")
                     with col3:
-                        waste_cost = cost_breakdown.get('total_waste_cost', 0)
+                        waste_cost = cost_breakdown.waste.expiration_waste
                         st.metric("Waste Cost", f"${waste_cost:,.2f}")
                     with col4:
-                        staleness_cost = cost_breakdown.get('total_staleness_cost', 0)
+                        staleness_cost = getattr(solution, 'total_staleness_cost', 0)
                         st.metric("Freshness Penalty", f"${staleness_cost:,.2f}")
 
                     # Secondary costs (Row 2)
                     col1, col2, col3, col4 = st.columns(4)
                     with col1:
-                        transport_cost = cost_breakdown.get('total_transport_cost', 0)
+                        transport_cost = cost_breakdown.transport.total
                         st.metric("Transport Cost", f"${transport_cost:,.2f}")
                     with col2:
-                        storage_cost = cost_breakdown.get('total_holding_cost', 0)
+                        storage_cost = cost_breakdown.holding.total
                         st.metric("Storage Cost", f"${storage_cost:,.2f}")
                     with col3:
-                        changeover_cost = cost_breakdown.get('total_changeover_cost', 0)
+                        changeover_cost = cost_breakdown.production.changeover_cost
                         st.metric("Changeover Cost", f"${changeover_cost:,.2f}")
                     with col4:
-                        total_cost = cost_breakdown.get('total_cost', 0)
+                        total_cost = cost_breakdown.total_cost
                         st.metric("Total Incremental", f"${total_cost:,.2f}")
 
-                    # Show production cost and waste details
-                    prod_cost_ref = cost_breakdown.get('total_production_cost_reference', 0)
-                    changeover_waste_units = cost_breakdown.get('total_changeover_waste_units', 0)
-                    end_inv_units = cost_breakdown.get('end_horizon_inventory_units', 0)
+                    # Show production cost and waste details (extra fields)
+                    prod_cost_ref = getattr(solution, 'total_production_cost_reference', 0)
+                    changeover_waste_units = getattr(solution, 'total_changeover_waste_units', 0)
+                    end_inv_units = getattr(solution, 'end_horizon_inventory_units', 0)
 
                     if prod_cost_ref > 0 or changeover_waste_units > 0 or end_inv_units > 0:
                         with st.expander("💡 Cost Details"):
@@ -493,7 +502,8 @@ with tab4:
                                 st.caption("Not in objective - pass-through cost, doesn't vary with decisions")
 
                             if changeover_waste_units > 0:
-                                st.write(f"**Changeover waste:** {changeover_waste_units:,.0f} units (${cost_breakdown.get('total_changeover_waste_cost', 0):,.2f})")
+                                changeover_waste_cost = getattr(solution, 'total_changeover_waste_cost', 0)
+                            st.write(f"**Changeover waste:** {changeover_waste_units:,.0f} units (${changeover_waste_cost:,.2f})")
                                 st.caption("Material lost during SKU transitions - creates batch size economics")
 
                             if end_inv_units > 0:
