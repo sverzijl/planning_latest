@@ -58,7 +58,7 @@ class ExcelParser:
         self.file_path = Path(file_path)
         if not self.file_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
-        if self.file_path.suffix not in [".xlsm", ".xlsx"]:
+        if self.file_path.suffix.lower() not in [".xlsm", ".xlsx"]:
             raise ValueError(f"File must be .xlsm or .xlsx: {file_path}")
 
         self.product_alias_resolver = product_alias_resolver

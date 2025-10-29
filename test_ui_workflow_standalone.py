@@ -48,7 +48,7 @@ try:
     routes = parser.parse_routes()  # No parameters needed
     labor_calendar = parser.parse_labor_calendar()
     truck_schedules_list = parser.parse_truck_schedules()
-    cost_structure = parser.parse_cost_parameters()
+    cost_structure = parser.parse_cost_structure()
 
     parser_forecast = ExcelParser(forecast_file)
     forecast = parser_forecast.parse_forecast()

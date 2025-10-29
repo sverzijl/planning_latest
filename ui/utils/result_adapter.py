@@ -345,23 +345,21 @@ def _create_truck_plan_from_optimization(model: Any, shipments: List[Shipment]) 
     )
 
 
-def _create_cost_breakdown(model: Any, solution: 'OptimizationSolution') -> TotalCostBreakdown:
-    """Convert optimization cost components to TotalCostBreakdown object.
+def _create_cost_breakdown(model: Any, solution: dict) -> TotalCostBreakdown:
+    """Convert optimization solution dict to TotalCostBreakdown object.
 
-    SIMPLIFIED: Pydantic-validated OptimizationSolution already has TotalCostBreakdown.
-    This function now just returns solution.costs directly (already validated).
+    Builds cost breakdown from solution dict fields for SlidingWindowModel.
 
     Args:
-        model: BaseOptimizationModel instance (unused, kept for compatibility)
-        solution: Pydantic-validated OptimizationSolution with costs field
+        model: BaseOptimizationModel instance
+        solution: Solution dict from model.get_solution()
 
     Returns:
-        TotalCostBreakdown from solution.costs
+        TotalCostBreakdown object
     """
-    # MASSIVE SIMPLIFICATION: Just return the validated cost breakdown!
-    # No isinstance() checks, no defensive .get() calls, no manual aggregation
-    # Pydantic guarantees solution.costs exists and is a valid TotalCostBreakdown
-    return solution.costs
+    # For SlidingWindowModel, solution is a dict, not OptimizationSolution
+    # Build cost breakdown manually from solution fields
+    return _create_cost_breakdown_legacy(model, solution)
 
 
 def _create_cost_breakdown_legacy(model: Any, solution: dict) -> TotalCostBreakdown:
@@ -381,11 +379,9 @@ def _create_cost_breakdown_legacy(model: Any, solution: dict) -> TotalCostBreakd
     thaw_cost = solution.get('total_thaw_cost', 0)
     holding_cost = solution.get('total_holding_cost', 0)  # Pallet-based storage costs
 
-    # Calculate total cost (sum of all components)
-    total_cost = (
-        labor_cost + production_cost + transport_cost + truck_cost +
-        shortage_cost + freeze_cost + thaw_cost + holding_cost
-    )
+    # Use actual total cost from model objective (includes all costs like changeover)
+    # Don't calculate from components - some costs (changeover, pallet entry) not broken down
+    total_cost = solution.get('total_cost', 0)
 
     # Get daily labor hours and costs
     labor_hours_by_date = solution.get('labor_hours_by_date', {})
@@ -394,20 +390,21 @@ def _create_cost_breakdown_legacy(model: Any, solution: dict) -> TotalCostBreakd
     # Convert labor hours to nested format for daily_breakdown
     daily_breakdown_nested: Dict[Date, Dict[str, float]] = {}
     for date_val, total_cost_val in labor_cost_by_date.items():
-        labor_breakdown_obj = labor_hours_by_date.get(date_val)
-        if labor_breakdown_obj:
+        labor_hours = labor_hours_by_date.get(date_val, 0)
+        # labor_hours is a float from SlidingWindowModel, not an object
+        if labor_hours:
             daily_breakdown_nested[date_val] = {
-                'total_hours': labor_breakdown_obj.used,
-                'fixed_hours': labor_breakdown_obj.fixed,
-                'overtime_hours': labor_breakdown_obj.overtime,
+                'total_hours': labor_hours,
+                'fixed_hours': 0,  # Not separately tracked
+                'overtime_hours': 0,  # Not separately tracked
                 'fixed_cost': 0,
                 'overtime_cost': 0,
                 'non_fixed_cost': 0,
                 'total_cost': total_cost_val,
             }
 
-    # Calculate total labor hours
-    total_labor_hours = sum(lb.used for lb in labor_hours_by_date.values())
+    # Calculate total labor hours (handle both dict and float values)
+    total_labor_hours = sum(labor_hours_by_date.values())
 
     # Build labor cost breakdown
     labor_breakdown = LaborCostBreakdown(
