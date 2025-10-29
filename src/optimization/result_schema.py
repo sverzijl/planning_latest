@@ -103,6 +103,15 @@ class LaborCostBreakdown(BaseModel):
     fixed_hours_cost: float = Field(default=0.0, ge=0, description="Cost for fixed hours (Mon-Fri 0-12h)")
     overtime_cost: float = Field(default=0.0, ge=0, description="Cost for overtime (Mon-Fri 12-14h)")
     non_fixed_cost: float = Field(default=0.0, ge=0, description="Cost for non-fixed days (weekends/holidays)")
+    non_fixed_labor_cost: float = Field(default=0.0, ge=0, description="Alias for non_fixed_cost (backward compat)")
+
+    # Hour tracking
+    total_hours: float = Field(default=0.0, ge=0, description="Total hours worked")
+    fixed_hours: float = Field(default=0.0, ge=0, description="Fixed hours (Mon-Fri regular)")
+    overtime_hours: float = Field(default=0.0, ge=0, description="Overtime hours (>12h weekdays)")
+    non_fixed_hours: float = Field(default=0.0, ge=0, description="Non-fixed hours (weekends/holidays)")
+
+    # Daily breakdowns
     by_date: Optional[Dict[Date, float]] = Field(None, description="Daily labor costs")
     daily_breakdown: Optional[Dict[Date, Dict[str, float]]] = Field(
         None,
@@ -117,7 +126,9 @@ class ProductionCostBreakdown(BaseModel):
     total: float = Field(..., ge=0, description="Total production cost")
     unit_cost: float = Field(..., ge=0, description="Cost per unit produced")
     total_units: float = Field(..., ge=0, description="Total units produced")
+    total_units_produced: float = Field(default=0.0, ge=0, description="Alias for total_units (backward compat)")
     changeover_cost: float = Field(default=0.0, ge=0, description="Product changeover/setup cost")
+    cost_by_date: Optional[Dict[Date, float]] = Field(None, description="Daily production costs")
 
     model_config = ConfigDict(extra="allow")
 
