@@ -45,12 +45,13 @@ print(f"   Inventory: {inventory_file.exists()}")
 try:
     parser = ExcelParser(config_file)
     locations = parser.parse_locations()
-    routes = parser.parse_routes(locations)
+    routes = parser.parse_routes()  # No parameters needed
     labor_calendar = parser.parse_labor_calendar()
     truck_schedules_list = parser.parse_truck_schedules()
     cost_structure = parser.parse_cost_parameters()
 
-    forecast = parser.parse_forecast(forecast_file)
+    parser_forecast = ExcelParser(forecast_file)
+    forecast = parser_forecast.parse_forecast()
 
     parser_inv = ExcelParser(inventory_file)
     initial_inventory = parser_inv.parse_inventory(locations)
