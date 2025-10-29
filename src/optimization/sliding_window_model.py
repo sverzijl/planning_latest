@@ -2165,11 +2165,18 @@ class SlidingWindowModel(BaseOptimizationModel):
                 'quantity_history': quantity_history_iso,  # Quantity at each date
             })
 
+        # Convert batch_inventory tuple keys to strings for Pydantic compatibility
+        # Schema expects Dict[str, List[Any]] but allocator uses tuple keys
+        batch_inventory_serialized = {}
+        for (node_id, product_id, state), batches in allocator.batch_inventory.items():
+            key = f"{node_id}|{product_id}|{state}"  # Serialize tuple to string
+            batch_inventory_serialized[key] = batches
+
         # Return batch detail (as serializable dicts)
         return {
             'batches': batch_dicts,  # List of dicts (JSON-serializable)
             'batch_objects': allocator.batches,  # Keep objects for in-memory use
-            'batch_inventory': dict(allocator.batch_inventory),
+            'batch_inventory': batch_inventory_serialized,  # STRING keys for Pydantic
             'shipment_allocations': allocator.shipment_allocations,
         }
 
