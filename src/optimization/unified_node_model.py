@@ -2348,7 +2348,7 @@ class UnifiedNodeModel(BaseOptimizationModel):
                      if r.origin_node_id == origin and r.destination_node_id == dest), None)
         return route.cost_per_unit if route else 0.0
 
-    def get_solution(self) -> Optional[Dict[str, Any]]:
+    def get_solution(self) -> Optional['OptimizationSolution']:
         """Extract solution from solved model.
 
         Returns:
