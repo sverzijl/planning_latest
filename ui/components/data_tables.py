@@ -201,7 +201,12 @@ def render_cost_summary_table(cost_breakdown):
     df['Cost'] = df['Cost'].apply(lambda x: f"${x:,.2f}")
 
     st.dataframe(df, use_container_width=True, hide_index=True)
-    st.caption(f"Cost per unit delivered: ${cost_breakdown.cost_per_unit_delivered:.2f}")
+
+    # Display cost per unit if available
+    if cost_breakdown.cost_per_unit_delivered is not None:
+        st.caption(f"Cost per unit delivered: ${cost_breakdown.cost_per_unit_delivered:.2f}")
+    else:
+        st.caption("Cost per unit delivered: N/A (no units delivered)")
 
 
 def render_cost_breakdown_table(cost_breakdown):

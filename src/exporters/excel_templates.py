@@ -428,6 +428,12 @@ def export_production_schedule(
 
     # Add cost information if available
     if cost_breakdown:
+        # Format cost per unit (handle None)
+        cost_per_unit_str = (
+            f'${cost_breakdown.cost_per_unit_delivered:.4f}'
+            if cost_breakdown.cost_per_unit_delivered is not None
+            else 'N/A'
+        )
         metadata.extend([
             ['', ''],
             ['Cost Summary', ''],
@@ -436,7 +442,7 @@ def export_production_schedule(
             ['Production Cost', f'${cost_breakdown.production.total_cost:,.2f}'],
             ['Transport Cost', f'${cost_breakdown.transport.total_cost:,.2f}'],
             ['Waste Cost', f'${cost_breakdown.waste.total_cost:,.2f}'],
-            ['Cost Per Unit', f'${cost_breakdown.cost_per_unit_delivered:.4f}'],
+            ['Cost Per Unit', cost_per_unit_str],
         ])
 
     # Write metadata
@@ -502,7 +508,7 @@ def export_cost_breakdown(
          cost_data.waste.total_cost / cost_data.total_cost if cost_data.total_cost > 0 else 0,
          f"{cost_data.waste.expired_units + cost_data.waste.unmet_demand_units:,.0f} units"],
         ['TOTAL', cost_data.total_cost, 1.0,
-         f"${cost_data.cost_per_unit_delivered:.4f} per unit"],
+         f"${cost_data.cost_per_unit_delivered:.4f} per unit" if cost_data.cost_per_unit_delivered is not None else "N/A per unit"],
     ]
 
     # Write data

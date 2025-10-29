@@ -221,27 +221,32 @@ filtered_shipments = [
 #### Cost Analysis Page
 
 ```python
-# Filter cost data by date
-all_dates = list(cost_breakdown.labor.cost_by_date.keys())
-min_date = datetime.combine(min(all_dates), datetime.min.time())
-max_date = datetime.combine(max(all_dates), datetime.min.time())
+# Filter cost data by date (handle Optional fields safely)
+labor_by_date = cost_breakdown.labor.by_date or {}
+all_dates = list(labor_by_date.keys())
 
-# Render filter
-filter_start_date, filter_end_date = render_date_range_filter(
-    min_date=min_date,
-    max_date=max_date,
-    default_range="2weeks",
-    key_prefix="cost_filter"
-)
+if all_dates:
+    min_date = datetime.combine(min(all_dates), datetime.min.time())
+    max_date = datetime.combine(max(all_dates), datetime.min.time())
 
-# Filter cost dictionaries
-filtered_labor_by_date = {
-    d: cost for d, cost in cost_breakdown.labor.cost_by_date.items()
-    if filter_start_date.date() <= d <= filter_end_date.date()
-}
+    # Render filter
+    filter_start_date, filter_end_date = render_date_range_filter(
+        min_date=min_date,
+        max_date=max_date,
+        default_range="2weeks",
+        key_prefix="cost_filter"
+    )
 
-# Recalculate totals for filtered period
-total_labor_cost = sum(filtered_labor_by_date.values())
+    # Filter cost dictionaries
+    filtered_labor_by_date = {
+        d: cost for d, cost in labor_by_date.items()
+        if filter_start_date.date() <= d <= filter_end_date.date()
+    }
+
+    # Recalculate totals for filtered period
+    total_labor_cost = sum(filtered_labor_by_date.values())
+else:
+    st.info("No daily cost data available")
 ```
 
 ### Design Principles

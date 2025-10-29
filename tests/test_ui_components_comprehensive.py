@@ -76,6 +76,44 @@ def mock_cost_breakdown():
     )
 
 
+@pytest.fixture
+def mock_cost_breakdown_none_cost_per_unit():
+    """Create mock TotalCostBreakdown with cost_per_unit_delivered=None.
+
+    This fixture tests the edge case where no units were delivered (e.g., infeasible solution).
+    Previously caused TypeError in UI components that didn't handle None gracefully.
+    """
+    return TotalCostBreakdown(
+        total_cost=1000.0,
+        labor=LaborCostBreakdown(
+            total=300.0,
+            fixed_hours_cost=200.0,
+            overtime_cost=100.0,
+            non_fixed_cost=0.0,
+        ),
+        production=ProductionCostBreakdown(
+            total=250.0,
+            unit_cost=0.25,
+            total_units=1000.0,
+            total_units_produced=1000.0,
+        ),
+        transport=TransportCostBreakdown(
+            total=200.0,
+            shipment_cost=200.0
+        ),
+        holding=HoldingCostBreakdown(
+            total=150.0,
+            frozen_storage=100.0,
+            ambient_storage=50.0
+        ),
+        waste=WasteCostBreakdown(
+            total=100.0,
+            shortage_penalty=100.0
+        ),
+        cost_per_unit_delivered=None  # Edge case: no units delivered
+    )
+
+
 class TestAllCostChartFunctions:
     """Test ALL cost chart render functions."""
 
@@ -138,6 +176,55 @@ class TestAllCostChartFunctions:
             except AttributeError as e:
                 pytest.fail(f"render_cost_waterfall_chart failed: {e}")
 
+    def test_render_cost_waterfall_with_none_cost_per_unit(self, mock_cost_breakdown_none_cost_per_unit):
+        """Test render_cost_waterfall with None cost_per_unit_delivered (edge case).
+
+        This test would have caught the TypeError bug reported by user.
+        """
+        from ui.components.cost_charts import render_cost_waterfall
+
+        with patch('streamlit.plotly_chart'):
+            try:
+                fig = render_cost_waterfall(mock_cost_breakdown_none_cost_per_unit)
+                assert fig is not None
+                # Should not raise TypeError when formatting None
+            except TypeError as e:
+                pytest.fail(f"render_cost_waterfall failed with None cost_per_unit_delivered: {e}")
+
+    def test_render_daily_cost_chart_with_none_cost_by_date(self):
+        """Test render_daily_cost_chart with None cost_by_date (edge case).
+
+        This test ensures Optional dict fields are handled safely.
+        Previously would raise AttributeError: 'NoneType' object has no attribute 'keys'
+        """
+        from ui.components.cost_charts import render_daily_cost_chart
+
+        # Create breakdown with None cost_by_date
+        breakdown = TotalCostBreakdown(
+            total_cost=1000.0,
+            labor=LaborCostBreakdown(
+                total=300.0,
+                daily_breakdown={date(2025, 10, 1): {'total_cost': 150.0}}
+            ),
+            production=ProductionCostBreakdown(
+                total=250.0,
+                unit_cost=0.25,
+                total_units=1000.0,
+                cost_by_date=None  # Edge case: None dict
+            ),
+            transport=TransportCostBreakdown(total=200.0),
+            holding=HoldingCostBreakdown(total=150.0),
+            waste=WasteCostBreakdown(total=100.0),
+        )
+
+        with patch('streamlit.plotly_chart'):
+            try:
+                fig = render_daily_cost_chart(breakdown)
+                assert fig is not None
+                # Should handle None cost_by_date gracefully
+            except AttributeError as e:
+                pytest.fail(f"render_daily_cost_chart failed with None cost_by_date: {e}")
+
 
 class TestAllDataTableFunctions:
     """Test ALL data table render functions."""
@@ -161,6 +248,21 @@ class TestAllDataTableFunctions:
                 render_cost_breakdown_table(mock_cost_breakdown)
             except AttributeError as e:
                 pytest.fail(f"render_cost_breakdown_table failed: {e}")
+
+    def test_render_cost_summary_table_with_none_cost_per_unit(self, mock_cost_breakdown_none_cost_per_unit):
+        """Test render_cost_summary_table with None cost_per_unit_delivered (edge case).
+
+        This test would have caught the TypeError bug reported by user:
+        TypeError: unsupported format string passed to NoneType.__format__
+        """
+        from ui.components.data_tables import render_cost_summary_table
+
+        with patch('streamlit.dataframe'), patch('streamlit.caption'):
+            try:
+                render_cost_summary_table(mock_cost_breakdown_none_cost_per_unit)
+                # Should not raise TypeError when formatting None
+            except TypeError as e:
+                pytest.fail(f"render_cost_summary_table failed with None cost_per_unit_delivered: {e}")
 
     def test_render_labor_breakdown_table(self, mock_cost_breakdown):
         """Test render_labor_breakdown_table with Pydantic model."""

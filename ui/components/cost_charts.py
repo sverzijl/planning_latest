@@ -136,8 +136,8 @@ def render_daily_cost_chart(cost_breakdown: TotalCostBreakdown, height: int = 40
         )
         return fig
 
-    # Extract daily production costs
-    production_daily = cost_breakdown.production.cost_by_date
+    # Extract daily production costs (handle None)
+    production_daily = cost_breakdown.production.cost_by_date or {}
 
     # Get all dates
     all_dates = sorted(set(list(labor_daily.keys()) + list(production_daily.keys())))
@@ -310,19 +310,24 @@ def render_cost_waterfall(cost_breakdown: TotalCostBreakdown, height: int = 400)
     transport_per_unit = transport.total / total_units
     waste_per_unit = waste.total / total_units
 
+    # Use provided cost_per_unit_delivered or calculate from components
+    total_per_unit = cost_breakdown.cost_per_unit_delivered
+    if total_per_unit is None:
+        total_per_unit = labor_per_unit + production_per_unit + transport_per_unit + waste_per_unit
+
     fig = go.Figure(go.Waterfall(
         name='Cost Components',
         orientation='v',
         measure=['relative', 'relative', 'relative', 'relative', 'total'],
         x=['Labor', 'Production', 'Transport', 'Waste', 'Total'],
         y=[labor_per_unit, production_per_unit, transport_per_unit, waste_per_unit, 0],
-        text=[f'${v:.3f}' for v in [labor_per_unit, production_per_unit, transport_per_unit, waste_per_unit, cost_breakdown.cost_per_unit_delivered]],
+        text=[f'${v:.3f}' for v in [labor_per_unit, production_per_unit, transport_per_unit, waste_per_unit, total_per_unit]],
         textposition='outside',
         connector={'line': {'color': 'rgb(63, 63, 63)'}},
     ))
 
     fig.update_layout(
-        title=f'Cost Per Unit Breakdown (Total: ${cost_breakdown.cost_per_unit_delivered:.2f}/unit)',
+        title=f'Cost Per Unit Breakdown (Total: ${total_per_unit:.2f}/unit)',
         title_x=0.5,
         yaxis_title='Cost Per Unit ($)',
         height=height,
