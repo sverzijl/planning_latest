@@ -1825,6 +1825,13 @@ class SlidingWindowModel(BaseOptimizationModel):
             shipments.append(shipment)
 
         # 4. Build cost breakdown
+        # CRITICAL: SlidingWindowModel objective = labor + transport + holding + shortage + changeover + waste
+        # Production cost is calculated for REFERENCE only (not in objective)
+        # Extract changeover costs if available (these ARE in objective)
+        changeover_cost = solution_dict.get('total_changeover_cost', 0.0)
+        changeover_waste = solution_dict.get('total_changeover_waste_cost', 0.0)
+        waste_cost = solution_dict.get('total_waste_cost', 0.0)
+
         costs = TotalCostBreakdown(
             total_cost=solution_dict.get('total_cost', 0.0),
             labor=LaborCostBreakdown(
@@ -1832,10 +1839,10 @@ class SlidingWindowModel(BaseOptimizationModel):
                 by_date=solution_dict.get('labor_cost_by_date')
             ),
             production=ProductionCostBreakdown(
-                total=solution_dict.get('total_production_cost', 0.0),
-                unit_cost=self.cost_structure.production_cost_per_unit or 0.0,
+                total=changeover_cost + changeover_waste,  # Changeover costs ARE in objective
+                unit_cost=0.0,  # Production cost NOT in SlidingWindow objective
                 total_units=solution_dict.get('total_production', 0.0),
-                changeover_cost=0.0  # Not tracked in SlidingWindow
+                changeover_cost=changeover_cost
             ),
             transport=TransportCostBreakdown(
                 total=solution_dict.get('total_transport_cost', 0.0) + solution_dict.get('total_truck_cost', 0.0),
@@ -1851,9 +1858,9 @@ class SlidingWindowModel(BaseOptimizationModel):
                 thawed_storage=0.0
             ),
             waste=WasteCostBreakdown(
-                total=solution_dict.get('total_shortage_cost', 0.0),
+                total=solution_dict.get('total_shortage_cost', 0.0) + waste_cost,
                 shortage_penalty=solution_dict.get('total_shortage_cost', 0.0),
-                expiration_waste=0.0
+                expiration_waste=waste_cost
             )
         )
 
