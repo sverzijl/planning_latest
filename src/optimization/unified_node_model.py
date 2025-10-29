@@ -2127,7 +2127,7 @@ class UnifiedNodeModel(BaseOptimizationModel):
             solution['end_horizon_inventory_units'] = end_inventory_units
 
         # Combine all waste costs (end-of-horizon + changeover waste)
-        solution['total_waste_cost'] = total_waste_cost + solution.get('total_changeover_waste_cost', 0.0)
+        solution['total_waste_cost'] = total_waste_cost + getattr(solution, 'total_changeover_waste_cost', 0.0)
 
         # PYOMO BEST PRACTICE: Always use component sum instead of extracting from model.obj
         # Extracting from model.obj can print thousands of error messages when variables
@@ -2139,17 +2139,17 @@ class UnifiedNodeModel(BaseOptimizationModel):
         # - ADDED: waste_cost (end-of-horizon inventory + changeover waste)
         # This focuses on incremental costs and prevents stockpiling
         solution['total_cost'] = (
-            solution.get('total_labor_cost', 0.0) +
-            solution.get('total_transport_cost', 0.0) +
-            solution.get('total_holding_cost', 0.0) +
-            solution.get('total_shortage_cost', 0.0) +
-            solution.get('total_changeover_cost', 0.0) +
-            solution.get('total_staleness_cost', 0.0) +
-            solution.get('total_waste_cost', 0.0)
+            getattr(solution, 'total_labor_cost', 0.0) +
+            getattr(solution, 'total_transport_cost', 0.0) +
+            getattr(solution, 'total_holding_cost', 0.0) +
+            getattr(solution, 'total_shortage_cost', 0.0) +
+            getattr(solution, 'total_changeover_cost', 0.0) +
+            getattr(solution, 'total_staleness_cost', 0.0) +
+            getattr(solution, 'total_waste_cost', 0.0)
         )
 
         # Also report production cost for reference (but not in objective)
-        solution['total_production_cost_reference'] = solution.get('total_production_cost', 0.0)
+        solution['total_production_cost_reference'] = getattr(solution, 'total_production_cost', 0.0)
 
         return self._dict_to_optimization_solution(solution)
 

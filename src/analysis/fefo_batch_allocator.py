@@ -123,7 +123,7 @@ class FEFOBatchAllocator:
             List of created batches
         """
         batches = []
-        production_events = solution.get('production_by_date_product', {})
+        production_events = getattr(solution, 'production_by_date_product', {})
 
         for (node_id, product_id, prod_date), quantity in production_events.items():
             if quantity <= 0:
