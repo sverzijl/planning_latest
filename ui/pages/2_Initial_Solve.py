@@ -503,7 +503,7 @@ with tab4:
 
                             if changeover_waste_units > 0:
                                 changeover_waste_cost = getattr(solution, 'total_changeover_waste_cost', 0)
-                            st.write(f"**Changeover waste:** {changeover_waste_units:,.0f} units (${changeover_waste_cost:,.2f})")
+                                st.write(f"**Changeover waste:** {changeover_waste_units:,.0f} units (${changeover_waste_cost:,.2f})")
                                 st.caption("Material lost during SKU transitions - creates batch size economics")
 
                             if end_inv_units > 0:
