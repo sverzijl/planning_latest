@@ -153,6 +153,7 @@ def _create_production_schedule(
 
     # Create ProductionBatch objects from Pydantic solution
     # SIMPLIFIED: solution.production_batches is guaranteed to exist (Pydantic validates)
+    logger.info(f"Converting {len(solution.production_batches)} Pydantic production batches to ProductionBatch objects")
     for idx, batch_result in enumerate(solution.production_batches):
         batch = ProductionBatch(
             id=f"OPT-BATCH-{idx+1:04d}",
@@ -165,12 +166,18 @@ def _create_production_schedule(
         )
         batches.append(batch)
 
+    logger.info(f"Total batches (INIT + OPT): {len(batches)}, INIT batches: {sum(1 for b in batches if b.id.startswith('INIT-'))}")
+
     # Build daily totals from batches (EXCLUDING initial inventory - not production!)
     daily_totals: Dict[Date, float] = {}
     for batch in batches:
         # Only include actual production batches, not initial inventory
         if not batch.id.startswith('INIT-'):
             daily_totals[batch.production_date] = daily_totals.get(batch.production_date, 0) + batch.quantity
+
+    logger.info(f"Daily totals (production only): {len(daily_totals)} dates, total: {sum(daily_totals.values()):.0f} units")
+    if len(daily_totals) == 0 and len(batches) > 0:
+        logger.error("CRITICAL: All batches are INIT batches! No actual production extracted from solution.")
 
     # Get labor hours by date from Pydantic solution
     # SIMPLIFIED: solution.labor_hours_by_date is guaranteed to be Dict[Date, LaborHoursBreakdown]

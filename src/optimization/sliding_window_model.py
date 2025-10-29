@@ -1543,6 +1543,15 @@ class SlidingWindowModel(BaseOptimizationModel):
         solution['production_by_date_product'] = production_by_date_product
         solution['total_production'] = sum(production_by_date_product.values())
 
+        # DIAGNOSTIC: Log production extraction
+        logger.info(f"Extracted {len(production_by_date_product)} production entries, total: {solution['total_production']:.0f} units")
+        if len(production_by_date_product) == 0:
+            logger.warning("NO PRODUCTION EXTRACTED! Check if model.production variable exists and has values.")
+            if hasattr(model, 'production'):
+                logger.info(f"model.production index size: {len(model.production)}")
+            else:
+                logger.error("model.production does not exist!")
+
         # Create production_batches list for UI compatibility
         production_batches = []
         for (node_id, prod, t), qty in production_by_date_product.items():
@@ -1553,6 +1562,7 @@ class SlidingWindowModel(BaseOptimizationModel):
                 'quantity': qty
             })
         solution['production_batches'] = production_batches
+        logger.info(f"Created {len(production_batches)} production batch entries for Pydantic solution")
 
         # Extract inventory by state
         inventory_by_state = {}
@@ -1618,6 +1628,7 @@ class SlidingWindowModel(BaseOptimizationModel):
                     pass
 
         solution['shipments_by_route_product_date'] = shipments_by_route
+        logger.info(f"Extracted {len(shipments_by_route)} shipment routes")
 
         # Extract truck assignments (if truck pallet tracking enabled)
         truck_assignments = {}  # {(origin, dest, product, delivery_date): truck_idx}
@@ -1661,6 +1672,7 @@ class SlidingWindowModel(BaseOptimizationModel):
 
         solution['labor_hours_by_date'] = labor_hours_by_date
         solution['labor_cost_by_date'] = labor_cost_by_date
+        logger.info(f"Extracted labor hours for {len(labor_hours_by_date)} dates")
 
         # Extract shortages
         total_shortage = 0
