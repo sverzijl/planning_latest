@@ -179,6 +179,29 @@ class TotalCostBreakdown(BaseModel):
 
         return self
 
+    def get_cost_proportions(self) -> Dict[str, float]:
+        """Calculate cost proportions for each category.
+
+        Returns:
+            Dict mapping category name to proportion (0.0 to 1.0)
+        """
+        if self.total_cost == 0:
+            return {
+                'labor': 0.0,
+                'production': 0.0,
+                'transport': 0.0,
+                'holding': 0.0,
+                'waste': 0.0
+            }
+
+        return {
+            'labor': self.labor.total / self.total_cost,
+            'production': self.production.total / self.total_cost,
+            'transport': self.transport.total / self.total_cost,
+            'holding': self.holding.total / self.total_cost,
+            'waste': self.waste.total / self.total_cost,
+        }
+
 
 # ============================================================================
 # Inventory Structures (Model-Specific)
