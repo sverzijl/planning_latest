@@ -68,15 +68,18 @@ class LabelingRequirement:
 class ProductionLabelingReportGenerator:
     """Generate production labeling reports from optimization results."""
 
-    def __init__(self, optimization_result: Dict):
+    def __init__(self, optimization_result):
         """Initialize with optimization solution.
 
+        REFACTORED: Now accepts OptimizationSolution (Pydantic) instead of dict.
+
         Args:
-            optimization_result: Dictionary from IntegratedProductionDistributionModel.extract_solution()
+            optimization_result: OptimizationSolution from model.get_solution()
         """
         self.result = optimization_result
-        self.batch_shipments = optimization_result.get('batch_shipments', [])  # Use batch-linked shipments
-        self.production_batches = optimization_result.get('production_by_date_product', {})
+        # Use getattr() for optional extra fields
+        self.batch_shipments = getattr(optimization_result, 'batch_shipments', [])
+        self.production_batches = optimization_result.production_by_date_product or {}
         self.leg_states = {}  # Will be populated if available
 
     def set_leg_states(self, leg_arrival_state: Dict[Tuple[str, str], str]):
