@@ -1189,7 +1189,42 @@ def test_ui_workflow_4_weeks_sliding_window(parsed_data):
     assert total_production > 0, "Should produce units"
     assert fill_rate >= 85.0, f"Fill rate {fill_rate:.1f}% below 85% threshold"
 
+    # STRUCTURE VALIDATION (catch bugs like empty shipments, missing labor hours)
+    print("\nVALIDATING SOLUTION STRUCTURE:")
+
+    # Validate production batches
+    batch_count = len(solution.production_batches)
+    print(f"   Production batches: {batch_count}")
+    assert batch_count > 0, "Solution must have production batches if total_production > 0"
+
+    # Validate shipments exist
+    shipment_count = len(solution.shipments)
+    print(f"   Shipments: {shipment_count}")
+    assert shipment_count > 0, "Solution must have shipments if production > 0 (production must go somewhere!)"
+
+    # Validate labor hours populated
+    labor_days = len(solution.labor_hours_by_date)
+    print(f"   Labor hour dates: {labor_days}")
+    assert labor_days > 0, "Solution must have labor hours if production > 0"
+
+    # Validate consistency: batch sum = total_production
+    batch_sum = sum(b.quantity for b in solution.production_batches)
+    assert abs(batch_sum - total_production) < 1.0, \
+        f"Batch sum ({batch_sum:.0f}) != total_production ({total_production:.0f})"
+
+    # Validate FEFO batches if present (check structure)
+    if solution.fefo_batches:
+        print(f"   FEFO batches: {len(solution.fefo_batches)}")
+        assert isinstance(solution.fefo_batches, list), "fefo_batches must be list"
+
+    if solution.fefo_batch_inventory:
+        # Validate all keys are strings (not tuples)
+        non_string_keys = [k for k in solution.fefo_batch_inventory.keys() if not isinstance(k, str)]
+        assert len(non_string_keys) == 0, \
+            f"fefo_batch_inventory has {len(non_string_keys)} non-string keys (must be strings for Pydantic)"
+
     print("\n✓ SLIDING WINDOW TEST PASSED - 40-220× SPEEDUP VALIDATED")
+    print("✓ SOLUTION STRUCTURE VALIDATED - All data present and consistent")
 
 
 if __name__ == "__main__":

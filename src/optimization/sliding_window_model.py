@@ -1822,7 +1822,18 @@ class SlidingWindowModel(BaseOptimizationModel):
 
         Raises:
             ValidationError: If solution data doesn't conform to schema
+            ValueError: If solution data is incomplete or inconsistent
         """
+        # PRE-VALIDATE before attempting Pydantic conversion (fail-fast with clear errors)
+        from src.optimization.validation_utils import validate_solution_dict_for_pydantic
+        try:
+            validate_solution_dict_for_pydantic(solution_dict)
+        except (ValueError, TypeError) as e:
+            logger.error(f"Solution dict validation failed BEFORE Pydantic conversion: {e}")
+            raise ValueError(
+                f"extract_solution() produced invalid data structure: {e}\n"
+                f"FIX: Ensure all required fields are populated and types are correct."
+            ) from e
         from .result_schema import (
             OptimizationSolution,
             ProductionBatchResult,
@@ -1965,7 +1976,13 @@ class SlidingWindowModel(BaseOptimizationModel):
         opt_solution.shipments_by_route_product_date = solution_dict.get('shipments_by_route_product_date', {})
 
         # Validate solution before returning (fail-fast on data issues)
-        self._validate_solution(opt_solution)
+        # Use comprehensive validation from validation_utils
+        from src.optimization.validation_utils import validate_optimization_solution_complete
+        try:
+            validate_optimization_solution_complete(opt_solution)
+        except ValueError as e:
+            logger.error(f"OptimizationSolution validation failed: {e}")
+            raise
 
         return opt_solution
 
@@ -2172,13 +2189,26 @@ class SlidingWindowModel(BaseOptimizationModel):
             key = f"{node_id}|{product_id}|{state}"  # Serialize tuple to string
             batch_inventory_serialized[key] = batches
 
-        # Return batch detail (as serializable dicts)
-        return {
+        # Build return dict
+        fefo_result = {
             'batches': batch_dicts,  # List of dicts (JSON-serializable)
             'batch_objects': allocator.batches,  # Keep objects for in-memory use
             'batch_inventory': batch_inventory_serialized,  # STRING keys for Pydantic
             'shipment_allocations': allocator.shipment_allocations,
         }
+
+        # VALIDATE structure before returning (fail-fast if incompatible with Pydantic)
+        from src.optimization.validation_utils import validate_fefo_return_structure
+        try:
+            validate_fefo_return_structure(fefo_result)
+        except (ValueError, TypeError) as e:
+            logger.error(f"FEFO result structure invalid: {e}")
+            raise ValueError(
+                f"apply_fefo_allocation() returned invalid structure: {e}\n"
+                f"This is a BUG in the FEFO allocator - fix before Pydantic conversion."
+            ) from e
+
+        return fefo_result
 
     def extract_shipments(self):
         """Extract shipments from solution for UI compatibility.

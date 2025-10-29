@@ -379,11 +379,35 @@ class BaseOptimizationModel(ABC):
 
                             # Re-dump to metadata with FEFO data
                             result.metadata.update(self.solution.model_dump(mode='json'))
-                    except Exception as e:
-                        # FEFO is optional - don't fail if it errors
+                    except ValidationError as ve:
+                        # FEFO data structure incompatible with Pydantic schema
+                        # This is a BUG in apply_fefo_allocation() - must fix!
                         import logging
                         logger = logging.getLogger(__name__)
-                        logger.warning(f"FEFO allocation failed: {e}")
+
+                        # Extract specific field errors from Pydantic
+                        error_details = []
+                        for error in ve.errors()[:3]:  # Show first 3 errors
+                            field = ".".join(str(x) for x in error['loc'])
+                            error_details.append(f"{field}: {error['msg']}")
+
+                        error_msg = (
+                            f"FEFO allocation failed - data incompatible with Pydantic schema:\n"
+                            f"  {chr(10).join(error_details)}\n"
+                            f"  ... ({len(ve.errors())} total errors)\n\n"
+                            f"LIKELY CAUSE: apply_fefo_allocation() returned dict with tuple/date keys.\n"
+                            f"FIX: Convert complex keys to strings before returning."
+                        )
+
+                        logger.error(error_msg)
+                        raise ValueError(error_msg) from ve
+                    except Exception as e:
+                        # Other FEFO errors (allocator bugs, data issues)
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        error_msg = f"FEFO allocation failed: {e}"
+                        logger.error(error_msg)
+                        raise ValueError(error_msg) from e
 
             except ValidationError as ve:
                 # Validation errors indicate a BUG in the model's extract_solution()
