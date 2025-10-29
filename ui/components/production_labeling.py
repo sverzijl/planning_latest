@@ -68,13 +68,13 @@ def render_production_labeling_view(optimization_model, optimization_result):
         st.warning("No production labeling requirements found.")
 
         # Diagnostic messages
-        if not optimization_result.get('use_batch_tracking', False):
+        if not optimization_result.use_batch_tracking:
             st.info("""
             **Batch tracking is disabled.** Production labeling requires batch tracking to be enabled.
 
             To enable: Go to **Planning → Optimization** and check **"Enable Batch Tracking"** before solving.
             """)
-        elif not optimization_result.get('batch_shipments'):
+        elif not getattr(optimization_result, 'batch_shipments', None):
             st.warning("No batch_shipments data in solution. This may indicate the model wasn't solved with batch tracking enabled.")
         else:
             st.info("Production data exists but no shipments from manufacturing found. Check if production occurred.")
