@@ -27,10 +27,13 @@ def render_production_labeling_view(optimization_model, optimization_result):
 
     # Debug info
     with st.expander("🔍 Debug Info", expanded=False):
-        st.write("**Optimization Result Keys:**", list(optimization_result.keys()))
-        st.write("**Batch Tracking Enabled:**", optimization_result.get('use_batch_tracking', False))
-        st.write("**Batch Shipments Count:**", len(optimization_result.get('batch_shipments', [])))
-        st.write("**Production Batches Count:**", len(optimization_result.get('production_by_date_product', {})))
+        # Debug: Show available fields (OptimizationSolution is Pydantic, not dict)
+        st.write("**Optimization Result Type:**", type(optimization_result).__name__)
+        st.write("**Model Type:**", optimization_result.model_type)
+        st.write("**Batch Tracking Enabled:**", optimization_result.use_batch_tracking)
+        st.write("**Batch Shipments Count:**", len(getattr(optimization_result, 'batch_shipments', [])))
+        production_by_date_product = optimization_result.production_by_date_product or {}
+        st.write("**Production Batches Count:**", len(production_by_date_product))
 
         # Check for both legacy (leg_arrival_state) and unified (route_arrival_state) models
         has_leg_state = hasattr(optimization_model, 'leg_arrival_state')
