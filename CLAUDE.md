@@ -349,6 +349,35 @@ pytest --cov=src tests/
 - Changeover formulations: `docs/optimization/changeover_formulations.md`
 - Model specification: `docs/UNIFIED_NODE_MODEL_SPECIFICATION.md`
 
+## Model-UI Interface Contract
+
+**IMPORTANT:** All optimization models MUST conform to the `OptimizationSolution` interface specification.
+
+**Interface Specification:** `docs/MODEL_RESULT_SPECIFICATION.md`
+**Schema Definition:** `src/optimization/result_schema.py`
+
+**Key Requirements:**
+1. **Inherit from** `BaseOptimizationModel`
+2. **Return** `OptimizationSolution` (Pydantic-validated) from `extract_solution()`
+3. **Set correct flags:**
+   - SlidingWindowModel: `model_type="sliding_window"`, `has_aggregate_inventory=True`
+   - UnifiedNodeModel: `model_type="unified_node"`, `use_batch_tracking=True`
+4. **Populate all required fields** (see specification for complete list)
+5. **Pass compliance tests** (`tests/test_model_compliance.py`)
+
+**Validation:**
+- Pydantic validates automatically at extraction time
+- ValidationError raised if data doesn't conform to schema
+- Fail-fast at model-UI boundary prevents bad data propagation
+
+**Development Workflow (UI Changes):**
+1. Update schema FIRST (`result_schema.py`)
+2. Update models to conform
+3. Update UI to use new fields
+4. Update tests
+
+See `docs/MODEL_RESULT_SPECIFICATION.md` for complete interface documentation.
+
 ## Development Workflow
 
 1. Always write tests for new functionality

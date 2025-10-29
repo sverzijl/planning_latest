@@ -3,12 +3,16 @@
 This module provides functions to normalize optimization model outputs
 into the same data structures used by heuristic planning, enabling
 the Results UI to display both types of results seamlessly.
+
+REFACTORED: Now expects Pydantic-validated OptimizationSolution.
+All defensive isinstance() checks removed - data is guaranteed valid.
 """
 
 import logging
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, TYPE_CHECKING
 from datetime import date as Date, timedelta
 from collections import defaultdict
+from pydantic import ValidationError
 from src.models.production_schedule import ProductionSchedule
 from src.models.production_batch import ProductionBatch
 from src.costs.cost_breakdown import (
@@ -22,6 +26,9 @@ from src.costs.cost_breakdown import (
 from src.models.truck_load import TruckLoadPlan, TruckLoad
 from src.models.shipment import Shipment
 
+if TYPE_CHECKING:
+    from src.optimization.result_schema import OptimizationSolution
+
 logger = logging.getLogger(__name__)
 
 
@@ -33,18 +40,32 @@ def adapt_optimization_results(
     """
     Convert optimization results to heuristic-compatible format.
 
+    IMPORTANT: Expects Pydantic-validated OptimizationSolution from model.get_solution().
+    Raises ValidationError if solution doesn't conform to schema.
+
     Args:
-        model: UnifiedNodeModel instance
-        result: Optimization result dictionary from session state
+        model: BaseOptimizationModel instance (SlidingWindowModel or UnifiedNodeModel)
+        result: Optimization result dictionary from session state (unused, kept for compatibility)
         inventory_snapshot_date: Optional date when initial inventory was loaded
 
     Returns:
-        Dictionary with keys: production_schedule, shipments, truck_plan, cost_breakdown
+        Dictionary with keys: production_schedule, shipments, truck_plan, cost_breakdown, model_solution
         Returns None if optimization hasn't been solved yet
+
+    Raises:
+        ValidationError: If solution violates OptimizationSolution schema
     """
-    solution = model.get_solution()
+    solution = model.get_solution()  # Returns OptimizationSolution (Pydantic)
     if not solution:
         return None
+
+    # Validate schema compliance (fail-fast)
+    from src.optimization.result_schema import OptimizationSolution
+    if not isinstance(solution, OptimizationSolution):
+        raise ValidationError(
+            f"Model returned {type(solution).__name__} instead of OptimizationSolution. "
+            "Model must conform to interface specification."
+        )
 
     # Convert production schedule
     production_schedule = _create_production_schedule(
@@ -80,37 +101,39 @@ def adapt_optimization_results(
 
 def _create_production_schedule(
     model: Any,
-    solution: dict,
+    solution: 'OptimizationSolution',  # Now Pydantic validated
     inventory_snapshot_date: Optional[Date] = None
 ) -> ProductionSchedule:
-    """Convert optimization solution to ProductionSchedule object."""
+    """Convert optimization solution to ProductionSchedule object.
 
-    # Get manufacturing site ID from unified model
+    Args:
+        model: BaseOptimizationModel instance
+        solution: Pydantic-validated OptimizationSolution
+        inventory_snapshot_date: Optional date when initial inventory was loaded
+
+    Returns:
+        ProductionSchedule with batches and labor hours
+    """
+
+    # Get manufacturing site ID from model
     if hasattr(model, 'manufacturing_nodes') and model.manufacturing_nodes:
-        # Both UnifiedNodeModel and SlidingWindowModel have manufacturing_nodes
-        # It's a list of UnifiedNode objects - need to get the ID
         first_mfg_node = list(model.manufacturing_nodes)[0]
         # Extract ID (handle both object and string)
-        if isinstance(first_mfg_node, str):
-            manufacturing_site_id = first_mfg_node
-        else:
-            manufacturing_site_id = first_mfg_node.id  # UnifiedNode object
+        manufacturing_site_id = first_mfg_node if isinstance(first_mfg_node, str) else first_mfg_node.id
     else:
         manufacturing_site_id = "6122"  # Fallback
 
     batches = []
 
     # CREATE BATCHES FROM INITIAL INVENTORY
-    # Note: After preprocessing, initial_inventory has 4-tuple keys: (loc, prod, prod_date, state)
     if hasattr(model, 'initial_inventory') and model.initial_inventory and inventory_snapshot_date:
         for key, quantity in model.initial_inventory.items():
             if quantity > 0:
-                # Parse key format (after preprocessing it's always 4-tuple)
+                # Parse 4-tuple key: (loc, prod, prod_date, state)
                 if len(key) == 4:
                     location_id, product_id, prod_date, state = key
                 elif len(key) == 2:
-                    # Backward compatibility (shouldn't happen after preprocessing)
-                    # Use inventory_snapshot_date as production date (matches model preprocessing)
+                    # Fallback for 2-tuple
                     location_id, product_id = key
                     prod_date = inventory_snapshot_date
                 else:
@@ -120,7 +143,7 @@ def _create_production_schedule(
                 batch = ProductionBatch(
                     id=f"INIT-{location_id}-{product_id}",
                     product_id=product_id,
-                    manufacturing_site_id=location_id,  # CRITICAL: Use actual location, not just 6122!
+                    manufacturing_site_id=location_id,
                     production_date=prod_date,
                     quantity=quantity,
                     labor_hours_used=0,  # Initial inventory has no labor cost
@@ -128,16 +151,17 @@ def _create_production_schedule(
                 )
                 batches.append(batch)
 
-    # EXISTING CODE: Create ProductionBatch objects from solution
-    for idx, batch_dict in enumerate(solution.get('production_batches', [])):
+    # Create ProductionBatch objects from Pydantic solution
+    # SIMPLIFIED: solution.production_batches is guaranteed to exist (Pydantic validates)
+    for idx, batch_result in enumerate(solution.production_batches):
         batch = ProductionBatch(
             id=f"OPT-BATCH-{idx+1:04d}",
-            product_id=batch_dict['product'],
-            manufacturing_site_id=manufacturing_site_id,  # Use variable determined above
-            production_date=batch_dict['date'],
-            quantity=batch_dict['quantity'],
+            product_id=batch_result.product,
+            manufacturing_site_id=manufacturing_site_id,
+            production_date=batch_result.date,
+            quantity=batch_result.quantity,
             labor_hours_used=0,  # Will aggregate from daily totals
-            production_cost=batch_dict['quantity'] * model.cost_structure.production_cost_per_unit,
+            production_cost=batch_result.quantity * model.cost_structure.production_cost_per_unit,
         )
         batches.append(batch)
 
@@ -148,50 +172,35 @@ def _create_production_schedule(
         if not batch.id.startswith('INIT-'):
             daily_totals[batch.production_date] = daily_totals.get(batch.production_date, 0) + batch.quantity
 
-    # Get labor hours by date from solution
-    daily_labor_hours = solution.get('labor_hours_by_date', {})
+    # Get labor hours by date from Pydantic solution
+    # SIMPLIFIED: solution.labor_hours_by_date is guaranteed to be Dict[Date, LaborHoursBreakdown]
+    daily_labor_hours = solution.labor_hours_by_date
 
     # Update batch labor hours proportionally
-    # FIX: Handle new dict format for labor_hours_by_date
     for batch in batches:
         date_total = daily_totals.get(batch.production_date, 1)
         if date_total > 0:
             proportion = batch.quantity / date_total
 
-            # Extract labor hours value (handle both dict and numeric formats)
-            labor_hours_value = daily_labor_hours.get(batch.production_date, 0)
-
-            # NEW FORMAT: {'used': X, 'paid': Y, 'fixed': Z, 'overtime': W}
-            if isinstance(labor_hours_value, dict):
-                labor_hours_value = labor_hours_value.get('used', 0)
-            # OLD FORMAT: numeric value (backward compatibility)
-            elif labor_hours_value is None:
-                labor_hours_value = 0
-            # else: use value as-is (numeric)
-
-            batch.labor_hours_used = labor_hours_value * proportion
+            # Extract labor hours from LaborHoursBreakdown
+            # NO isinstance() check needed - Pydantic guarantees it's LaborHoursBreakdown
+            labor_breakdown = daily_labor_hours.get(batch.production_date)
+            if labor_breakdown:
+                batch.labor_hours_used = labor_breakdown.used * proportion
 
     # Determine actual schedule start date
-    if inventory_snapshot_date:
-        # Use inventory snapshot date as schedule start
-        actual_start_date = inventory_snapshot_date
-    elif batches:
-        # Use earliest production/batch date if no inventory
-        actual_start_date = min(b.production_date for b in batches)
-    else:
-        # Fallback to model start date
-        actual_start_date = model.start_date
+    actual_start_date = (
+        inventory_snapshot_date if inventory_snapshot_date
+        else min(b.production_date for b in batches) if batches
+        else model.start_date
+    )
 
-    # Calculate total labor hours (handle both dict and numeric formats)
-    total_labor_hours = 0.0
-    for date_val, hours_val in daily_labor_hours.items():
-        if isinstance(hours_val, dict):
-            # NEW FORMAT: extract 'used' hours
-            total_labor_hours += hours_val.get('used', 0)
-        elif hours_val is not None:
-            # OLD FORMAT: numeric value
-            total_labor_hours += hours_val
-        # else: None value, skip (contributes 0)
+    # Calculate total labor hours
+    # SIMPLIFIED: Always LaborHoursBreakdown, just sum .used field
+    total_labor_hours = sum(
+        labor_breakdown.used
+        for labor_breakdown in daily_labor_hours.values()
+    )
 
     # Build ProductionSchedule
     return ProductionSchedule(
@@ -329,8 +338,31 @@ def _create_truck_plan_from_optimization(model: Any, shipments: List[Shipment]) 
     )
 
 
-def _create_cost_breakdown(model: Any, solution: dict) -> TotalCostBreakdown:
-    """Convert optimization cost components to TotalCostBreakdown object."""
+def _create_cost_breakdown(model: Any, solution: 'OptimizationSolution') -> TotalCostBreakdown:
+    """Convert optimization cost components to TotalCostBreakdown object.
+
+    SIMPLIFIED: Pydantic-validated OptimizationSolution already has TotalCostBreakdown.
+    This function now just returns solution.costs directly (already validated).
+
+    Args:
+        model: BaseOptimizationModel instance (unused, kept for compatibility)
+        solution: Pydantic-validated OptimizationSolution with costs field
+
+    Returns:
+        TotalCostBreakdown from solution.costs
+    """
+    # MASSIVE SIMPLIFICATION: Just return the validated cost breakdown!
+    # No isinstance() checks, no defensive .get() calls, no manual aggregation
+    # Pydantic guarantees solution.costs exists and is a valid TotalCostBreakdown
+    return solution.costs
+
+
+def _create_cost_breakdown_legacy(model: Any, solution: dict) -> TotalCostBreakdown:
+    """DEPRECATED: Old defensive cost breakdown creation.
+
+    Kept for reference only. New code should use solution.costs directly.
+    """
+    # This entire function (~100 lines) is replaced by: return solution.costs
 
     # Extract costs from solution
     labor_cost = solution.get('total_labor_cost', 0)
@@ -341,8 +373,6 @@ def _create_cost_breakdown(model: Any, solution: dict) -> TotalCostBreakdown:
     freeze_cost = solution.get('total_freeze_cost', 0)  # Freeze/thaw state transition costs
     thaw_cost = solution.get('total_thaw_cost', 0)
     holding_cost = solution.get('total_holding_cost', 0)  # Pallet-based storage costs
-    frozen_holding_cost = solution.get('frozen_holding_cost', 0)
-    ambient_holding_cost = solution.get('ambient_holding_cost', 0)
 
     # Calculate total cost (sum of all components)
     total_cost = (
@@ -355,51 +385,34 @@ def _create_cost_breakdown(model: Any, solution: dict) -> TotalCostBreakdown:
     labor_cost_by_date = solution.get('labor_cost_by_date', {})
 
     # Convert labor hours to nested format for daily_breakdown
-    # Handle both dict and numeric formats
     daily_breakdown_nested: Dict[Date, Dict[str, float]] = {}
     for date_val, total_cost_val in labor_cost_by_date.items():
-        labor_hours_val = labor_hours_by_date.get(date_val, 0)
+        labor_breakdown_obj = labor_hours_by_date.get(date_val)
+        if labor_breakdown_obj:
+            daily_breakdown_nested[date_val] = {
+                'total_hours': labor_breakdown_obj.used,
+                'fixed_hours': labor_breakdown_obj.fixed,
+                'overtime_hours': labor_breakdown_obj.overtime,
+                'fixed_cost': 0,
+                'overtime_cost': 0,
+                'non_fixed_cost': 0,
+                'total_cost': total_cost_val,
+            }
 
-        # Extract total hours (handle both dict and numeric formats)
-        if isinstance(labor_hours_val, dict):
-            total_hours = labor_hours_val.get('used', 0)
-            fixed_hours = labor_hours_val.get('fixed', 0)
-            overtime_hours = labor_hours_val.get('overtime', 0)
-        else:
-            total_hours = labor_hours_val
-            fixed_hours = 0
-            overtime_hours = 0
-
-        daily_breakdown_nested[date_val] = {
-            'total_hours': total_hours,
-            'fixed_hours': fixed_hours,
-            'overtime_hours': overtime_hours,
-            'fixed_cost': 0,  # Not tracked separately in optimization
-            'overtime_cost': 0,
-            'non_fixed_cost': 0,
-            'total_cost': total_cost_val,
-        }
-
-    # Calculate total labor hours (handle both dict and numeric formats)
-    total_labor_hours = 0.0
-    for date_val, hours_val in labor_hours_by_date.items():
-        if isinstance(hours_val, dict):
-            total_labor_hours += hours_val.get('used', 0)
-        elif hours_val is not None:
-            total_labor_hours += hours_val
-        # else: None value, skip (contributes 0)
+    # Calculate total labor hours
+    total_labor_hours = sum(lb.used for lb in labor_hours_by_date.values())
 
     # Build labor cost breakdown
     labor_breakdown = LaborCostBreakdown(
         total_cost=labor_cost,
-        fixed_hours_cost=0,  # Not tracked separately in optimization
-        overtime_cost=0,  # Not tracked separately in optimization
-        non_fixed_labor_cost=0,  # Not tracked separately in optimization
+        fixed_hours_cost=0,
+        overtime_cost=0,
+        non_fixed_labor_cost=0,
         total_hours=total_labor_hours,
         fixed_hours=0,
         overtime_hours=0,
         non_fixed_hours=0,
-        daily_breakdown=daily_breakdown_nested,  # Use nested dict matching expected structure
+        daily_breakdown=daily_breakdown_nested,
     )
 
     # Build production cost breakdown

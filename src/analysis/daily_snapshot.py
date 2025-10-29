@@ -3,15 +3,18 @@
 This module generates daily snapshots of inventory across the supply chain network,
 tracking batches, quantities, in-transit shipments, flows, and demand satisfaction.
 
+REFACTORED: Now expects Pydantic-validated OptimizationSolution.
+Mode detection uses solution.get_inventory_format() instead of dict checks.
+
 TWO MODES:
 1. MODEL MODE (Preferred): Extract inventory directly from optimization model solution
-   - Requires: model_solution parameter with cohort_inventory
+   - Requires: model_solution parameter (OptimizationSolution with inventory data)
    - Benefits: Single source of truth, no duplicate logic, guaranteed consistency
    - Performance: Fast (just data extraction)
 
-2. LEGACY MODE (Backward Compatible): Reconstruct inventory from shipments
+2. LEGACY MODE (Deprecated): Reconstruct inventory from shipments
    - Used when: model_solution not provided
-   - Benefits: Works without model solution
+   - Status: Deprecated - will be removed in future version
    - Drawbacks: Duplicate logic, potential divergence
 
 SNAPSHOT SEMANTICS:
@@ -21,13 +24,13 @@ SNAPSHOT SEMANTICS:
 - This represents the actual inventory available at the end of the day
 
 USAGE:
-    # Preferred (with model solution):
+    # Preferred (with Pydantic solution):
     generator = DailySnapshotGenerator(
         production_schedule, shipments, locations, forecast,
-        model_solution=solution  # From IntegratedProductionDistributionModel
+        model_solution=solution  # OptimizationSolution (Pydantic validated)
     )
-    
-    # Legacy (without model solution):
+
+    # Deprecated (without model solution):
     generator = DailySnapshotGenerator(
         production_schedule, shipments, locations, forecast
     )
@@ -37,7 +40,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date as Date, timedelta
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, TYPE_CHECKING
 from collections import defaultdict
 
 from src.models.production_batch import ProductionBatch
@@ -45,6 +48,9 @@ from src.models.shipment import Shipment
 from src.models.location import Location
 from src.models.forecast import Forecast
 from src.models.production_schedule import ProductionSchedule
+
+if TYPE_CHECKING:
+    from src.optimization.result_schema import OptimizationSolution
 
 
 @dataclass
@@ -291,20 +297,22 @@ class DailySnapshotGenerator:
         shipments: List[Shipment],
         locations_dict: Dict[str, Location],
         forecast: Forecast,
-        model_solution: Optional[Dict] = None,
+        model_solution: Optional['OptimizationSolution'] = None,
         verbose: bool = False
     ):
         """
         Initialize snapshot generator.
+
+        REFACTORED: Now expects Pydantic-validated OptimizationSolution.
 
         Args:
             production_schedule: Production schedule with batches
             shipments: List of shipments
             locations_dict: Dictionary mapping location_id to Location object
             forecast: Forecast with demand data
-            model_solution: Optional solution dict from IntegratedProductionDistributionModel.
-                           If provided, uses cohort_inventory directly (preferred).
-                           If None, falls back to legacy reconstruction (backward compatible).
+            model_solution: Optional OptimizationSolution (Pydantic validated).
+                           If provided, uses inventory data directly (preferred).
+                           If None, falls back to legacy reconstruction (deprecated).
             verbose: Enable debug logging (default: False)
         """
         self.production_schedule = production_schedule
@@ -313,18 +321,21 @@ class DailySnapshotGenerator:
         self.forecast = forecast
         self.model_solution = model_solution
 
-        # Detect if model solution has inventory data (cohort OR aggregate)
+        # Detect inventory format using Pydantic helper method
+        # SIMPLIFIED: No more .get() checks, use solution.get_inventory_format()
         self.use_model_inventory = False
         self.is_aggregate_model = False
         if model_solution is not None:
-            # UnifiedNodeModel: has cohort_inventory
-            if model_solution.get('use_batch_tracking', False):
-                self.use_model_inventory = True
-                self.is_aggregate_model = False
-            # SlidingWindowModel: has aggregate inventory
-            elif model_solution.get('has_aggregate_inventory', False):
+            inventory_format = model_solution.get_inventory_format()
+            if inventory_format == "state":
+                # SlidingWindowModel: has aggregate inventory
                 self.use_model_inventory = True
                 self.is_aggregate_model = True
+            elif inventory_format == "cohort":
+                # UnifiedNodeModel: has cohort_inventory
+                self.use_model_inventory = True
+                self.is_aggregate_model = False
+            # else: inventory_format == "none" → use_model_inventory = False
 
         self.verbose = verbose
 
@@ -472,9 +483,10 @@ class DailySnapshotGenerator:
         if self.is_aggregate_model:
             # AGGREGATE MODEL (SlidingWindowModel): Use FEFO batches if available
             # Try batch objects first (in-memory), then batch dicts (from JSON)
-            fefo_batches = self.model_solution.get('fefo_batch_objects')
+            # SIMPLIFIED: Pydantic attributes instead of .get()
+            fefo_batches = self.model_solution.fefo_batch_objects
             if not fefo_batches:
-                fefo_batches = self.model_solution.get('fefo_batches', [])
+                fefo_batches = self.model_solution.fefo_batches or []
 
             if fefo_batches:
                 # Use FEFO batches with location history for accurate tracking
@@ -539,7 +551,8 @@ class DailySnapshotGenerator:
                         loc_inv.add_batch(batch_inv)
             else:
                 # Fallback: Use aggregate inventory (approximate ages)
-                aggregate_inventory = self.model_solution.get('inventory', {})
+                # SIMPLIFIED: Pydantic attribute
+                aggregate_inventory = self.model_solution.inventory_state or {}
 
                 # Filter for this location and date
                 location_inventory = [
@@ -562,8 +575,12 @@ class DailySnapshotGenerator:
 
         else:
             # COHORT MODEL (UnifiedNodeModel): cohort_inventory with batch detail
-            cohort_inventory = self.model_solution.get('cohort_inventory', {})
-            production_batches_data = self.model_solution.get('production_batches', [])
+            # SIMPLIFIED: Pydantic attributes
+            cohort_inventory = self.model_solution.cohort_inventory or {}
+            production_batches_data = [
+                {'date': b.date, 'product': b.product, 'quantity': b.quantity, 'node': b.node}
+                for b in self.model_solution.production_batches
+            ]
 
             # Build batch lookup
             batch_lookup = {}
@@ -927,9 +944,9 @@ class DailySnapshotGenerator:
 
         # For aggregate models with FEFO batches, use those
         if self.is_aggregate_model and self.model_solution:
-            fefo_batches = self.model_solution.get('fefo_batch_objects')
+            fefo_batches = self.model_solution.fefo_batch_objects
             if not fefo_batches:
-                fefo_batches = self.model_solution.get('fefo_batches', [])
+                fefo_batches = self.model_solution.fefo_batches or []
 
             for batch in fefo_batches:
                 # Handle both Batch objects and dicts
@@ -994,9 +1011,9 @@ class DailySnapshotGenerator:
 
         # Production inflows - use FEFO batches for aggregate models
         if self.is_aggregate_model and self.model_solution:
-            fefo_batches = self.model_solution.get('fefo_batch_objects', [])
+            fefo_batches = self.model_solution.fefo_batch_objects or []
             if not fefo_batches:
-                fefo_batches = self.model_solution.get('fefo_batches', [])
+                fefo_batches = self.model_solution.fefo_batches or []
 
             for batch in fefo_batches:
                 # Handle both objects and dicts
@@ -1042,7 +1059,7 @@ class DailySnapshotGenerator:
 
         # Arrival inflows from FEFO shipment allocations for aggregate models
         if self.is_aggregate_model and self.model_solution:
-            fefo_allocations = self.model_solution.get('fefo_shipment_allocations', [])
+            fefo_allocations = self.model_solution.fefo_shipment_allocations or []
 
             for alloc in fefo_allocations:
                 delivery_date = alloc.get('delivery_date')
@@ -1095,7 +1112,7 @@ class DailySnapshotGenerator:
 
         # Departures from FEFO shipment allocations for aggregate models
         if self.is_aggregate_model and self.model_solution:
-            fefo_allocations = self.model_solution.get('fefo_shipment_allocations', [])
+            fefo_allocations = self.model_solution.fefo_shipment_allocations or []
 
             # Need to calculate departure date for each allocation
             # shipment_allocation has delivery_date, need to subtract transit_time
@@ -1140,12 +1157,12 @@ class DailySnapshotGenerator:
 
         # Demand consumption - use model solution for aggregate models
         if self.is_aggregate_model and self.model_solution:
-            demand_consumed = self.model_solution.get('demand_consumed', {})
+            demand_consumed = getattr(self.model_solution, 'demand_consumed', {})
 
             # demand_consumed format from solution: {(node, product, date): qty}
             # But it's in metadata, need to check actual format
             # For now, use arrivals at demand nodes as proxy for demand
-            fefo_allocations = self.model_solution.get('fefo_shipment_allocations', [])
+            fefo_allocations = self.model_solution.fefo_shipment_allocations or []
 
             for alloc in fefo_allocations:
                 delivery_date = alloc.get('delivery_date')
@@ -1239,7 +1256,7 @@ class DailySnapshotGenerator:
 
         # Get cohort demand consumption from model
         # Format: {(loc, prod, prod_date, demand_date): qty}
-        cohort_consumption = self.model_solution.get('cohort_demand_consumption', {})
+        cohort_consumption = getattr(self.model_solution, 'cohort_demand_consumption', {})
 
         # Aggregate consumption by location and product for this date
         supplied_qty: Dict[Tuple[str, str], float] = {}  # (loc, prod) → total supplied
@@ -1250,7 +1267,7 @@ class DailySnapshotGenerator:
 
         # Get shortages from model
         # Format: {(dest, prod, date): qty}
-        shortages_dict = self.model_solution.get('shortages_by_dest_product_date', {})
+        shortages_dict = self.model_solution.shortages or {}
 
         # Create demand records for all locations with demand
         for (loc, prod), demand in forecast_demand.items():

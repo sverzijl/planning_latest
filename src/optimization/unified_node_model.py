@@ -1615,7 +1615,7 @@ class UnifiedNodeModel(BaseOptimizationModel):
             use_warmstart=use_warmstart,  # Pass to base class so Pyomo generates -mipstart flag
         )
 
-    def extract_solution(self, model: ConcreteModel) -> Dict[str, Any]:
+    def extract_solution(self, model: ConcreteModel) -> 'OptimizationSolution':
         """Extract solution from solved model (required by BaseOptimizationModel).
 
         Args:
@@ -2151,7 +2151,196 @@ class UnifiedNodeModel(BaseOptimizationModel):
         # Also report production cost for reference (but not in objective)
         solution['total_production_cost_reference'] = solution.get('total_production_cost', 0.0)
 
-        return solution
+        return self._dict_to_optimization_solution(solution)
+
+    def _dict_to_optimization_solution(self, solution_dict: Dict[str, Any]) -> 'OptimizationSolution':
+        """Convert solution dictionary to validated OptimizationSolution Pydantic model.
+
+        This method bridges the legacy dict-based solution format with the new
+        Pydantic-validated schema for strict interface compliance.
+
+        Args:
+            solution_dict: Solution dictionary from extract_solution logic
+
+        Returns:
+            OptimizationSolution: Validated Pydantic model
+
+        Raises:
+            ValidationError: If solution data doesn't conform to schema
+        """
+        from .result_schema import (
+            OptimizationSolution,
+            ProductionBatchResult,
+            LaborHoursBreakdown,
+            ShipmentResult,
+            TotalCostBreakdown,
+            LaborCostBreakdown,
+            ProductionCostBreakdown,
+            TransportCostBreakdown,
+            HoldingCostBreakdown,
+            WasteCostBreakdown,
+            StorageState,
+        )
+        from datetime import date as Date
+
+        # 1. Convert production batches
+        production_batches = [
+            ProductionBatchResult(
+                node=batch['node'],
+                product=batch['product'],
+                date=batch['date'],
+                quantity=batch['quantity']
+            )
+            for batch in solution_dict.get('production_batches', [])
+        ]
+
+        # 2. Convert labor hours (ALWAYS use LaborHoursBreakdown, never simple float)
+        labor_hours_by_date = {}
+        for date_key, hours_value in solution_dict.get('labor_hours_by_date', {}).items():
+            if isinstance(hours_value, dict):
+                # Already in breakdown format
+                labor_hours_by_date[date_key] = LaborHoursBreakdown(**hours_value)
+            else:
+                # Simple float - convert to breakdown (used hours = paid hours)
+                labor_hours_by_date[date_key] = LaborHoursBreakdown(
+                    used=hours_value,
+                    paid=hours_value,
+                    fixed=0.0,
+                    overtime=0.0,
+                    non_fixed=hours_value
+                )
+
+        # 3. Convert shipments from batch_shipments or aggregate dict
+        shipments = []
+
+        # UnifiedNodeModel tracks batch_shipments with production_date
+        batch_shipments = solution_dict.get('batch_shipments', [])
+        if batch_shipments:
+            for shipment_data in batch_shipments:
+                shipment = ShipmentResult(
+                    origin=shipment_data.get('origin'),
+                    destination=shipment_data.get('destination'),
+                    product=shipment_data.get('product'),
+                    quantity=shipment_data.get('quantity'),
+                    delivery_date=shipment_data.get('delivery_date'),
+                    production_date=shipment_data.get('production_date'),
+                    state=StorageState(shipment_data['state']) if shipment_data.get('state') in ['ambient', 'frozen', 'thawed'] else None,
+                    assigned_truck_id=str(shipment_data.get('assigned_truck_id')) if shipment_data.get('assigned_truck_id') else None
+                )
+                shipments.append(shipment)
+        else:
+            # Fallback to aggregate format
+            shipments_by_route = solution_dict.get('shipments_by_route_product_date', {})
+            truck_assignments = solution_dict.get('truck_assignments', {})
+
+            for (origin, dest, prod, delivery_date), qty in shipments_by_route.items():
+                route_key = (origin, dest, prod, delivery_date)
+                truck_id = truck_assignments.get(route_key)
+
+                shipment = ShipmentResult(
+                    origin=origin,
+                    destination=dest,
+                    product=prod,
+                    quantity=qty,
+                    delivery_date=delivery_date,
+                    assigned_truck_id=str(truck_id) if truck_id is not None else None
+                )
+                shipments.append(shipment)
+
+        # 4. Build cost breakdown
+        # CRITICAL: UnifiedNodeModel's total_cost does NOT include production cost!
+        # total_cost = labor + transport + holding + shortage + changeover + staleness + waste
+        labor_cost_breakdown_dict = solution_dict.get('labor_cost_breakdown', {})
+
+        costs = TotalCostBreakdown(
+            total_cost=solution_dict.get('total_cost', 0.0),
+            labor=LaborCostBreakdown(
+                total=solution_dict.get('total_labor_cost', 0.0),
+                fixed_hours_cost=labor_cost_breakdown_dict.get('fixed_cost', 0.0),
+                overtime_cost=labor_cost_breakdown_dict.get('overtime_cost', 0.0),
+                non_fixed_cost=labor_cost_breakdown_dict.get('non_fixed_cost', 0.0)
+            ),
+            production=ProductionCostBreakdown(
+                total=solution_dict.get('total_changeover_cost', 0.0),  # Changeover IS in objective!
+                unit_cost=0.0,  # Not directly available
+                total_units=solution_dict.get('total_production_quantity', 0.0),
+                changeover_cost=solution_dict.get('total_changeover_cost', 0.0)
+            ),
+            transport=TransportCostBreakdown(
+                total=solution_dict.get('total_transport_cost', 0.0),
+                shipment_cost=solution_dict.get('total_transport_cost', 0.0),
+                truck_fixed_cost=0.0,
+                freeze_transition_cost=0.0,
+                thaw_transition_cost=0.0
+            ),
+            holding=HoldingCostBreakdown(
+                total=solution_dict.get('total_holding_cost', 0.0),
+                frozen_storage=solution_dict.get('frozen_holding_cost', 0.0),
+                ambient_storage=solution_dict.get('ambient_holding_cost', 0.0),
+                thawed_storage=0.0
+            ),
+            waste=WasteCostBreakdown(
+                total=solution_dict.get('total_shortage_cost', 0.0) +
+                      solution_dict.get('total_waste_cost', 0.0) +
+                      solution_dict.get('total_staleness_cost', 0.0),
+                shortage_penalty=solution_dict.get('total_shortage_cost', 0.0),
+                expiration_waste=solution_dict.get('total_waste_cost', 0.0) +
+                               solution_dict.get('total_staleness_cost', 0.0)
+            )
+        )
+
+        # 5. Preserve cohort_inventory tuple keys (arbitrary_types_allowed enables this)
+        # Note: These won't serialize to JSON but that's OK - use to_dict_json_safe()
+        cohort_inventory = solution_dict.get('cohort_inventory')
+
+        # 6. Build OptimizationSolution
+        # Handle truck_assignments format difference:
+        # UnifiedNodeModel returns list of dicts, but schema expects dict or None
+        truck_assignments_val = solution_dict.get('truck_assignments')
+        if isinstance(truck_assignments_val, list):
+            # UnifiedNodeModel format - store as extra field
+            truck_assignments_dict = None
+        elif isinstance(truck_assignments_val, dict):
+            # SlidingWindowModel format
+            truck_assignments_dict = truck_assignments_val
+        else:
+            truck_assignments_dict = None
+
+        opt_solution = OptimizationSolution(
+            model_type="unified_node",
+            production_batches=production_batches,
+            labor_hours_by_date=labor_hours_by_date,
+            shipments=shipments,
+            costs=costs,
+            total_cost=solution_dict.get('total_cost', 0.0),
+            fill_rate=1.0 - (solution_dict.get('total_shortage_units', 0.0) /
+                           max(sum(self.demand.values()), 1.0)),
+            total_production=solution_dict.get('total_production_quantity', 0.0),
+            total_shortage_units=solution_dict.get('total_shortage_units', 0.0),
+            cohort_inventory=cohort_inventory,
+            has_aggregate_inventory=False,
+            use_batch_tracking=True,
+            production_by_date_product=solution_dict.get('production_by_date_product'),
+            shortages=solution_dict.get('shortages_by_dest_product_date'),
+            truck_assignments=truck_assignments_dict,
+        )
+
+        # 7. Preserve legacy dict format fields as extra attributes
+        # Pydantic allows extra fields with Extra.allow configuration
+        opt_solution.batch_shipments = solution_dict.get('batch_shipments', [])
+        opt_solution.shipments_by_route_product_date = solution_dict.get('shipments_by_route_product_date', {})
+        opt_solution.cohort_demand_consumption = solution_dict.get('cohort_demand_consumption', {})
+        opt_solution.mix_counts = solution_dict.get('mix_counts', {})
+        opt_solution.total_mixes = solution_dict.get('total_mixes', 0)
+        opt_solution.total_changeovers = solution_dict.get('total_changeovers', 0)
+        opt_solution.total_changeover_waste_units = solution_dict.get('total_changeover_waste_units', 0.0)
+        opt_solution.end_horizon_inventory_units = solution_dict.get('end_horizon_inventory_units', 0.0)
+
+        # Preserve UnifiedNodeModel's list-format truck_assignments as extra field
+        if isinstance(truck_assignments_val, list):
+            opt_solution.truck_assignments_list = truck_assignments_val
+
+        return opt_solution
 
     def _get_route_cost(self, origin: str, dest: str) -> float:
         """Get cost per unit for a route."""
@@ -2179,8 +2368,8 @@ class UnifiedNodeModel(BaseOptimizationModel):
         from src.models.production_schedule import ProductionSchedule
         from src.models.production_batch import ProductionBatch
 
-        # Get production data
-        production_by_date_product = self.solution.get('production_by_date_product', {})
+        # Get production data (self.solution is now OptimizationSolution Pydantic model)
+        production_by_date_product = self.solution.production_by_date_product or {}
 
         # Create batches
         batches = []
@@ -2245,7 +2434,8 @@ class UnifiedNodeModel(BaseOptimizationModel):
         from src.shelf_life.tracker import RouteLeg
         from src.network.route_finder import RoutePath
 
-        shipments_by_route = self.solution.get('shipments_by_route_product_date', {})
+        # self.solution is now OptimizationSolution (Pydantic model)
+        shipments_by_route = getattr(self.solution, 'shipments_by_route_product_date', {})
 
         shipments = []
         shipment_counter = 1

@@ -2,10 +2,13 @@
 
 This module provides an abstract base class that all optimization models inherit from,
 providing common functionality for model building, solving, and result extraction.
+
+IMPORTANT: All models must return OptimizationSolution (Pydantic validated) from extract_solution().
+This ensures strict interface compliance and fail-fast validation at the model-UI boundary.
 """
 
 from abc import ABC, abstractmethod
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, TYPE_CHECKING
 from dataclasses import dataclass, field
 from datetime import datetime
 import time
@@ -15,6 +18,13 @@ from pyomo.environ import ConcreteModel, Objective, Constraint, Var, value
 from pyomo.opt import SolverStatus, TerminationCondition
 
 from .solver_config import SolverConfig
+
+# Import OptimizationSolution for type hints
+if TYPE_CHECKING:
+    from .result_schema import OptimizationSolution
+
+# Import ValidationError for fail-fast handling
+from pydantic import ValidationError
 
 
 @dataclass
@@ -160,7 +170,7 @@ class BaseOptimizationModel(ABC):
         self.solver_config = solver_config or SolverConfig()
         self.model: Optional[ConcreteModel] = None
         self.result: Optional[OptimizationResult] = None
-        self.solution: Optional[Dict[str, Any]] = None
+        self.solution: Optional['OptimizationSolution'] = None  # Now Pydantic validated
         self._build_time: Optional[float] = None
 
     @abstractmethod
@@ -185,25 +195,40 @@ class BaseOptimizationModel(ABC):
         raise NotImplementedError("Subclass must implement build_model()")
 
     @abstractmethod
-    def extract_solution(self, model: ConcreteModel) -> Dict[str, Any]:
+    def extract_solution(self, model: ConcreteModel) -> 'OptimizationSolution':
         """
         Extract solution values from the solved model.
 
-        This method must be implemented by subclasses.
+        This method must be implemented by subclasses and MUST return
+        a validated OptimizationSolution Pydantic model.
 
         Args:
             model: Solved Pyomo ConcreteModel
 
         Returns:
-            dict: Solution data (variable values, costs, etc.)
+            OptimizationSolution: Validated solution data (Pydantic model)
+
+        Raises:
+            ValidationError: If solution data doesn't conform to schema
 
         Example:
             def extract_solution(self, model):
-                return {
-                    'x_value': value(model.x),
-                    'y_value': value(model.y),
-                    'total_cost': value(model.obj)
-                }
+                from .result_schema import OptimizationSolution, ProductionBatchResult, ...
+
+                # Extract data from model
+                batches = [...]
+                labor = {...}
+
+                # Build and validate solution
+                return OptimizationSolution(
+                    model_type="sliding_window",
+                    production_batches=batches,
+                    labor_hours_by_date=labor,
+                    shipments=shipments,
+                    costs=costs,
+                    total_cost=value(model.obj),
+                    ...
+                )
         """
         raise NotImplementedError("Subclass must implement extract_solution()")
 
@@ -330,35 +355,47 @@ class BaseOptimizationModel(ABC):
         if success:
             try:
                 # APPSI automatically loads solution into model
-                self.solution = self.extract_solution(self.model)
-                result.metadata.update(self.solution)
+                self.solution = self.extract_solution(self.model)  # Returns OptimizationSolution (Pydantic)
+
+                # Store solution data in result metadata (convert to dict)
+                result.metadata.update(self.solution.model_dump(mode='json'))
 
                 # Get objective from solution if not set
-                if result.objective_value is None and 'total_cost' in self.solution:
-                    result.objective_value = self.solution['total_cost']
+                if result.objective_value is None and hasattr(self.solution, 'total_cost'):
+                    result.objective_value = self.solution.total_cost
 
                 # Apply FEFO allocation if available (for batch-level detail)
+                # Note: FEFO is now handled in extract_solution() which returns OptimizationSolution
+                # with fefo fields populated. This code is kept for backward compatibility.
                 if hasattr(self, 'apply_fefo_allocation'):
                     try:
                         fefo_detail = self.apply_fefo_allocation()
                         if fefo_detail:
-                            # Store dicts (JSON-serializable) and objects (for in-memory use)
-                            self.solution['fefo_batches'] = fefo_detail['batches']  # Dicts for JSON
-                            self.solution['fefo_batch_objects'] = fefo_detail.get('batch_objects', [])  # Objects for UI
-                            self.solution['fefo_batch_inventory'] = fefo_detail.get('batch_inventory', {})
-                            self.solution['fefo_shipment_allocations'] = fefo_detail.get('shipment_allocations', [])
+                            # Update Pydantic model attributes (schema allows extra fields)
+                            self.solution.fefo_batches = fefo_detail['batches']  # Dicts for JSON
+                            self.solution.fefo_batch_objects = fefo_detail.get('batch_objects', [])  # Objects for UI
+                            self.solution.fefo_batch_inventory = fefo_detail.get('batch_inventory', {})
+                            self.solution.fefo_shipment_allocations = fefo_detail.get('shipment_allocations', [])
+
+                            # Re-dump to metadata with FEFO data
+                            result.metadata.update(self.solution.model_dump(mode='json'))
                     except Exception as e:
                         # FEFO is optional - don't fail if it errors
                         import logging
                         logger = logging.getLogger(__name__)
                         logger.warning(f"FEFO allocation failed: {e}")
 
+            except ValidationError as ve:
+                # Validation errors indicate a BUG in the model's extract_solution()
+                # These should NOT be swallowed - they indicate programming errors
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"CRITICAL: Model violates OptimizationSolution schema: {ve}")
+                raise  # Re-raise to fail fast
             except Exception as e:
-                # Log solution extraction error but DON'T override solver success
-                # The solve succeeded - solution extraction is a separate concern
+                # Other exceptions (e.g., solver-specific issues) can be logged
                 result.infeasibility_message = f"Warning: Solution extraction failed: {e}. Solve was successful but solution data unavailable."
                 # Keep result.success = True (solver succeeded)
-                # Just mark that solution data is incomplete
                 result.metadata['solution_extraction_failed'] = True
 
         return result
@@ -561,16 +598,23 @@ class BaseOptimizationModel(ABC):
                         pass
 
                 # Extract solution to our format
-                self.solution = self.extract_solution(self.model)
+                self.solution = self.extract_solution(self.model)  # Returns OptimizationSolution (Pydantic)
 
-                # Store solution data in result metadata for easy access
-                result.metadata.update(self.solution)
+                # Store solution data in result metadata for easy access (convert to dict)
+                result.metadata.update(self.solution.model_dump(mode='json'))
 
                 # If objective value is still missing, try to get it from extracted solution
-                if result.objective_value is None and 'total_cost' in self.solution:
-                    result.objective_value = self.solution['total_cost']
+                if result.objective_value is None and hasattr(self.solution, 'total_cost'):
+                    result.objective_value = self.solution.total_cost
+            except ValidationError as ve:
+                # Validation errors indicate a BUG in the model's extract_solution()
+                # These should NOT be swallowed - they indicate programming errors
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"CRITICAL: Model violates OptimizationSolution schema: {ve}")
+                raise  # Re-raise to fail fast
             except Exception as e:
-                # Log solution extraction error but DON'T override solver success
+                # Other exceptions (e.g., solver-specific issues) can be logged
                 result.infeasibility_message = f"Warning: Solution extraction failed: {e}. Solve was successful but solution data unavailable."
                 # Keep result.success = True (solver succeeded)
                 result.metadata['solution_extraction_failed'] = True
@@ -673,18 +717,19 @@ class BaseOptimizationModel(ABC):
             infeasibility_message=infeasibility_message,
         )
 
-    def get_solution(self) -> Optional[Dict[str, Any]]:
+    def get_solution(self) -> Optional['OptimizationSolution']:
         """
         Get extracted solution from last solve.
 
         Returns:
-            Solution dictionary, or None if not solved or infeasible
+            OptimizationSolution (Pydantic validated), or None if not solved or infeasible
 
         Example:
             result = model.solve()
             if result.is_optimal():
                 solution = model.get_solution()
-                print(f"x = {solution['x_value']}")
+                print(f"Total cost: {solution.total_cost}")
+                print(f"Production batches: {len(solution.production_batches)}")
         """
         return self.solution
 

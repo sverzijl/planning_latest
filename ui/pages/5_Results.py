@@ -19,6 +19,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import math
+from pydantic import ValidationError
 from ui import session_state
 from ui.utils import adapt_optimization_results, extract_labor_hours
 from ui.components.styling import apply_custom_css, section_header, colored_metric, success_badge, error_badge, warning_badge
@@ -192,18 +193,49 @@ else:
 
 # Helper function to get current results based on selected source
 def get_current_results():
-    """Get results based on currently selected source."""
+    """Get results based on currently selected source.
+
+    REFACTORED: Added ValidationError handling for Pydantic schema violations.
+    """
     if st.session_state.result_source == 'optimization':
         opt_results = session_state.get_optimization_results()
 
         # Get inventory snapshot date from session state
         inventory_snapshot_date = st.session_state.get('inventory_snapshot_date')
 
-        adapted_results = adapt_optimization_results(
-            model=opt_results['model'],
-            result=opt_results['result'],
-            inventory_snapshot_date=inventory_snapshot_date
-        )
+        # Validate and adapt optimization results (fail-fast on schema violations)
+        try:
+            adapted_results = adapt_optimization_results(
+                model=opt_results['model'],
+                result=opt_results['result'],
+                inventory_snapshot_date=inventory_snapshot_date
+            )
+        except ValidationError as e:
+            # Model violated the interface specification
+            st.error("❌ **Model Interface Violation**")
+            st.error(
+                "The optimization model returned data that doesn't conform to the "
+                "OptimizationSolution specification. This indicates a bug in the model."
+            )
+            with st.expander("🔍 Validation Error Details"):
+                st.code(str(e), language="text")
+                st.markdown("""
+                **What this means:**
+                - The model did not return a valid `OptimizationSolution` object
+                - Required fields may be missing or have incorrect types
+                - Cost components may not sum to total_cost correctly
+
+                **How to fix:**
+                - Check that the model's `extract_solution()` method returns `OptimizationSolution`
+                - Ensure all required fields are populated
+                - Run `tests/test_model_compliance.py` to validate model compliance
+                """)
+            st.stop()
+        except Exception as e:
+            # Other unexpected errors
+            st.error(f"❌ Unexpected error while adapting results: {str(e)}")
+            st.stop()
+
         if adapted_results is None:
             st.error("❌ Optimization results are not available. The model may not have been solved yet.")
             st.stop()

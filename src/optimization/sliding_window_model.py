@@ -1505,11 +1505,11 @@ class SlidingWindowModel(BaseOptimizationModel):
         print(f"  Optional: waste (end-of-horizon penalty)")
         print(f"  Staleness: IMPLICIT via holding costs (inventory costs money)")
 
-    def extract_solution(self, model: ConcreteModel) -> Dict[str, Any]:
+    def extract_solution(self, model: ConcreteModel) -> 'OptimizationSolution':
         """Extract solution from solved model.
 
         Returns:
-            Solution dictionary with aggregate flows
+            OptimizationSolution: Pydantic-validated solution with aggregate flows
         """
         from pyomo.core.base import value
 
@@ -1740,7 +1740,158 @@ class SlidingWindowModel(BaseOptimizationModel):
                 route_key = (route.origin_node_id, route.destination_node_id)
                 self.route_arrival_state[route_key] = arrival_state
 
-        return solution
+        return self._dict_to_optimization_solution(solution)
+
+    def _dict_to_optimization_solution(self, solution_dict: Dict[str, Any]) -> 'OptimizationSolution':
+        """Convert solution dictionary to validated OptimizationSolution Pydantic model.
+
+        This method bridges the legacy dict-based solution format with the new
+        Pydantic-validated schema for strict interface compliance.
+
+        Args:
+            solution_dict: Solution dictionary from extract_solution logic
+
+        Returns:
+            OptimizationSolution: Validated Pydantic model
+
+        Raises:
+            ValidationError: If solution data doesn't conform to schema
+        """
+        from .result_schema import (
+            OptimizationSolution,
+            ProductionBatchResult,
+            LaborHoursBreakdown,
+            ShipmentResult,
+            TotalCostBreakdown,
+            LaborCostBreakdown,
+            ProductionCostBreakdown,
+            TransportCostBreakdown,
+            HoldingCostBreakdown,
+            WasteCostBreakdown,
+            StorageState,
+        )
+        from datetime import date as Date
+
+        # 1. Convert production batches
+        production_batches = [
+            ProductionBatchResult(
+                node=batch['node'],
+                product=batch['product'],
+                date=batch['date'],
+                quantity=batch['quantity']
+            )
+            for batch in solution_dict.get('production_batches', [])
+        ]
+
+        # 2. Convert labor hours (ALWAYS use LaborHoursBreakdown, never simple float)
+        labor_hours_by_date = {}
+        for date_key, hours_value in solution_dict.get('labor_hours_by_date', {}).items():
+            if isinstance(hours_value, dict):
+                # Already in breakdown format
+                labor_hours_by_date[date_key] = LaborHoursBreakdown(**hours_value)
+            else:
+                # Simple float - convert to breakdown (used hours = paid hours)
+                labor_hours_by_date[date_key] = LaborHoursBreakdown(
+                    used=hours_value,
+                    paid=hours_value,
+                    fixed=0.0,
+                    overtime=0.0,
+                    non_fixed=hours_value
+                )
+
+        # 3. Convert shipments from aggregate dict to list
+        shipments = []
+        shipments_by_route = solution_dict.get('shipments_by_route_product_date', {})
+        truck_assignments = solution_dict.get('truck_assignments', {})
+
+        for (origin, dest, prod, delivery_date), qty in shipments_by_route.items():
+            # Get truck assignment if available
+            route_key = (origin, dest, prod, delivery_date)
+            truck_id = truck_assignments.get(route_key)
+
+            # Get arrival state from route mapping
+            arrival_state = self.route_arrival_state.get((origin, dest), 'ambient')
+            state = StorageState(arrival_state) if arrival_state in ['ambient', 'frozen', 'thawed'] else None
+
+            shipment = ShipmentResult(
+                origin=origin,
+                destination=dest,
+                product=prod,
+                quantity=qty,
+                delivery_date=delivery_date,
+                assigned_truck_id=str(truck_id) if truck_id is not None else None,
+                state=state
+            )
+            shipments.append(shipment)
+
+        # 4. Build cost breakdown
+        costs = TotalCostBreakdown(
+            total_cost=solution_dict.get('total_cost', 0.0),
+            labor=LaborCostBreakdown(
+                total=solution_dict.get('total_labor_cost', 0.0),
+                by_date=solution_dict.get('labor_cost_by_date')
+            ),
+            production=ProductionCostBreakdown(
+                total=solution_dict.get('total_production_cost', 0.0),
+                unit_cost=self.cost_structure.production_cost_per_unit or 0.0,
+                total_units=solution_dict.get('total_production', 0.0),
+                changeover_cost=0.0  # Not tracked in SlidingWindow
+            ),
+            transport=TransportCostBreakdown(
+                total=solution_dict.get('total_transport_cost', 0.0) + solution_dict.get('total_truck_cost', 0.0),
+                shipment_cost=solution_dict.get('total_transport_cost', 0.0),
+                truck_fixed_cost=solution_dict.get('total_truck_cost', 0.0),
+                freeze_transition_cost=0.0,
+                thaw_transition_cost=0.0
+            ),
+            holding=HoldingCostBreakdown(
+                total=solution_dict.get('total_holding_cost', 0.0),
+                frozen_storage=solution_dict.get('frozen_holding_cost', 0.0),
+                ambient_storage=solution_dict.get('ambient_holding_cost', 0.0),
+                thawed_storage=0.0
+            ),
+            waste=WasteCostBreakdown(
+                total=solution_dict.get('total_shortage_cost', 0.0),
+                shortage_penalty=solution_dict.get('total_shortage_cost', 0.0),
+                expiration_waste=0.0
+            )
+        )
+
+        # 5. Preserve inventory tuple keys (arbitrary_types_allowed enables this)
+        # Note: These won't serialize to JSON but that's OK - use to_dict_json_safe()
+        inventory_state = solution_dict.get('inventory')
+
+        # 6. Build OptimizationSolution
+        opt_solution = OptimizationSolution(
+            model_type="sliding_window",
+            production_batches=production_batches,
+            labor_hours_by_date=labor_hours_by_date,
+            shipments=shipments,
+            costs=costs,
+            total_cost=solution_dict.get('total_cost', 0.0),
+            fill_rate=solution_dict.get('fill_rate', 1.0),
+            total_production=solution_dict.get('total_production', 0.0),
+            total_shortage_units=solution_dict.get('total_shortage_units', 0.0),
+            inventory_state=inventory_state,
+            has_aggregate_inventory=True,
+            use_batch_tracking=False,
+            production_by_date_product=solution_dict.get('production_by_date_product'),
+            thaw_flows=solution_dict.get('thaw_flows'),
+            freeze_flows=solution_dict.get('freeze_flows'),
+            shortages=solution_dict.get('shortages'),
+            truck_assignments=truck_assignments if truck_assignments else None,
+            labor_cost_by_date=solution_dict.get('labor_cost_by_date'),
+            fefo_batches=solution_dict.get('fefo_batches'),
+            fefo_batch_objects=solution_dict.get('fefo_batch_objects'),
+            fefo_batch_inventory=solution_dict.get('fefo_batch_inventory'),
+            fefo_shipment_allocations=solution_dict.get('fefo_shipment_allocations'),
+        )
+
+        # 7. Preserve legacy dict format fields as extra attributes (needed by FEFO allocator)
+        # Pydantic allows extra fields with Extra.allow configuration
+        opt_solution.shipments_by_route_product_date = solution_dict.get('shipments_by_route_product_date', {})
+
+        return opt_solution
 
     def apply_fefo_allocation(self, method: str = 'greedy'):
         """Apply FEFO batch allocator to convert aggregate flows to batch detail.
@@ -1776,10 +1927,11 @@ class SlidingWindowModel(BaseOptimizationModel):
 
         # Process events DAY BY DAY to build accurate location history
         # Group all events by date
-        production_events = self.solution.get('production_by_date_product', {})
-        shipments_by_route = self.solution.get('shipments_by_route_product_date', {})
-        freeze_flows = self.solution.get('freeze_flows', {})
-        thaw_flows = self.solution.get('thaw_flows', {})
+        # Note: self.solution is now OptimizationSolution (Pydantic model)
+        production_events = self.solution.production_by_date_product or {}
+        shipments_by_route = getattr(self.solution, 'shipments_by_route_product_date', {})
+        freeze_flows = self.solution.freeze_flows or {}
+        thaw_flows = self.solution.thaw_flows or {}
 
         # Create batches from initial inventory (at start_date)
         if self.initial_inventory:
@@ -1808,7 +1960,9 @@ class SlidingWindowModel(BaseOptimizationModel):
                     allocator.batch_inventory[(node_id, product_id, state)].append(batch)
 
         # Create all production batches first
-        production_batches = allocator.create_batches_from_production(self.solution)
+        # Note: FEFOBatchAllocator expects dict format, convert Pydantic model to dict
+        solution_dict = self.solution.model_dump() if hasattr(self.solution, 'model_dump') else self.solution
+        production_batches = allocator.create_batches_from_production(solution_dict)
 
         # Determine if using weighted age (LP method uses weighted age in greedy for scalability)
         use_weighted_age = (method == 'lp')
@@ -1893,8 +2047,9 @@ class SlidingWindowModel(BaseOptimizationModel):
         from src.shelf_life.tracker import RouteLeg
         from src.network.route_finder import RoutePath
 
-        shipments_by_route = self.solution.get('shipments_by_route_product_date', {})
-        truck_assignments = self.solution.get('truck_assignments', {})
+        # Note: self.solution is now OptimizationSolution (Pydantic model)
+        shipments_by_route = getattr(self.solution, 'shipments_by_route_product_date', {})
+        truck_assignments = self.solution.truck_assignments or {}
 
         shipments = []
         shipment_counter = 1
