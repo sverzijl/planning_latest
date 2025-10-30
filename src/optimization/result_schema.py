@@ -15,7 +15,12 @@ Development Workflow:
 - Schema changes require updating MODEL_RESULT_SPECIFICATION.md
 - All schema changes must be validated by tests
 
-Last Updated: 2025-10-28
+Type Safety (Phase 2):
+- Uses typed aliases from src.optimization.types for self-documenting structures
+- Dict[Any, Any] retained for Pydantic compatibility (arbitrary tuple keys)
+- Type aliases in docstrings document expected structures
+
+Last Updated: 2025-10-30
 """
 
 from __future__ import annotations
@@ -24,6 +29,14 @@ from datetime import date as Date
 from typing import Dict, List, Optional, Union, Any, Literal
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 from enum import Enum
+
+# Import type aliases for documentation (not runtime type checking due to Pydantic limitations)
+# Pydantic requires Dict[Any, X] for tuple keys, but we document expected types
+from src.optimization.types import (
+    ProductionKey, ShipmentKey, DemandKey, TruckID,
+    ProductionDict, ShipmentDict, DemandConsumedDict, ShortagesDict,
+    TruckAssignmentsDict, RouteStateDict
+)
 
 
 class StorageState(str, Enum):
@@ -375,32 +388,42 @@ class OptimizationSolution(BaseModel):
 
     production_by_date_product: Optional[Dict[Any, float]] = Field(
         None,
-        description="Production quantity lookup: {(node,product,date): quantity} - tuple keys preserved"
+        description="Production quantities (ProductionDict): Dict[ProductionKey, float] where "
+                    "ProductionKey = (node_id: str, product_id: str, date: Date). "
+                    "CRITICAL: 3-tuple, not 2-tuple."
     )
 
     thaw_flows: Optional[Dict[Any, float]] = Field(
         None,
-        description="Frozen→thawed transitions: {(node,product,date): quantity} - tuple keys preserved"
+        description="Frozen→thawed state transitions: Dict[DemandKey, float] where "
+                    "DemandKey = (node_id: str, product_id: str, date: Date)"
     )
 
     freeze_flows: Optional[Dict[Any, float]] = Field(
         None,
-        description="Ambient→frozen transitions: {(node,product,date): quantity} - tuple keys preserved"
+        description="Ambient→frozen state transitions: Dict[DemandKey, float] where "
+                    "DemandKey = (node_id: str, product_id: str, date: Date)"
     )
 
     shortages: Optional[Dict[Any, float]] = Field(
         None,
-        description="Unmet demand: {(node,product,date): quantity} - tuple keys preserved"
+        description="Unmet demand (ShortagesDict): Dict[DemandKey, float] where "
+                    "DemandKey = (node_id: str, product_id: str, date: Date)"
     )
 
     demand_consumed: Optional[Dict[Any, float]] = Field(
         None,
-        description="Demand consumed from inventory: {(node,product,date): quantity} - tuple keys preserved"
+        description="Demand consumed from inventory (DemandConsumedDict): Dict[DemandKey, float] where "
+                    "DemandKey = (node_id: str, product_id: str, date: Date). "
+                    "Required for aggregate models (SlidingWindowModel)."
     )
 
     truck_assignments: Optional[Dict[Any, Any]] = Field(
         None,
-        description="Truck assignments: {(origin,dest,product,date): truck_id} - tuple keys preserved"
+        description="Truck assignments (TruckAssignmentsDict): Dict[ShipmentKey, TruckID] where "
+                    "ShipmentKey = (origin: str, dest: str, product: str, date: Date) and "
+                    "TruckID = str (truck.id like 'T1', 'T2'). "
+                    "CRITICAL: Must be truck.id string, NOT integer index."
     )
 
     labor_cost_by_date: Optional[Dict[Date, float]] = Field(
@@ -473,6 +496,110 @@ class OptimizationSolution(BaseModel):
             if not self.use_batch_tracking:
                 raise ValueError("UnifiedNodeModel must set use_batch_tracking=True")
             # cohort_inventory is optional (can be None or empty dict)
+
+        return self
+
+    @model_validator(mode='after')
+    def validate_tuple_key_structures(self):
+        """Validate tuple key structures match type specifications.
+
+        This catches bugs like:
+        - Wrong tuple length (2 vs 3 elements)
+        - Wrong element types (int vs str)
+        - Undocumented key formats
+
+        Uses type guards from src.optimization.types module.
+        """
+        from src.optimization.types import (
+            is_valid_production_key,
+            is_valid_shipment_key,
+            is_valid_demand_key
+        )
+
+        errors = []
+
+        # Validate production_by_date_product keys
+        if self.production_by_date_product:
+            for key in self.production_by_date_product.keys():
+                if not is_valid_production_key(key):
+                    errors.append(
+                        f"production_by_date_product has invalid key: {key}. "
+                        f"Expected ProductionKey = (node_id: str, product_id: str, date: Date)"
+                    )
+
+        # Validate truck_assignments keys (ShipmentKey)
+        if self.truck_assignments:
+            for key in self.truck_assignments.keys():
+                if not is_valid_shipment_key(key):
+                    errors.append(
+                        f"truck_assignments has invalid key: {key}. "
+                        f"Expected ShipmentKey = (origin: str, dest: str, product: str, date: Date)"
+                    )
+
+        # Validate demand_consumed keys
+        if self.demand_consumed:
+            for key in self.demand_consumed.keys():
+                if not is_valid_demand_key(key):
+                    errors.append(
+                        f"demand_consumed has invalid key: {key}. "
+                        f"Expected DemandKey = (node_id: str, product_id: str, date: Date)"
+                    )
+
+        # Validate shortages keys
+        if self.shortages:
+            for key in self.shortages.keys():
+                if not is_valid_demand_key(key):
+                    errors.append(
+                        f"shortages has invalid key: {key}. "
+                        f"Expected DemandKey = (node_id: str, product_id: str, date: Date)"
+                    )
+
+        # Validate thaw_flows keys
+        if self.thaw_flows:
+            for key in self.thaw_flows.keys():
+                if not is_valid_demand_key(key):
+                    errors.append(
+                        f"thaw_flows has invalid key: {key}. "
+                        f"Expected DemandKey = (node_id: str, product_id: str, date: Date)"
+                    )
+
+        # Validate freeze_flows keys
+        if self.freeze_flows:
+            for key in self.freeze_flows.keys():
+                if not is_valid_demand_key(key):
+                    errors.append(
+                        f"freeze_flows has invalid key: {key}. "
+                        f"Expected DemandKey = (node_id: str, product_id: str, date: Date)"
+                    )
+
+        if errors:
+            raise ValueError(
+                "Tuple key structure validation failed:\n" + "\n".join(f"  - {e}" for e in errors)
+            )
+
+        return self
+
+    @model_validator(mode='after')
+    def validate_truck_id_types(self):
+        """Validate truck_assignments uses string IDs, not integer indices.
+
+        This catches Bug #2: truck_id=10 when truck.id='T1'
+
+        All truck_ids must be strings matching truck.id values.
+        """
+        if self.truck_assignments:
+            errors = []
+            for shipment_key, truck_id in self.truck_assignments.items():
+                if not isinstance(truck_id, str):
+                    errors.append(
+                        f"truck_assignments[{shipment_key}] = {truck_id} (type: {type(truck_id).__name__}). "
+                        f"Must be string truck.id (e.g., 'T1'), not integer index."
+                    )
+
+            if errors:
+                raise ValueError(
+                    "truck_id type validation failed:\n" + "\n".join(f"  - {e}" for e in errors)
+                )
 
         return self
 
