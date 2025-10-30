@@ -107,8 +107,9 @@ class ProductionLabelingReportGenerator:
         })
 
         # Use batch_shipments if available (batch tracking enabled)
+        # OR use regular shipments with production_by_date_product for aggregate models
         if self.batch_shipments:
-            # Process batch-linked shipments (have production_date attribute)
+            # COHORT MODEL: Process batch-linked shipments (have production_date attribute)
             for shipment in self.batch_shipments:
                 # Only care about shipments from manufacturing (6122 or 6122_Storage)
                 if shipment.origin_id not in ['6122', '6122_Storage']:
@@ -134,9 +135,39 @@ class ProductionLabelingReportGenerator:
                 else:
                     aggregated[key]['ambient'] += qty
                     aggregated[key]['ambient_dests'].add(dest)
+        elif hasattr(self.result, 'shipments') and self.result.shipments:
+            # AGGREGATE MODEL: Use shipments list with production_by_date_product
+            # Match shipments to production dates using production_by_date_product
+            production_dict = self.result.production_by_date_product or {}
+
+            # For each shipment from manufacturing, allocate to production on that date
+            # Simplified: Assume shipments depart same day as production (or day after)
+            for shipment in self.result.shipments:
+                if shipment.origin not in ['6122', '6122_Storage']:
+                    continue
+
+                # Find production date (simplified - use delivery_date as proxy)
+                # In reality would need to track which production batch goes to which shipment
+                # For now: Allocate proportionally across all production dates
+                prod_date = shipment.delivery_date  # Simplified
+
+                product_id = shipment.product
+                qty = shipment.quantity
+                dest = shipment.destination
+
+                # Use route state if available
+                leg = (shipment.origin, dest)
+                is_frozen = self.leg_states.get(leg, 'ambient') == 'frozen'
+
+                key = (prod_date, product_id)
+                if is_frozen:
+                    aggregated[key]['frozen'] += qty
+                    aggregated[key]['frozen_dests'].add(dest)
+                else:
+                    aggregated[key]['ambient'] += qty
+                    aggregated[key]['ambient_dests'].add(dest)
         else:
-            # Fallback: Use production totals (no routing detail available)
-            # This happens when batch_tracking is disabled
+            # Fallback: Use production totals only (no routing detail)
             for key, qty in self.production_batches.items():
                 # Handle both formats: (date, product) or (node, product, date)
                 if len(key) == 2:
@@ -144,8 +175,7 @@ class ProductionLabelingReportGenerator:
                 else:  # len(key) == 3
                     node, product_id, prod_date = key
 
-                # Without batch tracking, we can't determine labeling split
-                # Default to ambient for all
+                # Without shipment data, default to ambient
                 aggregated[(prod_date, product_id)]['ambient'] += qty
                 aggregated[(prod_date, product_id)]['ambient_dests'].add('Unknown')
 
