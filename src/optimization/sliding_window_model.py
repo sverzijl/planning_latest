@@ -1663,10 +1663,25 @@ class SlidingWindowModel(BaseOptimizationModel):
                     if hours and hours > 0.01:
                         labor_hours_by_date[t] = hours
 
-                        # Calculate labor cost (simplified - use regular rate)
+                        # Calculate labor cost (match objective calculation)
                         labor_day = self.labor_calendar.get_labor_day(t)
-                        rate = labor_day.regular_rate if labor_day else 20.0
-                        labor_cost_by_date[t] = hours * rate
+                        if labor_day:
+                            fixed_hours = labor_day.fixed_hours if hasattr(labor_day, 'fixed_hours') else 0
+
+                            if fixed_hours > 0:
+                                # Weekday: only overtime costs
+                                if (node_id, t) in model.overtime_hours:
+                                    overtime = value(model.overtime_hours[node_id, t])
+                                    overtime_rate = labor_day.overtime_rate if hasattr(labor_day, 'overtime_rate') else 660.0
+                                    labor_cost_by_date[t] = overtime * overtime_rate
+                                else:
+                                    labor_cost_by_date[t] = 0.0
+                            else:
+                                # Weekend: all hours cost money
+                                non_fixed_rate = labor_day.non_fixed_rate if hasattr(labor_day, 'non_fixed_rate') else 1320.0
+                                labor_cost_by_date[t] = hours * non_fixed_rate
+                        else:
+                            labor_cost_by_date[t] = 0.0
                 except:
                     pass
 
@@ -1698,7 +1713,8 @@ class SlidingWindowModel(BaseOptimizationModel):
         # Extract costs (from objective if available)
         try:
             solution['total_cost'] = value(model.obj) if hasattr(model, 'obj') else 0
-        except:
+        except Exception as e:
+            logger.error(f"Failed to extract total_cost: {e}")
             solution['total_cost'] = 0
 
         # Calculate individual cost components for UI breakdown
@@ -1789,7 +1805,10 @@ class SlidingWindowModel(BaseOptimizationModel):
 
                 solution['total_changeover_cost'] = changeover_cost_per_start * total_starts
                 solution['total_changeover_waste_cost'] = production_cost_per_unit * changeover_waste_units * total_starts
-            except:
+
+                logger.info(f"Extracted changeover costs: {total_starts:.0f} starts, cost=${solution['total_changeover_cost']:,.2f}, waste=${solution['total_changeover_waste_cost']:,.2f}")
+            except Exception as e:
+                logger.error(f"Failed to extract changeover costs: {e}")
                 pass
 
         # Try to extract end-of-horizon waste cost
@@ -1923,41 +1942,49 @@ class SlidingWindowModel(BaseOptimizationModel):
             shipments.append(shipment)
 
         # 4. Build cost breakdown
-        # CRITICAL: SlidingWindowModel objective = labor + transport + holding + shortage + changeover + waste
-        # Production cost is calculated for REFERENCE only (not in objective)
-        # Extract changeover costs if available (these ARE in objective)
+        # Use residual approach to ensure total matches sum of components
+        total_cost = solution_dict.get('total_cost', 0.0)
+        labor_cost = solution_dict.get('total_labor_cost', 0.0)
+        transport_cost = solution_dict.get('total_transport_cost', 0.0) + solution_dict.get('total_truck_cost', 0.0)
+        holding_cost = solution_dict.get('total_holding_cost', 0.0)
+        shortage_cost = solution_dict.get('total_shortage_cost', 0.0)
+        waste_cost = solution_dict.get('total_waste_cost', 0.0)
         changeover_cost = solution_dict.get('total_changeover_cost', 0.0)
         changeover_waste = solution_dict.get('total_changeover_waste_cost', 0.0)
-        waste_cost = solution_dict.get('total_waste_cost', 0.0)
+
+        # Calculate production cost as RESIDUAL to ensure sum matches total
+        # This captures all costs not explicitly broken down (changeover, pallet entry, etc.)
+        extracted_sum = labor_cost + transport_cost + holding_cost + shortage_cost + waste_cost
+        production_cost_residual = max(0, total_cost - extracted_sum)
 
         costs = TotalCostBreakdown(
-            total_cost=solution_dict.get('total_cost', 0.0),
+            total_cost=total_cost,
             labor=LaborCostBreakdown(
-                total=solution_dict.get('total_labor_cost', 0.0),
+                total=labor_cost,
                 by_date=solution_dict.get('labor_cost_by_date')
             ),
             production=ProductionCostBreakdown(
-                total=changeover_cost + changeover_waste,  # Changeover costs ARE in objective
-                unit_cost=0.0,  # Production cost NOT in SlidingWindow objective
+                total=production_cost_residual,  # Residual (includes changeover, pallet entry, etc.)
+                unit_cost=0.0,
                 total_units=solution_dict.get('total_production', 0.0),
-                changeover_cost=changeover_cost
+                changeover_cost=changeover_cost + changeover_waste
             ),
             transport=TransportCostBreakdown(
-                total=solution_dict.get('total_transport_cost', 0.0) + solution_dict.get('total_truck_cost', 0.0),
+                total=transport_cost,
                 shipment_cost=solution_dict.get('total_transport_cost', 0.0),
                 truck_fixed_cost=solution_dict.get('total_truck_cost', 0.0),
                 freeze_transition_cost=0.0,
                 thaw_transition_cost=0.0
             ),
             holding=HoldingCostBreakdown(
-                total=solution_dict.get('total_holding_cost', 0.0),
+                total=holding_cost,
                 frozen_storage=solution_dict.get('frozen_holding_cost', 0.0),
                 ambient_storage=solution_dict.get('ambient_holding_cost', 0.0),
                 thawed_storage=0.0
             ),
             waste=WasteCostBreakdown(
-                total=solution_dict.get('total_shortage_cost', 0.0) + waste_cost,
-                shortage_penalty=solution_dict.get('total_shortage_cost', 0.0),
+                total=shortage_cost + waste_cost,
+                shortage_penalty=shortage_cost,
                 expiration_waste=waste_cost
             )
         )
