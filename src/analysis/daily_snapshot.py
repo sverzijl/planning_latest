@@ -500,23 +500,51 @@ class DailySnapshotGenerator:
                     if node_id == location_id and inv_date == snapshot_date and qty > 0.01
                 ]
 
-                # Try to enrich with FEFO batch details (production dates for age calculation)
+                # Calculate weighted average age from FEFO batches
+                # CRITICAL: Multiple batches of same (product, state) exist with different ages
+                # We need WEIGHTED AVERAGE, not just most recent
                 fefo_batches = self.model_solution.fefo_batch_objects or self.model_solution.fefo_batches or []
-                fefo_ages = {}  # {(product, state): (production_date, batch_id)}
+
+                # Group FEFO batches by (product, state) to calculate weighted average age
+                fefo_weighted_ages = {}  # {(product, state): (weighted_avg_age, total_qty)}
 
                 for batch in fefo_batches:
                     if isinstance(batch, dict):
                         prod_date = datetime.fromisoformat(batch['production_date']).date() if isinstance(batch['production_date'], str) else batch['production_date']
-                        fefo_ages[(batch['product_id'], batch['current_state'])] = (prod_date, batch['id'])
+                        product = batch['product_id']
+                        state = batch['current_state']
+                        qty = batch.get('current_quantity', batch.get('quantity', 0))
                     else:
-                        fefo_ages[(batch.product_id, batch.current_state)] = (batch.production_date, batch.id)
+                        prod_date = batch.production_date
+                        product = batch.product_id
+                        state = batch.current_state
+                        # Get quantity on this date (Batch object has method)
+                        qty = batch.get_quantity_on_date(snapshot_date) if hasattr(batch, 'get_quantity_on_date') else batch.initial_quantity
 
-                # Create BatchInventory objects with age enrichment
+                    age = (snapshot_date - prod_date).days
+                    key = (product, state)
+
+                    if key not in fefo_weighted_ages:
+                        fefo_weighted_ages[key] = {'total_qty': 0, 'weighted_age_sum': 0}
+
+                    fefo_weighted_ages[key]['total_qty'] += qty
+                    fefo_weighted_ages[key]['weighted_age_sum'] += age * qty
+
+                # Calculate weighted average ages
+                avg_ages = {}
+                for key, data in fefo_weighted_ages.items():
+                    if data['total_qty'] > 0:
+                        avg_age = data['weighted_age_sum'] / data['total_qty']
+                        avg_ages[key] = avg_age
+
+                # Create BatchInventory objects with weighted average ages
                 for (node_id, product_id, state, qty) in location_inventory:
-                    # Try to get production date from FEFO for age calculation
-                    if (product_id, state) in fefo_ages:
-                        production_date, batch_id = fefo_ages[(product_id, state)]
-                        age_days = (snapshot_date - production_date).days
+                    # Use weighted average age if available
+                    if (product_id, state) in avg_ages:
+                        age_days = int(round(avg_ages[(product_id, state)]))
+                        # Estimate production date from average age
+                        production_date = snapshot_date - timedelta(days=age_days)
+                        batch_id = f"AGG-{product_id}-{state}-age{age_days}"
                     else:
                         # No FEFO data - use conservative estimates
                         production_date = snapshot_date
