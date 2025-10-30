@@ -1975,17 +1975,38 @@ class SlidingWindowModel(BaseOptimizationModel):
         extracted_sum = labor_cost + transport_cost + holding_cost + shortage_cost + waste_cost
         production_cost_residual = max(0, total_cost - extracted_sum)
 
+        # Build daily breakdown for labor costs (needed by Daily Costs chart)
+        labor_cost_by_date_dict = solution_dict.get('labor_cost_by_date', {})
+        daily_breakdown_nested: Dict[Date, Dict[str, float]] = {}
+        for date_val, total_cost_val in labor_cost_by_date_dict.items():
+            # labor_hours_by_date contains LaborHoursBreakdown objects, extract 'used' field
+            hours_obj = labor_hours_by_date.get(date_val)
+            labor_hours_used = hours_obj.used if hours_obj else 0.0
+
+            if labor_hours_used and labor_hours_used > 0:
+                daily_breakdown_nested[date_val] = {
+                    'total_hours': labor_hours_used,
+                    'fixed_hours': 0,  # Not separately tracked in aggregate model
+                    'overtime_hours': 0,  # Not separately tracked
+                    'fixed_cost': 0,
+                    'overtime_cost': 0,
+                    'non_fixed_cost': total_cost_val,  # Assume all non-fixed for aggregate
+                    'total_cost': total_cost_val,
+                }
+
         costs = TotalCostBreakdown(
             total_cost=total_cost,
             labor=LaborCostBreakdown(
                 total=labor_cost,
-                by_date=solution_dict.get('labor_cost_by_date')
+                by_date=solution_dict.get('labor_cost_by_date'),
+                daily_breakdown=daily_breakdown_nested
             ),
             production=ProductionCostBreakdown(
                 total=production_cost_residual,  # Residual (includes changeover, pallet entry, etc.)
                 unit_cost=0.0,
                 total_units=solution_dict.get('total_production', 0.0),
-                changeover_cost=changeover_cost + changeover_waste
+                changeover_cost=changeover_cost + changeover_waste,
+                cost_by_date=None  # Not tracked daily in aggregate model (included in residual)
             ),
             transport=TransportCostBreakdown(
                 total=transport_cost,
