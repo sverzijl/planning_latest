@@ -113,17 +113,25 @@ class FEFOBatchAllocator:
         # Shipment allocations (for genealogy)
         self.shipment_allocations: List[Dict] = []
 
-    def create_batches_from_production(self, solution: Dict) -> List[Batch]:
+    def create_batches_from_production(self, solution) -> List[Batch]:
         """Create batches from production events in solution.
 
         Args:
-            solution: Sliding window solution with 'production_by_date_product'
+            solution: Dict or Pydantic OptimizationSolution with production data
 
         Returns:
             List of created batches
         """
         batches = []
-        production_events = getattr(solution, 'production_by_date_product', {})
+        # Handle both dict and Pydantic OptimizationSolution
+        if hasattr(solution, 'production_by_date_product'):
+            # Pydantic object
+            production_events = solution.production_by_date_product or {}
+        elif isinstance(solution, dict):
+            # Dict format
+            production_events = solution.get('production_by_date_product', {})
+        else:
+            production_events = {}
 
         for (node_id, product_id, prod_date), quantity in production_events.items():
             if quantity <= 0:
@@ -220,6 +228,7 @@ class FEFOBatchAllocator:
 
             allocations.append({
                 'batch_id': batch.id,
+                'product_id': product_id,  # Add product_id for Daily Snapshot flows
                 'quantity': allocated_qty,
                 'origin': origin_node,
                 'destination': destination_node,
