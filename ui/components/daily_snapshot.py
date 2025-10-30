@@ -74,6 +74,15 @@ def render_daily_snapshot(
         st.warning("⚠️ No production schedule available for snapshot analysis")
         return
 
+    # Get forecast from session state (REQUIRED for demand tracking)
+    forecast = st.session_state.get('forecast')
+    if not forecast:
+        st.error(
+            "❌ Forecast data not found in session. "
+            "Please upload forecast data in the Data tab before viewing Daily Snapshot."
+        )
+        return
+
     # Get date range from production schedule and shipments
     date_range = _get_date_range(production_schedule, shipments)
 
@@ -145,7 +154,8 @@ def render_daily_snapshot(
         production_schedule=production_schedule,
         shipments=shipments,
         locations=locations,
-        results=results
+        results=results,
+        forecast=forecast  # CRITICAL: Pass forecast explicitly for demand tracking
     )
 
     # ====================
@@ -846,9 +856,18 @@ def _generate_snapshot(
     production_schedule: ProductionSchedule,
     shipments: List[Shipment],
     locations: Dict[str, Location],
-    results: Dict[str, Any]
+    results: Dict[str, Any],
+    forecast: Any = None
 ) -> Dict[str, Any]:
     """Generate snapshot data for a specific date using the backend generator.
+
+    Args:
+        selected_date: Date to generate snapshot for
+        production_schedule: ProductionSchedule instance
+        shipments: List of shipments
+        locations: Dict of locations
+        results: Results dictionary from adapted results
+        forecast: Forecast instance (REQUIRED for demand tracking)
 
     Returns:
         Dictionary containing:
@@ -864,18 +883,24 @@ def _generate_snapshot(
         - demand_satisfaction: List of demand items
     """
 
-    # Get forecast from session state
-    forecast = None
-    try:
-        import streamlit as st
-        forecast = st.session_state.get('forecast')
-    except Exception:
-        pass
+    # Get forecast from parameter, or fall back to session state
+    if forecast is None:
+        try:
+            import streamlit as st
+            forecast = st.session_state.get('forecast')
+        except Exception:
+            pass
 
-    # If no forecast, create empty one
+    # CRITICAL: If still no forecast, this is an architectural error
     if not forecast:
         from src.models.forecast import Forecast
         forecast = Forecast(name="Empty", entries=[])
+        import logging
+        logging.warning(
+            "No forecast provided to _generate_snapshot! "
+            "Demand tracking will be incorrect. "
+            "Pass forecast explicitly as parameter."
+        )
 
     # Get model solution from results (if available)
     # This enables MODEL MODE for accurate inventory tracking with initial inventory
