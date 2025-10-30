@@ -90,6 +90,17 @@ def adapt_optimization_results(
     # Convert cost breakdown
     cost_breakdown = _create_cost_breakdown(model, solution)
 
+    # VALIDATE: Solution has all required data for UI tabs
+    # This catches missing data with clear error messages
+    from src.ui_interface import SolutionValidator, UIDataValidationError
+
+    try:
+        SolutionValidator.validate_complete(solution, model)
+    except UIDataValidationError as e:
+        logger.error(f"Solution validation failed: {e}")
+        # Don't fail - log and continue, but warnings will show what's missing
+        logger.warning(f"Proceeding with incomplete data - some UI tabs may not work")
+
     return {
         'production_schedule': production_schedule,
         'shipments': shipments,
@@ -180,8 +191,18 @@ def _create_production_schedule(
         logger.error("CRITICAL: All batches are INIT batches! No actual production extracted from solution.")
 
     # Get labor hours by date from Pydantic solution
-    # SIMPLIFIED: solution.labor_hours_by_date is guaranteed to be Dict[Date, LaborHoursBreakdown]
-    daily_labor_hours = solution.labor_hours_by_date
+    # Convert LaborHoursBreakdown objects to dict format for ProductionSchedule
+    # (ProductionSchedule expects dict, UI components expect to extract from dict)
+    daily_labor_hours = {}
+    for date_key, labor_breakdown in solution.labor_hours_by_date.items():
+        # Convert Pydantic LaborHoursBreakdown to dict for legacy ProductionSchedule
+        daily_labor_hours[date_key] = {
+            'used': labor_breakdown.used,
+            'paid': labor_breakdown.paid,
+            'fixed': labor_breakdown.fixed,
+            'overtime': labor_breakdown.overtime,
+            'non_fixed': labor_breakdown.non_fixed
+        }
 
     # Update batch labor hours proportionally
     for batch in batches:
@@ -189,11 +210,10 @@ def _create_production_schedule(
         if date_total > 0:
             proportion = batch.quantity / date_total
 
-            # Extract labor hours from LaborHoursBreakdown
-            # NO isinstance() check needed - Pydantic guarantees it's LaborHoursBreakdown
-            labor_breakdown = daily_labor_hours.get(batch.production_date)
-            if labor_breakdown:
-                batch.labor_hours_used = labor_breakdown.used * proportion
+            # Extract labor hours from dict (converted above from LaborHoursBreakdown)
+            labor_dict = daily_labor_hours.get(batch.production_date)
+            if labor_dict:
+                batch.labor_hours_used = labor_dict['used'] * proportion
 
     # Determine actual schedule start date
     actual_start_date = (
@@ -202,11 +222,10 @@ def _create_production_schedule(
         else model.start_date
     )
 
-    # Calculate total labor hours
-    # SIMPLIFIED: Always LaborHoursBreakdown, just sum .used field
+    # Calculate total labor hours from dict format
     total_labor_hours = sum(
-        labor_breakdown.used
-        for labor_breakdown in daily_labor_hours.values()
+        labor_dict['used']
+        for labor_dict in daily_labor_hours.values()
     )
 
     # Build ProductionSchedule

@@ -68,7 +68,10 @@ def render_production_labeling_view(optimization_model, optimization_result):
         st.warning("No production labeling requirements found.")
 
         # Diagnostic messages
-        if not optimization_result.use_batch_tracking:
+        # SlidingWindowModel uses aggregate flows, not batch tracking
+        # Check model_type instead of use_batch_tracking
+        is_aggregate = optimization_result.model_type == 'sliding_window'
+        if not optimization_result.use_batch_tracking and not is_aggregate:
             st.info("""
             **Batch tracking is disabled.** Production labeling requires batch tracking to be enabled.
 
