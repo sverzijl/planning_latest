@@ -96,6 +96,8 @@ class ProductionLabelingReportGenerator:
         Returns:
             List of LabelingRequirement objects, one per (date, product) combination
         """
+        from collections import defaultdict
+
         # Aggregate shipments by production date and product
         # Key: (prod_date, product_id)
         # Value: {frozen_qty, ambient_qty, frozen_dests, ambient_dests}
@@ -137,35 +139,59 @@ class ProductionLabelingReportGenerator:
                     aggregated[key]['ambient_dests'].add(dest)
         elif hasattr(self.result, 'shipments') and self.result.shipments:
             # AGGREGATE MODEL: Use shipments list with production_by_date_product
-            # Match shipments to production dates using production_by_date_product
-            production_dict = self.result.production_by_date_product or {}
+            # Build mapping of product -> destinations (since we can't track individual batches)
 
-            # For each shipment from manufacturing, allocate to production on that date
-            # Simplified: Assume shipments depart same day as production (or day after)
+            # Collect all destinations by product from shipments
+            product_destinations = defaultdict(lambda: {'frozen': set(), 'ambient': set()})
             for shipment in self.result.shipments:
                 if shipment.origin not in ['6122', '6122_Storage']:
                     continue
 
-                # Find production date (simplified - use delivery_date as proxy)
-                # In reality would need to track which production batch goes to which shipment
-                # For now: Allocate proportionally across all production dates
-                prod_date = shipment.delivery_date  # Simplified
-
                 product_id = shipment.product
-                qty = shipment.quantity
                 dest = shipment.destination
 
-                # Use route state if available
+                # Determine if frozen or ambient based on route state
                 leg = (shipment.origin, dest)
                 is_frozen = self.leg_states.get(leg, 'ambient') == 'frozen'
 
-                key = (prod_date, product_id)
                 if is_frozen:
-                    aggregated[key]['frozen'] += qty
-                    aggregated[key]['frozen_dests'].add(dest)
+                    product_destinations[product_id]['frozen'].add(dest)
                 else:
-                    aggregated[key]['ambient'] += qty
-                    aggregated[key]['ambient_dests'].add(dest)
+                    product_destinations[product_id]['ambient'].add(dest)
+
+            # Now allocate production to destinations
+            # For each production date, assign proportionally to that product's destinations
+            for key, qty in self.production_batches.items():
+                # Handle both (node, product, date) and (date, product) formats
+                if len(key) == 3:
+                    node, product_id, prod_date = key
+                elif len(key) == 2:
+                    prod_date, product_id = key
+                else:
+                    continue
+
+                # Get destinations for this product
+                dests = product_destinations.get(product_id, {'frozen': set(), 'ambient': set()})
+                frozen_dests = dests['frozen']
+                ambient_dests = dests['ambient']
+
+                # Allocate production proportionally
+                # Simple heuristic: split based on number of destinations
+                total_dests = len(frozen_dests) + len(ambient_dests)
+                if total_dests == 0:
+                    # No shipments for this product, default to ambient
+                    aggregated[(prod_date, product_id)]['ambient'] += qty
+                    aggregated[(prod_date, product_id)]['ambient_dests'].add('Unknown')
+                else:
+                    frozen_fraction = len(frozen_dests) / total_dests if total_dests > 0 else 0
+                    ambient_fraction = len(ambient_dests) / total_dests if total_dests > 0 else 0
+
+                    if frozen_dests:
+                        aggregated[(prod_date, product_id)]['frozen'] += qty * frozen_fraction
+                        aggregated[(prod_date, product_id)]['frozen_dests'].update(frozen_dests)
+                    if ambient_dests:
+                        aggregated[(prod_date, product_id)]['ambient'] += qty * ambient_fraction
+                        aggregated[(prod_date, product_id)]['ambient_dests'].update(ambient_dests)
         else:
             # Fallback: Use production totals only (no routing detail)
             for key, qty in self.production_batches.items():
