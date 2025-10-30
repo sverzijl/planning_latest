@@ -33,6 +33,11 @@ def extract_labor_hours(hours_value, default=0.0):
     if hours_value is None:
         return default
 
+    # Check if Pydantic LaborHoursBreakdown object
+    if hasattr(hours_value, 'used'):
+        # Pydantic LaborHoursBreakdown object
+        return hours_value.used
+
     if isinstance(hours_value, dict):
         # NEW FORMAT: extract 'used' hours
         return hours_value.get('used', default)
