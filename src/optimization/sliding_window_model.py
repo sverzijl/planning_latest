@@ -1753,6 +1753,27 @@ class SlidingWindowModel(BaseOptimizationModel):
             except:
                 pass
 
+        # Extract pallet entry costs (fixed costs)
+        if hasattr(model, 'pallet_entry'):
+            try:
+                frozen_fixed_cost = getattr(self.cost_structure, 'storage_cost_fixed_per_pallet_frozen', 0) or 0
+                ambient_fixed_cost = getattr(self.cost_structure, 'storage_cost_fixed_per_pallet_ambient', 0) or 0
+
+                pallet_entry_cost = 0
+                for (node_id, prod, state, t) in model.pallet_entry:
+                    entries = value(model.pallet_entry[node_id, prod, state, t])
+                    if entries > 0.01:
+                        if state == 'frozen':
+                            pallet_entry_cost += entries * frozen_fixed_cost
+                        elif state in ['ambient', 'thawed']:
+                            pallet_entry_cost += entries * ambient_fixed_cost
+
+                # Add pallet entry costs to holding costs
+                solution['total_holding_cost'] += pallet_entry_cost
+                solution['frozen_holding_cost'] += pallet_entry_cost  # Simplified - mostly frozen
+            except:
+                pass
+
         # Try to extract changeover costs
         if hasattr(model, 'product_start'):
             try:
