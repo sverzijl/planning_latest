@@ -1064,6 +1064,11 @@ class DailySnapshotGenerator:
         if self.is_aggregate_model and self.model_solution:
             fefo_allocations = self.model_solution.fefo_shipment_allocations or []
 
+            # CRITICAL: Aggregate allocations by shipment to avoid duplicate counting
+            # FEFO creates multiple allocations per shipment (one per batch)
+            # But we need ONE inflow per shipment arrival, not one per allocation
+            arrival_totals = defaultdict(float)  # {(dest, product, delivery_date, origin): total_qty}
+
             for alloc in fefo_allocations:
                 delivery_date = alloc.get('delivery_date')
                 if isinstance(delivery_date, str):
@@ -1071,15 +1076,22 @@ class DailySnapshotGenerator:
                     delivery_date = datetime.fromisoformat(delivery_date).date()
 
                 if delivery_date == snapshot_date:
-                    flow = InventoryFlow(
-                        flow_type="arrival",
-                        location_id=alloc['destination'],
-                        product_id=alloc.get('product_id', 'UNKNOWN'),
-                        quantity=alloc['quantity'],
-                        counterparty=alloc['origin'],
-                        batch_id=alloc['batch_id']
-                    )
-                    inflows.append(flow)
+                    # Aggregate by shipment arrival
+                    arrival_key = (alloc['destination'], alloc.get('product_id', 'UNKNOWN'),
+                                 delivery_date, alloc['origin'])
+                    arrival_totals[arrival_key] += alloc['quantity']
+
+            # Create ONE inflow per shipment arrival
+            for (dest, product_id, delivery_date, origin), total_qty in arrival_totals.items():
+                flow = InventoryFlow(
+                    flow_type="arrival",
+                    location_id=dest,
+                    product_id=product_id,
+                    quantity=total_qty,
+                    counterparty=origin,
+                    batch_id=None  # Aggregated across batches
+                )
+                inflows.append(flow)
         else:
             # Arrival inflows from shipments list
             arrivals_by_location = self._shipments_by_arrival.get(snapshot_date, {})
@@ -1117,8 +1129,11 @@ class DailySnapshotGenerator:
         if self.is_aggregate_model and self.model_solution:
             fefo_allocations = self.model_solution.fefo_shipment_allocations or []
 
-            # Need to calculate departure date for each allocation
-            # shipment_allocation has delivery_date, need to subtract transit_time
+            # CRITICAL: Aggregate allocations by shipment to avoid duplicate counting
+            # FEFO creates multiple allocations per shipment (one per batch)
+            # But we need ONE outflow per shipment, not one per allocation
+            shipment_totals = defaultdict(float)  # {(origin, dest, product, departure_date): total_qty}
+
             for alloc in fefo_allocations:
                 delivery_date = alloc.get('delivery_date')
                 if isinstance(delivery_date, str):
@@ -1127,23 +1142,29 @@ class DailySnapshotGenerator:
 
                 origin = alloc['origin']
                 dest = alloc['destination']
+                product_id = alloc.get('product_id', 'UNKNOWN')
 
                 # Find route to get transit time (simplified - assume 1 day if not found)
-                # In real implementation, would look up actual route
                 transit_days = 1  # Default
 
                 departure_date = delivery_date - timedelta(days=transit_days)
 
                 if departure_date == snapshot_date:
-                    flow = InventoryFlow(
-                        flow_type="departure",
-                        location_id=origin,
-                        product_id=alloc.get('product_id', 'UNKNOWN'),
-                        quantity=alloc['quantity'],
-                        counterparty=dest,
-                        batch_id=alloc['batch_id']
-                    )
-                    outflows.append(flow)
+                    # Aggregate by shipment (not by allocation/batch)
+                    shipment_key = (origin, dest, product_id, departure_date)
+                    shipment_totals[shipment_key] += alloc['quantity']
+
+            # Create ONE outflow per shipment
+            for (origin, dest, product_id, departure_date), total_qty in shipment_totals.items():
+                flow = InventoryFlow(
+                    flow_type="departure",
+                    location_id=origin,
+                    product_id=product_id,
+                    quantity=total_qty,
+                    counterparty=dest,
+                    batch_id=None  # Aggregated across batches
+                )
+                outflows.append(flow)
         else:
             # Departure outflows from shipments list
             shipments = self._shipments_by_departure.get(snapshot_date, [])
@@ -1162,31 +1183,21 @@ class DailySnapshotGenerator:
         if self.is_aggregate_model and self.model_solution:
             demand_consumed = getattr(self.model_solution, 'demand_consumed', {})
 
-            # demand_consumed format from solution: {(node, product, date): qty}
-            # But it's in metadata, need to check actual format
-            # For now, use arrivals at demand nodes as proxy for demand
-            fefo_allocations = self.model_solution.fefo_shipment_allocations or []
-
-            for alloc in fefo_allocations:
-                delivery_date = alloc.get('delivery_date')
-                if isinstance(delivery_date, str):
-                    from datetime import datetime
-                    delivery_date = datetime.fromisoformat(delivery_date).date()
-
-                dest = alloc['destination']
-
-                # Check if destination is a demand node (not a hub)
-                # Simplified: if not 6104, 6125, Lineage, assume it's demand
-                if dest not in ['6104', '6125', 'Lineage'] and delivery_date == snapshot_date:
-                    flow = InventoryFlow(
-                        flow_type="demand",
-                        location_id=dest,
-                        product_id=alloc.get('product_id', 'UNKNOWN'),
-                        quantity=alloc['quantity'],
-                        counterparty=None,
-                        batch_id=alloc['batch_id']
-                    )
-                    outflows.append(flow)
+            # Use demand_consumed directly (already aggregated)
+            # Format: {(node, product, date): qty}
+            for (node, product, date), qty in demand_consumed.items():
+                if date == snapshot_date:
+                    # Check if destination is a demand node (not a hub)
+                    if node not in ['6104', '6125', 'Lineage', '6122']:
+                        flow = InventoryFlow(
+                            flow_type="demand",
+                            location_id=node,
+                            product_id=product,
+                            quantity=qty,
+                            counterparty=None,
+                            batch_id=None  # Aggregated
+                        )
+                        outflows.append(flow)
         else:
             # Demand outflows from shipments list
             deliveries_by_dest = self._shipments_by_delivery.get(snapshot_date, {})
