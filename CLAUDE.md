@@ -320,6 +320,22 @@ pytest
 pytest --cov=src tests/
 ```
 
+### ⚠️ MANDATORY: Verification Before Completion
+
+**CRITICAL:** Before claiming any UI functionality works, you MUST run:
+
+```bash
+pytest tests/test_ui_integration_complete.py -v
+```
+
+**Required result:** `1 passed` with verification output
+
+**See:** `MANDATORY_VERIFICATION_CHECKLIST.md` for complete requirements
+
+**This is not optional.** Do not claim UI works without running this test.
+
+**Skill reference:** `superpowers:verification-before-completion`
+
 ## Key Design Decisions
 
 1. **Sliding window shelf life constraints:** (2025-10-27) Replace explicit age-cohort tracking with implicit sliding window formulation; 60-220× speedup, 46× fewer variables while maintaining exact shelf life enforcement. See `src/optimization/sliding_window_model.py`
@@ -363,7 +379,15 @@ pytest --cov=src tests/
    - SlidingWindowModel: `model_type="sliding_window"`, `has_aggregate_inventory=True`
    - UnifiedNodeModel: `model_type="unified_node"`, `use_batch_tracking=True`
 4. **Populate all required fields** (see specification for complete list)
-5. **Pass compliance tests** (`tests/test_model_compliance.py`)
+5. **Pass integration test** (`tests/test_ui_integration_complete.py`) ⚠️ **MANDATORY**
+
+**Verification Required:**
+Before claiming UI works, MUST run and pass:
+```bash
+pytest tests/test_ui_integration_complete.py -v
+```
+
+See `MANDATORY_VERIFICATION_CHECKLIST.md` for complete requirements.
 
 **Validation:**
 - Pydantic validates automatically at extraction time
