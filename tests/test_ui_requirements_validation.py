@@ -39,7 +39,7 @@ def create_minimal_solution():
     )
 
     return OptimizationSolution(
-        model_type="test",
+        model_type="sliding_window",  # Must be 'sliding_window' or 'unified_node'
         production_batches=[
             ProductionBatchResult(
                 node="6122",
@@ -151,17 +151,18 @@ class TestBug2_TruckAssignments:
             ("6122", "6104", "PRODUCT", date.today()): "T999"  # Invalid truck
         }
 
-        # Mock model with truck schedules
+        # Mock model with truck schedules (make it a proper list)
         model = Mock()
-        model.truck_schedules = [
-            Mock(id="T1"),
-            Mock(id="T2"),
-        ]
+        truck1 = Mock()
+        truck1.id = "T1"
+        truck2 = Mock()
+        truck2.id = "T2"
+        model.truck_schedules = [truck1, truck2]
 
         errors = UITabRequirements.validate_foreign_keys(solution, model)
 
         # Should catch invalid truck_id
-        assert any("invalid truck_id 'T999'" in err.lower() for err in errors), \
+        assert any("invalid truck_id" in err.lower() and "t999" in err.lower() for err in errors), \
             f"Should catch invalid truck_id, got: {errors}"
 
     def test_catches_integer_truck_id(self):
@@ -172,7 +173,11 @@ class TestBug2_TruckAssignments:
         }
 
         model = Mock()
-        model.truck_schedules = [Mock(id="T1"), Mock(id="T2")]
+        truck1 = Mock()
+        truck1.id = "T1"
+        truck2 = Mock()
+        truck2.id = "T2"
+        model.truck_schedules = [truck1, truck2]
 
         errors = UITabRequirements.validate_foreign_keys(solution, model)
 
@@ -188,7 +193,11 @@ class TestBug2_TruckAssignments:
         }
 
         model = Mock()
-        model.truck_schedules = [Mock(id="T1"), Mock(id="T2")]
+        truck1 = Mock()
+        truck1.id = "T1"
+        truck2 = Mock()
+        truck2.id = "T2"
+        model.truck_schedules = [truck1, truck2]
 
         errors = UITabRequirements.validate_foreign_keys(solution, model)
 
@@ -339,7 +348,9 @@ class TestComprehensiveValidation:
         solution.demand_consumed = {}  # Empty
 
         model = Mock()
-        model.truck_schedules = [Mock(id="T1")]
+        truck1 = Mock()
+        truck1.id = "T1"
+        model.truck_schedules = [truck1]
 
         # Should not raise in non-fail-fast mode
         try:
@@ -363,10 +374,9 @@ def test_all_validation_scenarios():
         }),
         ("Missing demand_consumed", {
             "demand_consumed": None,
-            "cohort_demand_consumption": None
         }),
         ("Missing daily_breakdown", {
-            "costs": {"labor": {"daily_breakdown": None}}
+            "costs.labor.daily_breakdown": None  # Use nested field path
         }),
     ]
 
