@@ -393,6 +393,11 @@ class OptimizationSolution(BaseModel):
         description="Unmet demand: {(node,product,date): quantity} - tuple keys preserved"
     )
 
+    demand_consumed: Optional[Dict[Any, float]] = Field(
+        None,
+        description="Demand consumed from inventory: {(node,product,date): quantity} - tuple keys preserved"
+    )
+
     truck_assignments: Optional[Dict[Any, Any]] = Field(
         None,
         description="Truck assignments: {(origin,dest,product,date): truck_id} - tuple keys preserved"

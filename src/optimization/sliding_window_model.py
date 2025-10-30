@@ -1709,6 +1709,21 @@ class SlidingWindowModel(BaseOptimizationModel):
         solution['shortages'] = shortages_by_location
         solution['total_shortage_units'] = total_shortage
 
+        # Extract demand consumed
+        demand_consumed_by_location = {}
+        if hasattr(model, 'demand_consumed'):
+            for (node_id, prod, t) in model.demand_consumed:
+                try:
+                    var = model.demand_consumed[node_id, prod, t]
+                    qty = value(var)  # Don't check .stale
+                    if qty and qty > 0.01:
+                        demand_consumed_by_location[(node_id, prod, t)] = qty
+                except (ValueError, AttributeError):
+                    pass
+
+        solution['demand_consumed'] = demand_consumed_by_location
+        logger.info(f"Extracted demand consumed for {len(demand_consumed_by_location)} demand entries")
+
         # Calculate fill rate
         total_demand = sum(self.demand.values())
         solution['fill_rate'] = (1 - total_shortage / total_demand) if total_demand > 0 else 1.0
@@ -2014,6 +2029,7 @@ class SlidingWindowModel(BaseOptimizationModel):
             thaw_flows=solution_dict.get('thaw_flows'),
             freeze_flows=solution_dict.get('freeze_flows'),
             shortages=solution_dict.get('shortages'),
+            demand_consumed=solution_dict.get('demand_consumed'),  # For Daily Snapshot consumption tracking
             truck_assignments=truck_assignments if truck_assignments else None,
             labor_cost_by_date=solution_dict.get('labor_cost_by_date'),
             fefo_batches=solution_dict.get('fefo_batches'),

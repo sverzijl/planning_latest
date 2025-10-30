@@ -1257,14 +1257,24 @@ class DailySnapshotGenerator:
                 key = (entry.location_id, entry.product_id)
                 forecast_demand[key] = entry.quantity
 
-        # Get cohort demand consumption from model
-        # Format: {(loc, prod, prod_date, demand_date): qty}
+        # Get demand consumption from model
+        # For batch tracking models: cohort_demand_consumption {(loc, prod, prod_date, demand_date): qty}
+        # For aggregate models: demand_consumed {(loc, prod, date): qty}
         cohort_consumption = getattr(self.model_solution, 'cohort_demand_consumption', {})
+        aggregate_consumption = getattr(self.model_solution, 'demand_consumed', {})
 
         # Aggregate consumption by location and product for this date
         supplied_qty: Dict[Tuple[str, str], float] = {}  # (loc, prod) → total supplied
+
+        # Extract from cohort tracking (if available)
         for (loc, prod, prod_date, demand_date), qty in cohort_consumption.items():
             if demand_date == snapshot_date:
+                key = (loc, prod)
+                supplied_qty[key] = supplied_qty.get(key, 0.0) + qty
+
+        # Extract from aggregate tracking (if available)
+        for (loc, prod, date), qty in aggregate_consumption.items():
+            if date == snapshot_date:
                 key = (loc, prod)
                 supplied_qty[key] = supplied_qty.get(key, 0.0) + qty
 
