@@ -93,11 +93,19 @@ def adapt_optimization_results(
     # VALIDATE: Solution has all required data for UI tabs
     # This catches missing data with clear error messages
     from src.ui_interface import SolutionValidator, UIDataValidationError
+    from src.ui_interface.ui_requirements import validate_solution_for_ui
 
     try:
         SolutionValidator.validate_complete(solution, model)
     except UIDataValidationError as e:
         logger.error(f"Solution validation failed: {e}")
+
+    # COMPREHENSIVE VALIDATION: Check UI requirements and foreign keys
+    # This would have caught all 4 recent UI bugs
+    try:
+        validate_solution_for_ui(solution, model, fail_fast=False)
+    except ValueError as e:
+        logger.warning(f"UI requirements validation: {e}")
         # Don't fail - log and continue, but warnings will show what's missing
         logger.warning(f"Proceeding with incomplete data - some UI tabs may not work")
 
