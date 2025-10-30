@@ -1631,7 +1631,7 @@ class SlidingWindowModel(BaseOptimizationModel):
         logger.info(f"Extracted {len(shipments_by_route)} shipment routes")
 
         # Extract truck assignments (if truck pallet tracking enabled)
-        truck_assignments = {}  # {(origin, dest, product, delivery_date): truck_idx}
+        truck_assignments = {}  # {(origin, dest, product, delivery_date): truck_id}
         if hasattr(model, 'truck_pallet_load'):
             for (truck_idx, dest, prod, delivery_date) in model.truck_pallet_load:
                 try:
@@ -1642,11 +1642,14 @@ class SlidingWindowModel(BaseOptimizationModel):
                     pallets = value(var) if hasattr(var, 'value') and var.value is not None else 0
                     if pallets and pallets > 0.01:
                         # This shipment is assigned to this truck
+                        # Convert truck_idx to actual truck ID
+                        truck_id = self.truck_schedules[truck_idx].id if truck_idx < len(self.truck_schedules) else str(truck_idx)
+
                         # Need to find origin for this dest
                         for origin in model.nodes:
                             route_key = (origin, dest, prod, delivery_date)
                             if route_key in shipments_by_route and shipments_by_route[route_key] > 0:
-                                truck_assignments[route_key] = truck_idx
+                                truck_assignments[route_key] = truck_id
                                 break
                 except:
                     pass
@@ -1936,7 +1939,7 @@ class SlidingWindowModel(BaseOptimizationModel):
                 product=prod,
                 quantity=qty,
                 delivery_date=delivery_date,
-                assigned_truck_id=str(truck_id) if truck_id is not None else None,
+                assigned_truck_id=truck_id,  # Already a string truck ID (e.g., 'T1')
                 state=state
             )
             shipments.append(shipment)
