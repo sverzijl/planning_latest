@@ -345,21 +345,25 @@ def _create_truck_plan_from_optimization(model: Any, shipments: List[Shipment]) 
     )
 
 
-def _create_cost_breakdown(model: Any, solution: dict) -> TotalCostBreakdown:
-    """Convert optimization solution dict to TotalCostBreakdown object.
+def _create_cost_breakdown(model: Any, solution) -> TotalCostBreakdown:
+    """Convert optimization solution to TotalCostBreakdown object.
 
-    Builds cost breakdown from solution dict fields for SlidingWindowModel.
+    Handles both Pydantic OptimizationSolution and legacy dict format.
 
     Args:
         model: BaseOptimizationModel instance
-        solution: Solution dict from model.get_solution()
+        solution: OptimizationSolution object or dict from model.get_solution()
 
     Returns:
         TotalCostBreakdown object
     """
-    # For SlidingWindowModel, solution is a dict, not OptimizationSolution
-    # Build cost breakdown manually from solution fields
-    return _create_cost_breakdown_legacy(model, solution)
+    # Check if solution is Pydantic-validated OptimizationSolution
+    if hasattr(solution, 'costs'):
+        # New schema: OptimizationSolution has costs field already built
+        return solution.costs
+    else:
+        # Legacy dict format
+        return _create_cost_breakdown_legacy(model, solution)
 
 
 def _create_cost_breakdown_legacy(model: Any, solution: dict) -> TotalCostBreakdown:
