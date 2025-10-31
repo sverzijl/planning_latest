@@ -1652,12 +1652,13 @@ class SlidingWindowModel(BaseOptimizationModel):
         solution['thaw_flows'] = thaw_flows
         solution['freeze_flows'] = freeze_flows
 
-        # Extract shipments (aggregate by route for UI compatibility)
+        # Extract in-transit flows (pipeline inventory tracking)
+        # Convert to shipments_by_route format for UI compatibility (using delivery_date)
         shipments_by_route = {}
-        if hasattr(model, 'shipment'):
-            for (origin, dest, prod, delivery_date, state) in model.shipment:
+        if hasattr(model, 'in_transit'):
+            for (origin, dest, prod, departure_date, state) in model.in_transit:
                 try:
-                    var = model.shipment[origin, dest, prod, delivery_date, state]
+                    var = model.in_transit[origin, dest, prod, departure_date, state]
 
                     # Check if variable has a value assigned (skip uninitialized)
                     # Pyomo variables have .stale attribute: True if not assigned by solver
@@ -1671,15 +1672,19 @@ class SlidingWindowModel(BaseOptimizationModel):
                         continue  # No value, skip
 
                     if qty and qty > 0.01:
-                        # Aggregate by route (ignoring state for UI simplicity)
-                        route_key = (origin, dest, prod, delivery_date)
-                        shipments_by_route[route_key] = shipments_by_route.get(route_key, 0) + qty
+                        # Calculate delivery date for UI compatibility
+                        route = next((r for r in self.routes if r.origin_node_id == origin and r.destination_node_id == dest), None)
+                        if route:
+                            delivery_date = departure_date + timedelta(days=route.transit_days)
+                            # Aggregate by route (ignoring state for UI simplicity)
+                            route_key = (origin, dest, prod, delivery_date)
+                            shipments_by_route[route_key] = shipments_by_route.get(route_key, 0) + qty
                 except (ValueError, AttributeError, TypeError):
                     # Uninitialized variable - not used in solution, skip
                     pass
 
         solution['shipments_by_route_product_date'] = shipments_by_route
-        logger.info(f"Extracted {len(shipments_by_route)} shipment routes")
+        logger.info(f"Extracted {len(shipments_by_route)} in-transit flows (converted to delivery dates)")
 
         # Extract truck assignments (if truck pallet tracking enabled)
         truck_assignments = {}  # {(origin, dest, product, delivery_date): truck_id}
