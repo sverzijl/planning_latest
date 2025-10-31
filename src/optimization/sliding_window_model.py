@@ -7,9 +7,18 @@ cohort-based approach while maintaining exact shelf life enforcement.
 Key Features:
 - State-based inventory tracking (ambient, frozen, thawed)
 - Sliding window constraints for shelf life (17d, 120d, 14d)
+- Pipeline inventory tracking (in-transit indexed by departure date)
 - Integer pallet tracking for storage and truck loading
 - O(H) variables instead of O(H³) cohorts
 - FEFO batch allocation via post-processing
+
+Pipeline Inventory Tracking (2025-10-31 Refactor):
+- in_transit[origin, dest, prod, departure_date, state] variables
+- Indexed by DEPARTURE date (not delivery date)
+- All variables within planning horizon only (no beyond-horizon extension)
+- Material balance references in_transit[t] directly (no future date indexing)
+- Symmetric scope: variables and truck constraints both cover model.dates
+- Eliminates unconstrained escape valve for last-day material balance
 
 Performance:
 - 1-week solve: <30 seconds (vs 2-3 min with cohorts)
