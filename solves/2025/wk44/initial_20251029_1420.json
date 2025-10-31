@@ -1,0 +1,13 @@
+{
+  "workflow_type": "initial",
+  "solve_timestamp": "2025-10-29T14:20:37.942730",
+  "success": false,
+  "solve_time_seconds": null,
+  "objective_value": null,
+  "mip_gap": null,
+  "solver_status": null,
+  "solver_message": null,
+  "metadata": {},
+  "error_message": "1 validation error for TotalCostBreakdown\n  Value error, total_cost (286880.80) does not match sum of components (623452.02) [type=value_error, input_value={'total_cost': 286880.801..., expiration_waste=0.0)}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.11/v/value_error",
+  "solution_data": null
+}

@@ -1,0 +1,41 @@
+{
+  "workflow_type": "initial",
+  "solve_timestamp": "2025-10-30T11:50:16.734554",
+  "success": false,
+  "solve_time_seconds": 14.067063,
+  "objective_value": 301320.2650042858,
+  "mip_gap": 0.0016821021104494965,
+  "solver_status": null,
+  "solver_message": "optimal",
+  "metadata": {
+    "workflow_type": "initial",
+    "planning_horizon_weeks": 4,
+    "planning_start_date": "2025-10-31",
+    "planning_end_date": "2025-11-27",
+    "solver_name": "appsi_highs",
+    "used_warmstart": false,
+    "num_locations": 11,
+    "num_routes": 10,
+    "num_products": 5,
+    "num_forecast_entries": 20295
+  },
+  "error_message": null,
+  "solution_data": {
+    "success": false,
+    "objective_value": 301320.2650042858,
+    "solver_status": null,
+    "termination_condition": "optimal",
+    "solve_time_seconds": 8.442489385604858,
+    "solver_name": "appsi_highs",
+    "gap": 0.0016821021104494965,
+    "num_variables": 14166,
+    "num_constraints": 10703,
+    "num_integer_vars": 5040,
+    "infeasibility_message": "Solution extraction failed - data structure invalid:\n1 validation error for TotalCostBreakdown\n  Value error, total_cost (301320.27) does not match sum of components (295371.78) [type=value_error, input_value={'total_cost': 301320.265...aste=34164.00000000003)}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.11/v/value_error\n\nThe solver found a solution, but extracting it failed. This is a BUG in the model code that needs fixing.",
+    "metadata": {
+      "solution_extraction_failed": true,
+      "extraction_error": "1 validation error for TotalCostBreakdown\n  Value error, total_cost (301320.27) does not match sum of components (295371.78) [type=value_error, input_value={'total_cost': 301320.265...aste=34164.00000000003)}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.11/v/value_error",
+      "error_type": "ValidationError"
+    }
+  }
+}
