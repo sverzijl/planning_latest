@@ -371,53 +371,44 @@ class SlidingWindowModel(BaseOptimizationModel):
         )
         print(f"  State transition variables: {len(thaw_index)} thaw + {len(freeze_index)} freeze")
 
-        # SHIPMENT VARIABLES (with extended dates for state balance)
-        # Shipments are indexed by DELIVERY date
+        # IN-TRANSIT VARIABLES (Pipeline Inventory Tracking)
+        # In-transit inventory is indexed by DEPARTURE date (not delivery date)
         #
-        # ARCHITECTURAL REQUIREMENT: Must create shipment variables for dates BEYOND end
-        # Why? State balance on LAST DAY needs to reference departures
-        # Departure on last day + transit time = delivery beyond horizon
-        # Without these variables, state balance on last day is infeasible
+        # ARCHITECTURAL CHANGE (2025-10-31):
+        # Previous: shipment[origin, dest, prod, delivery_date, state]
+        # New:      in_transit[origin, dest, prod, departure_date, state]
         #
-        # These beyond-horizon shipments will be penalized in waste cost
+        # WHY THIS MATTERS:
+        # 1. Symmetry: Variables and truck constraints have same date scope (planning horizon only)
+        # 2. Material balance: References in_transit[t] directly (no future date indexing)
+        # 3. Clarity: "What's in the pipeline on day t" is explicit
+        # 4. No escape valve: All in-transit variables are constrained by truck capacity
+        #
+        # Material balance logic:
+        # - Departures on day t: in_transit[origin, dest, prod, t, state]
+        # - Arrivals on day t:   in_transit[origin, dest, prod, t - transit_days, state]
 
-        max_transit_days = max((r.transit_days for r in self.routes), default=0)
-        extended_end_date = self.end_date + timedelta(days=int(max_transit_days))
-
-        # Generate date range for shipment DELIVERY dates (including extended)
-        shipment_dates = []
-        current = self.start_date
-        while current <= extended_end_date:
-            shipment_dates.append(current)
-            current += timedelta(days=1)
-
-        shipment_index = []
+        in_transit_index = []
         for route in self.routes:
             for prod in model.products:
-                for delivery_date in shipment_dates:
-                    # Only create shipment if departure would be within or after planning start
-                    # departure_date = delivery_date - transit_days
-                    # We need: departure_date >= start_date
-                    # So: delivery_date >= start_date + transit_days
-                    min_delivery_date = self.start_date + timedelta(days=route.transit_days)
+                # Create in-transit variables for DEPARTURES within planning horizon only
+                for departure_date in model.dates:
+                    # In-transit can be in frozen or ambient state
+                    for state in ['frozen', 'ambient']:
+                        in_transit_index.append((
+                            route.origin_node_id,
+                            route.destination_node_id,
+                            prod,
+                            departure_date,  # KEY: indexed by DEPARTURE, not delivery
+                            state
+                        ))
 
-                    if delivery_date >= min_delivery_date:
-                        # Shipments can be in frozen or ambient state
-                        for state in ['frozen', 'ambient']:
-                            shipment_index.append((
-                                route.origin_node_id,
-                                route.destination_node_id,
-                                prod,
-                                delivery_date,
-                                state
-                            ))
-
-        model.shipment = Var(
-            shipment_index,
+        model.in_transit = Var(
+            in_transit_index,
             within=NonNegativeReals,
-            doc="Shipment quantity by route, product, delivery date, state"
+            doc="In-transit inventory by route, product, DEPARTURE date, state"
         )
-        print(f"  Shipment variables: {len(shipment_index)}")
+        print(f"  In-transit variables: {len(in_transit_index)} (indexed by DEPARTURE date)")
 
         # PALLET VARIABLES (optional - for storage costs)
         if self.use_pallet_tracking:
