@@ -371,18 +371,20 @@ class SlidingWindowModel(BaseOptimizationModel):
         )
         print(f"  State transition variables: {len(thaw_index)} thaw + {len(freeze_index)} freeze")
 
-        # SHIPMENT VARIABLES (simplified - no prod_date dimension)
+        # SHIPMENT VARIABLES (with extended dates for state balance)
         # Shipments are indexed by DELIVERY date
-        # Need to create for:
-        #   - Dates within planning horizon (for arrivals)
-        #   - Dates BEYOND planning end (for departures at end of horizon)
-        # But NOT for dates that would require departure BEFORE planning start!
+        #
+        # ARCHITECTURAL REQUIREMENT: Must create shipment variables for dates BEYOND end
+        # Why? State balance on LAST DAY needs to reference departures
+        # Departure on last day + transit time = delivery beyond horizon
+        # Without these variables, state balance on last day is infeasible
+        #
+        # These beyond-horizon shipments will be penalized in waste cost
 
         max_transit_days = max((r.transit_days for r in self.routes), default=0)
         extended_end_date = self.end_date + timedelta(days=int(max_transit_days))
 
-        # Generate date range for shipment DELIVERY dates
-        # Start from planning start (don't create for earlier delivery dates)
+        # Generate date range for shipment DELIVERY dates (including extended)
         shipment_dates = []
         current = self.start_date
         while current <= extended_end_date:
@@ -1499,13 +1501,10 @@ class SlidingWindowModel(BaseOptimizationModel):
                 )
                 print(f"  Changeover waste: {changeover_waste_units:.0f} units per start × ${production_cost_per_unit:.2f}/unit = ${production_cost_per_unit * changeover_waste_units:.2f} per start")
 
-        # WASTE COST (end-of-horizon inventory + in-transit beyond horizon)
+        # WASTE COST (end-of-horizon inventory)
+        # With shipments constrained to horizon, this captures ALL end-of-horizon stock
         waste_cost = 0
         waste_multiplier = self.cost_structure.waste_cost_multiplier or 0
-
-        print(f"  Waste penalty condition check:")
-        print(f"    waste_multiplier = {waste_multiplier}")
-        print(f"    has inventory var = {hasattr(model, 'inventory')}")
 
         if waste_multiplier > 0 and hasattr(model, 'inventory'):
             # Calculate end-of-horizon inventory (at locations)
@@ -1516,8 +1515,8 @@ class SlidingWindowModel(BaseOptimizationModel):
                 if t == last_date
             )
 
-            # CRITICAL FIX: Include in-transit shipments beyond horizon
-            # These escape inventory penalty but still become waste
+            # Include in-transit shipments beyond horizon in waste penalty
+            # These shipments exist (for state balance) but deliver outside our planning scope
             in_transit_beyond = sum(
                 model.shipment[origin, dest, prod, delivery_date, state]
                 for (origin, dest, prod, delivery_date, state) in model.shipment
@@ -1526,18 +1525,7 @@ class SlidingWindowModel(BaseOptimizationModel):
 
             prod_cost = self.cost_structure.production_cost_per_unit or 1.3
             waste_cost = waste_multiplier * prod_cost * (end_inventory + in_transit_beyond)
-            print(f"  Waste cost: ${waste_multiplier * prod_cost:.2f}/unit × (end_inventory + in_transit_beyond)")
-            print(f"  DEBUG: waste_cost type = {type(waste_cost)}")
-            print(f"  DEBUG: Is Pyomo expression? {hasattr(waste_cost, 'expr')}")
-
-            # Verify it's actually a variable expression, not a constant
-            try:
-                # If this works, waste_cost is a constant (BUG!)
-                constant_value = float(waste_cost)
-                print(f"  ❌ BUG: waste_cost is CONSTANT = {constant_value}")
-                print(f"      Should be Pyomo expression!")
-            except:
-                print(f"  ✅ waste_cost is Pyomo expression (correct)")
+            print(f"  Waste cost: ${waste_multiplier * prod_cost:.2f}/unit × (inventory + in_transit_beyond)")
 
         # TOTAL OBJECTIVE
         total_cost = (
