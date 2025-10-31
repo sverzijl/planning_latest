@@ -173,8 +173,10 @@ with tab2:
 
             allow_shortages = st.checkbox(
                 "Allow Demand Shortages",
-                value=False,
-                help="If enabled, optimizer can leave demand unmet (with high penalty cost). Useful for testing infeasible scenarios."
+                value=True,  # Changed from False - required for waste penalty optimization to work
+                help="If enabled, optimizer can leave demand unmet (with high penalty cost). "
+                     "Recommended: ENABLED. Allows model to optimize shortage vs waste trade-off. "
+                     "With waste penalty, model will minimize both shortage and end inventory."
             )
 
             track_batches = st.checkbox(
