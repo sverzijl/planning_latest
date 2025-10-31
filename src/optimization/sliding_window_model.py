@@ -552,7 +552,7 @@ class SlidingWindowModel(BaseOptimizationModel):
 
         print(f"\n✅ Variables created")
         total_vars = (len(production_index) + len(inventory_index) +
-                     len(thaw_index) + len(freeze_index) + len(shipment_index))
+                     len(thaw_index) + len(freeze_index) + len(in_transit_index))
         total_integers = len(pallet_index) if self.use_pallet_tracking else 0
         total_binaries = len(product_produced_index) * 2
         print(f"  Continuous: {total_vars:,}")
@@ -620,23 +620,24 @@ class SlidingWindowModel(BaseOptimizationModel):
                 if (node_id, prod, tau) in model.thaw:
                     Q_ambient += model.thaw[node_id, prod, tau]
 
-                # Arrivals in ambient state
+                # Arrivals in ambient state (goods that departed earlier and arrive on tau)
                 for route in self.routes_to_node[node_id]:
                     arrival_state = self._determine_arrival_state(route, node)
                     if arrival_state == 'ambient':
-                        if (route.origin_node_id, node_id, prod, tau, 'ambient') in model.shipment:
-                            Q_ambient += model.shipment[route.origin_node_id, node_id, prod, tau, 'ambient']
+                        # Calculate departure date: goods must have left (tau - transit_days) to arrive on tau
+                        departure_date = tau - timedelta(days=route.transit_days)
+                        if departure_date in model.dates and (route.origin_node_id, node_id, prod, departure_date, 'ambient') in model.in_transit:
+                            Q_ambient += model.in_transit[route.origin_node_id, node_id, prod, departure_date, 'ambient']
 
             # Outflows from ambient: shipments + freeze + demand_consumed
             O_ambient = 0
             for tau in window_dates:
-                # Departures in ambient state (shipments departing on tau)
+                # Departures in ambient state (goods leaving on tau via in-transit)
                 for route in self.routes_from_node[node_id]:
                     if route.transport_mode != TransportMode.FROZEN:  # Ambient route
-                        # Calculate delivery date for shipment departing on tau
-                        delivery_date = tau + timedelta(days=route.transit_days)
-                        if (node_id, route.destination_node_id, prod, delivery_date, 'ambient') in model.shipment:
-                            O_ambient += model.shipment[node_id, route.destination_node_id, prod, delivery_date, 'ambient']
+                        # Goods departing on tau (indexed by departure date in in_transit)
+                        if (node_id, route.destination_node_id, prod, tau, 'ambient') in model.in_transit:
+                            O_ambient += model.in_transit[node_id, route.destination_node_id, prod, tau, 'ambient']
 
                 # Freeze flow
                 if (node_id, prod, tau) in model.freeze:
