@@ -661,7 +661,7 @@ class SlidingWindowModel(BaseOptimizationModel):
             # Skip if no activity to avoid trivial True constraint
             # Check if expressions are non-zero (handle Pyomo expressions)
             try:
-                if Q_ambient is 0 and O_ambient is 0:
+                if Q_ambient == 0 and O_ambient == 0:
                     return Constraint.Skip
             except:
                 pass  # Pyomo expressions can't be compared to 0 easily
@@ -1141,29 +1141,32 @@ class SlidingWindowModel(BaseOptimizationModel):
         # Truck pallet ceiling (if enabled)
         if self.use_truck_pallet_tracking:
             def truck_pallet_ceiling_rule(model, truck_idx, dest, prod, delivery_date):
-                """Truck pallets must cover total in-transit to this destination."""
-                # Calculate departure date from delivery date
-                # truck_pallet_load is indexed by delivery_date, but in_transit by departure_date
-                # Find routes to this destination to get transit_days
+                """Truck pallets must cover total in-transit to this destination.
+
+                IMPORTANT: Different routes to same destination may have different transit times!
+                We need to check each route individually.
+                """
+                # Find all routes to this destination
                 routes_to_dest = [r for r in self.routes if r.destination_node_id == dest]
                 if not routes_to_dest:
                     return Constraint.Skip
 
-                # For simplicity, use first route's transit time
-                # (In practice, all routes to same dest from manufacturing have same transit time)
-                transit_days = routes_to_dest[0].transit_days
-                departure_date = delivery_date - timedelta(days=transit_days)
+                # Sum in-transit shipments that would DELIVER on delivery_date
+                # Each route has its own transit time, so departure_date varies by origin
+                total_in_transit = 0
 
-                if departure_date not in model.dates:
-                    return Constraint.Skip
+                for route in routes_to_dest:
+                    # Calculate when goods must depart from THIS origin to arrive on delivery_date
+                    departure_date = delivery_date - timedelta(days=route.transit_days)
 
-                # Sum in-transit departing on this departure_date to this destination
-                total_in_transit = sum(
-                    model.in_transit[origin, dest, prod, departure_date, state]
-                    for origin in model.nodes
-                    for state in ['frozen', 'ambient']
-                    if (origin, dest, prod, departure_date, state) in model.in_transit
-                )
+                    # Only include if departure is within planning horizon
+                    if departure_date in model.dates:
+                        # Add in-transit from this specific origin, departing on this date
+                        for state in ['frozen', 'ambient']:
+                            if (route.origin_node_id, dest, prod, departure_date, state) in model.in_transit:
+                                total_in_transit += model.in_transit[route.origin_node_id, dest, prod, departure_date, state]
+
+                # Truck pallets must be sufficient to carry all in-transit shipments
                 return model.truck_pallet_load[truck_idx, dest, prod, delivery_date] * self.UNITS_PER_PALLET >= total_in_transit
 
             model.truck_pallet_ceiling_con = Constraint(
