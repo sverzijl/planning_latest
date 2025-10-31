@@ -1,0 +1,37 @@
+{
+  "workflow_type": "initial",
+  "solve_timestamp": "2025-11-01T10:55:13.236913",
+  "success": false,
+  "solve_time_seconds": 7.173149,
+  "objective_value": null,
+  "mip_gap": null,
+  "solver_status": null,
+  "solver_message": "infeasible",
+  "metadata": {
+    "workflow_type": "initial",
+    "planning_horizon_weeks": 4,
+    "planning_start_date": "2025-11-02",
+    "planning_end_date": "2025-11-29",
+    "solver_name": "appsi_highs",
+    "used_warmstart": false,
+    "num_locations": 11,
+    "num_routes": 10,
+    "num_products": 5,
+    "num_forecast_entries": 20295
+  },
+  "error_message": null,
+  "solution_data": {
+    "success": false,
+    "objective_value": null,
+    "solver_status": null,
+    "termination_condition": "infeasible",
+    "solve_time_seconds": 1.2039170265197754,
+    "solver_name": "appsi_highs",
+    "gap": null,
+    "num_variables": 14336,
+    "num_constraints": 10879,
+    "num_integer_vars": 5040,
+    "infeasibility_message": null,
+    "metadata": {}
+  }
+}
