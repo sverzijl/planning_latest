@@ -855,10 +855,13 @@ class SlidingWindowModel(BaseOptimizationModel):
             if (node_id, prod, t) in model.thaw:
                 thaw_inflow = model.thaw[node_id, prod, t]
 
+            # Arrivals: goods that DEPARTED (t - transit_days) ago
             arrivals = sum(
-                model.shipment[route.origin_node_id, node_id, prod, t, 'ambient']
+                model.in_transit[route.origin_node_id, node_id, prod, departure_date, 'ambient']
                 for route in self.routes_to_node[node_id]
-                if (route.origin_node_id, node_id, prod, t, 'ambient') in model.shipment
+                # Calculate when goods must have departed to arrive today
+                if (departure_date := t - timedelta(days=route.transit_days)) in model.dates
+                and (route.origin_node_id, node_id, prod, departure_date, 'ambient') in model.in_transit
                 and self._determine_arrival_state(route, node) == 'ambient'
             )
 
@@ -867,16 +870,13 @@ class SlidingWindowModel(BaseOptimizationModel):
             if (node_id, prod, t) in model.freeze:
                 freeze_outflow = model.freeze[node_id, prod, t]
 
-            departures = 0
-            for route in self.routes_from_node[node_id]:
-                # Ambient route departures
-                if route.transport_mode != TransportMode.FROZEN:
-                    # Calculate delivery date for shipment departing TODAY (t)
-                    delivery_date = t + timedelta(days=route.transit_days)
-
-                    # Only include if shipment variable exists (delivery within or beyond horizon)
-                    if (node_id, route.destination_node_id, prod, delivery_date, 'ambient') in model.shipment:
-                        departures += model.shipment[node_id, route.destination_node_id, prod, delivery_date, 'ambient']
+            # Departures: goods leaving TODAY (t) via in-transit
+            departures = sum(
+                model.in_transit[node_id, route.destination_node_id, prod, t, 'ambient']
+                for route in self.routes_from_node[node_id]
+                if route.transport_mode != TransportMode.FROZEN  # Ambient routes only
+                and (node_id, route.destination_node_id, prod, t, 'ambient') in model.in_transit
+            )
 
             # Demand consumption from ambient inventory
             # Use demand_consumed variable (linked to demand satisfaction constraint)
@@ -926,10 +926,13 @@ class SlidingWindowModel(BaseOptimizationModel):
             if (node_id, prod, t) in model.freeze:
                 freeze_inflow = model.freeze[node_id, prod, t]
 
+            # Arrivals: goods that DEPARTED (t - transit_days) ago
             arrivals = sum(
-                model.shipment[route.origin_node_id, node_id, prod, t, 'frozen']
+                model.in_transit[route.origin_node_id, node_id, prod, departure_date, 'frozen']
                 for route in self.routes_to_node[node_id]
-                if (route.origin_node_id, node_id, prod, t, 'frozen') in model.shipment
+                # Calculate when goods must have departed to arrive today
+                if (departure_date := t - timedelta(days=route.transit_days)) in model.dates
+                and (route.origin_node_id, node_id, prod, departure_date, 'frozen') in model.in_transit
                 and self._determine_arrival_state(route, node) == 'frozen'
             )
 
@@ -938,15 +941,13 @@ class SlidingWindowModel(BaseOptimizationModel):
             if (node_id, prod, t) in model.thaw:
                 thaw_outflow = model.thaw[node_id, prod, t]
 
-            departures = 0
-            for route in self.routes_from_node[node_id]:
-                if route.transport_mode == TransportMode.FROZEN:
-                    # Calculate delivery date for shipment departing TODAY (t)
-                    delivery_date = t + timedelta(days=route.transit_days)
-
-                    # Only include if shipment variable exists
-                    if (node_id, route.destination_node_id, prod, delivery_date, 'frozen') in model.shipment:
-                        departures += model.shipment[node_id, route.destination_node_id, prod, delivery_date, 'frozen']
+            # Departures: goods leaving TODAY (t) via in-transit
+            departures = sum(
+                model.in_transit[node_id, route.destination_node_id, prod, t, 'frozen']
+                for route in self.routes_from_node[node_id]
+                if route.transport_mode == TransportMode.FROZEN  # Frozen routes only
+                and (node_id, route.destination_node_id, prod, t, 'frozen') in model.in_transit
+            )
 
             # Balance
             return model.inventory[node_id, prod, 'frozen', t] == (
@@ -984,31 +985,29 @@ class SlidingWindowModel(BaseOptimizationModel):
             if (node_id, prod, t) in model.thaw:
                 thaw_inflow = model.thaw[node_id, prod, t]
 
+            # Arrivals: goods that DEPARTED (t - transit_days) ago
+            # Thawed products arrive via ambient routes in 'ambient' state
             arrivals = sum(
-                model.shipment[route.origin_node_id, node_id, prod, t, 'ambient']
+                model.in_transit[route.origin_node_id, node_id, prod, departure_date, 'ambient']
                 for route in self.routes_to_node[node_id]
-                if (route.origin_node_id, node_id, prod, t, 'ambient') in model.shipment
+                # Calculate when goods must have departed to arrive today
+                if (departure_date := t - timedelta(days=route.transit_days)) in model.dates
+                and (route.origin_node_id, node_id, prod, departure_date, 'ambient') in model.in_transit
                 and self._determine_arrival_state(route, node) == 'thawed'
             )
 
             # Outflows: shipments + demand
+            # Thawed products ship as 'ambient' state (but drawn from thawed inventory)
+            # Note: In current implementation, thawed state is minimal - most demand from ambient
+            # This departure term may be zero in practice
             departures = 0
-            # Thawed products ship as ambient
-            for route in self.routes_from_node[node_id]:
-                if route.transport_mode != TransportMode.FROZEN:
-                    for delivery_date in model.dates:
-                        transit_time = timedelta(days=route.transit_days)
-                        departure_datetime = delivery_date - transit_time
-                        departure_date = departure_datetime.date() if hasattr(departure_datetime, 'date') else departure_datetime
-
-                        if departure_date == t:
-                            # Thawed can ship on ambient routes
-                            # Note: shipments are in 'ambient' state, but drawn from thawed inventory
-                            pass  # Complex - will handle in refined version
+            # For now, assume thawed inventory doesn't ship (consumed locally via demand)
+            # Future: Can add explicit thawed→ambient shipment tracking if needed
 
             demand_consumption = 0
             # Thawed inventory can satisfy demand
-            # (Will refine to split demand across ambient/thawed states)
+            # In current implementation, demand primarily satisfied from ambient
+            # (Thawed state tracking is minimal in sliding window model)
 
             # Balance
             return model.inventory[node_id, prod, 'thawed', t] == (
