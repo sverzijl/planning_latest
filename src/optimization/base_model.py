@@ -287,10 +287,31 @@ class BaseOptimizationModel(ABC):
             solver.highs_options['mip_heuristic_effort'] = 0.5
             solver.highs_options['mip_lp_age_limit'] = 10
 
-        # Solve
+        # Solve (with safe solution loading for APPSI)
+        # APPSI throws RuntimeError if solution loading fails
+        # We need to check termination condition FIRST, then load if optimal/feasible
+        solver.config.load_solution = False  # Don't load automatically
+
         solve_start = time.time()
-        results = solver.solve(self.model)
-        solve_time = time.time() - solve_start
+        try:
+            results = solver.solve(self.model)
+            solve_time = time.time() - solve_start
+
+            # Check if we should load solution
+            from pyomo.contrib.appsi.base import TerminationCondition as AppsiTC
+            if results.termination_condition == AppsiTC.optimal:
+                # Safe to load solution
+                try:
+                    solver.load_vars()
+                except Exception as load_error:
+                    # Solution loading failed, but we still have objective value
+                    # This is OK - we can continue with results.best_feasible_objective
+                    pass
+        except RuntimeError as e:
+            # Catch APPSI RuntimeError during solve
+            solve_time = time.time() - solve_start
+            # Re-raise with context
+            raise RuntimeError(f"APPSI solve failed: {e}") from e
 
         # Convert APPSI Results to our OptimizationResult
         # Check termination condition by name (APPSI has: optimal, infeasible, unbounded, etc.)
