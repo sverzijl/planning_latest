@@ -49,7 +49,9 @@ def test_complete_ui_workflow_with_validation():
     )
 
     start = inventory.snapshot_date
-    end = start + timedelta(weeks=4)
+    end = start + timedelta(weeks=2)  # Changed from 4 weeks to 2 weeks
+    # With corrected shelf life constraints (17 days), horizon must be ≤ shelf life
+    # Otherwise initial inventory expires before horizon end (infeasible)
     product_ids = sorted(set(entry.product_id for entry in forecast.entries))
     products = create_test_products(product_ids)
 

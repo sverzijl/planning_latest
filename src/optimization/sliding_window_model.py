@@ -607,8 +607,16 @@ class SlidingWindowModel(BaseOptimizationModel):
             window_start = max(0, list(model.dates).index(t) - 16)
             window_dates = list(model.dates)[window_start:list(model.dates).index(t)+1]
 
-            # Inflows to ambient: production + thaw
+            # Inflows to ambient: initial_inv + production + thaw + arrivals
             Q_ambient = 0
+
+            # Include initial inventory if planning start is in window
+            # This allows initial inventory to exist within first 17 days
+            # After day 17, initial inventory is outside window (expired)
+            first_date = min(model.dates)
+            if first_date in window_dates:
+                Q_ambient += self.initial_inventory.get((node_id, prod, 'ambient'), 0)
+
             for tau in window_dates:
                 # Production that goes to ambient
                 if node.can_produce() and (node_id, prod, tau) in model.production:
@@ -626,7 +634,7 @@ class SlidingWindowModel(BaseOptimizationModel):
                         if (route.origin_node_id, node_id, prod, tau, 'ambient') in model.shipment:
                             Q_ambient += model.shipment[route.origin_node_id, node_id, prod, tau, 'ambient']
 
-            # Outflows from ambient: shipments + freeze + demand
+            # Outflows from ambient: shipments + freeze + demand_consumed
             O_ambient = 0
             for tau in window_dates:
                 # Departures in ambient state (shipments departing on tau)
@@ -641,11 +649,11 @@ class SlidingWindowModel(BaseOptimizationModel):
                 if (node_id, prod, tau) in model.freeze:
                     O_ambient += model.freeze[node_id, prod, tau]
 
-                # Demand (ambient only consumed at demand nodes)
-                if node.has_demand_capability() and (node_id, prod, tau) in self.demand:
-                    # Demand comes from ambient inventory
-                    # (In state balance, this will be explicit variable)
-                    pass  # Handle in state balance
+                # CRITICAL FIX: Include demand consumption in outflows
+                # Without this, consumed inventory doesn't "leave" the window
+                # Causes old inventory to persist indefinitely
+                if node.has_demand_capability() and (node_id, prod, tau) in model.demand_consumed:
+                    O_ambient += model.demand_consumed[node_id, prod, tau]
 
             # Skip if no activity to avoid trivial True constraint
             # Check if expressions are non-zero (handle Pyomo expressions)
@@ -655,7 +663,11 @@ class SlidingWindowModel(BaseOptimizationModel):
             except:
                 pass  # Pyomo expressions can't be compared to 0 easily
 
-            return O_ambient <= Q_ambient
+            # CRITICAL FIX: Direct inventory constraint (not just material balance)
+            # Previous: O <= Q (material conservation, but doesn't prevent old inventory)
+            # Correct: inventory[t] <= Q - O (directly limits inventory to window sources)
+            # This makes inventory older than 17 days STRUCTURALLY IMPOSSIBLE
+            return model.inventory[node_id, prod, 'ambient', t] <= Q_ambient - O_ambient
 
         model.ambient_shelf_life_con = Constraint(
             [(n, p, t) for n, node in self.nodes.items()
@@ -676,8 +688,15 @@ class SlidingWindowModel(BaseOptimizationModel):
             window_start = max(0, list(model.dates).index(t) - 119)
             window_dates = list(model.dates)[window_start:list(model.dates).index(t)+1]
 
-            # Inflows to frozen: production_frozen + freeze
-            Q_frozen = sum(
+            # Inflows to frozen: initial_inv + production_frozen + freeze
+            Q_frozen = 0
+
+            # Include initial frozen inventory if planning start in window
+            first_date = min(model.dates)
+            if first_date in window_dates:
+                Q_frozen += self.initial_inventory.get((node_id, prod, 'frozen'), 0)
+
+            Q_frozen += sum(
                 model.production[node_id, prod, tau]
                 for tau in window_dates
                 if node.can_produce() and node.get_production_state() == 'frozen'
@@ -695,7 +714,8 @@ class SlidingWindowModel(BaseOptimizationModel):
                 if (node_id, prod, tau) in model.thaw
             )
 
-            return O_frozen <= Q_frozen
+            # CRITICAL FIX: Direct inventory constraint
+            return model.inventory[node_id, prod, 'frozen', t] <= Q_frozen - O_frozen
 
         model.frozen_shelf_life_con = Constraint(
             [(n, p, t) for n, node in self.nodes.items()
@@ -716,22 +736,33 @@ class SlidingWindowModel(BaseOptimizationModel):
             window_start = max(0, list(model.dates).index(t) - 13)
             window_dates = list(model.dates)[window_start:list(model.dates).index(t)+1]
 
-            # Inflows to thawed: ONLY thaw (resets age!)
-            Q_thawed = sum(
+            # Inflows to thawed: initial_inv + thaw (resets age!)
+            Q_thawed = 0
+
+            # Include initial thawed inventory if planning start in window
+            first_date = min(model.dates)
+            if first_date in window_dates:
+                Q_thawed += self.initial_inventory.get((node_id, prod, 'thawed'), 0)
+
+            Q_thawed += sum(
                 model.thaw[node_id, prod, tau]
                 for tau in window_dates
                 if (node_id, prod, tau) in model.thaw
             )
 
-            # Outflows from thawed: shipments + demand
-            # For now, thawed shelf life is implicitly enforced by state balance
-            # Proper implementation would track thawed outflows here
-            # Skip constraint if no outflows tracked
-            if Q_thawed == 0:
-                return Constraint.Skip  # No thaw inflows, skip constraint
+            # Outflows from thawed: demand consumption
+            # (Thawed is consumed at demand nodes, not shipped further)
+            O_thawed = 0
+            for tau in window_dates:
+                if node.has_demand_capability() and (node_id, prod, tau) in model.demand_consumed:
+                    O_thawed += model.demand_consumed[node_id, prod, tau]
 
-            # Simplified: Allow any outflows (state balance handles material conservation)
-            return Constraint.Skip  # TODO: Implement thawed outflow tracking
+            # Skip if no activity
+            if Q_thawed == 0:
+                return Constraint.Skip
+
+            # CRITICAL FIX: Direct inventory constraint
+            return model.inventory[node_id, prod, 'thawed', t] <= Q_thawed - O_thawed
 
         model.thawed_shelf_life_con = Constraint(
             [(n, p, t) for n, node in self.nodes.items()

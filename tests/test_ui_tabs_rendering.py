@@ -33,7 +33,7 @@ def solved_model_and_adapted_results():
     )
 
     start = inventory.snapshot_date
-    end = start + timedelta(weeks=4)
+    end = start + timedelta(weeks=2)  # Changed to 2 weeks (corrected shelf life constraints)
     product_ids = sorted(set(entry.product_id for entry in forecast.entries))
     products = create_test_products(product_ids)
 
