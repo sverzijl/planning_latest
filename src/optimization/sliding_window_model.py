@@ -1473,12 +1473,12 @@ class SlidingWindowModel(BaseOptimizationModel):
 
         # TRANSPORT COST (per-route costs)
         transport_cost = 0
-        if hasattr(model, 'shipment'):
-            for (origin, dest, prod, t, state) in model.shipment:
+        if hasattr(model, 'in_transit'):
+            for (origin, dest, prod, departure_date, state) in model.in_transit:
                 # Find route cost
                 route = next((r for r in self.routes if r.origin_node_id == origin and r.destination_node_id == dest), None)
                 if route and hasattr(route, 'cost_per_unit') and route.cost_per_unit:
-                    transport_cost += route.cost_per_unit * model.shipment[origin, dest, prod, t, state]
+                    transport_cost += route.cost_per_unit * model.in_transit[origin, dest, prod, departure_date, state]
             if transport_cost > 0:
                 print(f"  Transport cost: route costs included")
 
@@ -1506,8 +1506,8 @@ class SlidingWindowModel(BaseOptimizationModel):
                 )
                 print(f"  Changeover waste: {changeover_waste_units:.0f} units per start × ${production_cost_per_unit:.2f}/unit = ${production_cost_per_unit * changeover_waste_units:.2f} per start")
 
-        # WASTE COST (end-of-horizon inventory)
-        # With shipments constrained to horizon, this captures ALL end-of-horizon stock
+        # WASTE COST (end-of-horizon inventory + in-transit)
+        # Pipeline inventory tracking: Both inventory at locations AND goods in transit count as waste
         waste_cost = 0
         waste_multiplier = self.cost_structure.waste_cost_multiplier or 0
 
@@ -1520,17 +1520,19 @@ class SlidingWindowModel(BaseOptimizationModel):
                 if t == last_date
             )
 
-            # Include in-transit shipments beyond horizon in waste penalty
-            # These shipments exist (for state balance) but deliver outside our planning scope
-            in_transit_beyond = sum(
-                model.shipment[origin, dest, prod, delivery_date, state]
-                for (origin, dest, prod, delivery_date, state) in model.shipment
-                if delivery_date > self.end_date
-            )
+            # Calculate end-of-horizon in-transit (goods departing on last day)
+            # These goods are in the pipeline and will deliver after planning horizon ends
+            end_in_transit = 0
+            if hasattr(model, 'in_transit'):
+                end_in_transit = sum(
+                    model.in_transit[origin, dest, prod, last_date, state]
+                    for (origin, dest, prod, departure_date, state) in model.in_transit
+                    if departure_date == last_date
+                )
 
             prod_cost = self.cost_structure.production_cost_per_unit or 1.3
-            waste_cost = waste_multiplier * prod_cost * (end_inventory + in_transit_beyond)
-            print(f"  Waste cost: ${waste_multiplier * prod_cost:.2f}/unit × (inventory + in_transit_beyond)")
+            waste_cost = waste_multiplier * prod_cost * (end_inventory + end_in_transit)
+            print(f"  Waste cost: ${waste_multiplier * prod_cost:.2f}/unit × (end_inventory + end_in_transit)")
 
         # TOTAL OBJECTIVE
         total_cost = (
