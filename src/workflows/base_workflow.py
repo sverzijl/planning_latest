@@ -58,7 +58,7 @@ class WorkflowConfig:
     mip_gap_tolerance: float = 0.01
     solver_name: str = "appsi_highs"
     use_warmstart: bool = False
-    allow_shortages: bool = False
+    allow_shortages: bool = True  # Changed from False - required for waste penalty to work properly
     track_batches: bool = True
     use_pallet_costs: bool = True
 
