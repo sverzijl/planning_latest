@@ -1499,20 +1499,45 @@ class SlidingWindowModel(BaseOptimizationModel):
                 )
                 print(f"  Changeover waste: {changeover_waste_units:.0f} units per start × ${production_cost_per_unit:.2f}/unit = ${production_cost_per_unit * changeover_waste_units:.2f} per start")
 
-        # WASTE COST (end-of-horizon inventory)
+        # WASTE COST (end-of-horizon inventory + in-transit beyond horizon)
         waste_cost = 0
         waste_multiplier = self.cost_structure.waste_cost_multiplier or 0
+
+        print(f"  Waste penalty condition check:")
+        print(f"    waste_multiplier = {waste_multiplier}")
+        print(f"    has inventory var = {hasattr(model, 'inventory')}")
+
         if waste_multiplier > 0 and hasattr(model, 'inventory'):
-            # Calculate end-of-horizon inventory
+            # Calculate end-of-horizon inventory (at locations)
             last_date = max(model.dates)
             end_inventory = sum(
                 model.inventory[node_id, prod, state, last_date]
                 for (node_id, prod, state, t) in model.inventory
                 if t == last_date
             )
+
+            # CRITICAL FIX: Include in-transit shipments beyond horizon
+            # These escape inventory penalty but still become waste
+            in_transit_beyond = sum(
+                model.shipment[origin, dest, prod, delivery_date, state]
+                for (origin, dest, prod, delivery_date, state) in model.shipment
+                if delivery_date > self.end_date
+            )
+
             prod_cost = self.cost_structure.production_cost_per_unit or 1.3
-            waste_cost = waste_multiplier * prod_cost * end_inventory
-            print(f"  Waste cost: end-of-horizon inventory penalty")
+            waste_cost = waste_multiplier * prod_cost * (end_inventory + in_transit_beyond)
+            print(f"  Waste cost: ${waste_multiplier * prod_cost:.2f}/unit × (end_inventory + in_transit_beyond)")
+            print(f"  DEBUG: waste_cost type = {type(waste_cost)}")
+            print(f"  DEBUG: Is Pyomo expression? {hasattr(waste_cost, 'expr')}")
+
+            # Verify it's actually a variable expression, not a constant
+            try:
+                # If this works, waste_cost is a constant (BUG!)
+                constant_value = float(waste_cost)
+                print(f"  ❌ BUG: waste_cost is CONSTANT = {constant_value}")
+                print(f"      Should be Pyomo expression!")
+            except:
+                print(f"  ✅ waste_cost is Pyomo expression (correct)")
 
         # TOTAL OBJECTIVE
         total_cost = (
