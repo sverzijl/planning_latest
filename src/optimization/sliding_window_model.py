@@ -397,32 +397,22 @@ class SlidingWindowModel(BaseOptimizationModel):
         # - Departures on day t: in_transit[origin, dest, prod, t, state]
         # - Arrivals on day t:   in_transit[origin, dest, prod, t - transit_days, state]
 
-        # Generate departure dates: planning horizon + pre-horizon window for arrivals
-        # Pre-horizon window: goods that departed BEFORE planning starts but arrive AFTER
-        # Example: Planning starts Oct 31, route has 2-day transit
-        #          Goods departing Oct 29 → arrive Oct 31 (first day)
-        #          Need in_transit[Oct 29, ...] to capture this!
-        max_transit_days = max((r.transit_days for r in self.routes), default=0)
-        pre_horizon_start = self.start_date - timedelta(days=int(max_transit_days))
-
-        departure_dates = []
-        current = pre_horizon_start
-        while current <= self.end_date:
-            departure_dates.append(current)
-            current += timedelta(days=1)
-
+        # IN-TRANSIT VARIABLES: Only for departures WITHIN planning horizon
+        # First-day arrivals from pre-horizon departures are NOT modeled as variables
+        # (You can't decide to ship goods before planning starts!)
+        # Any goods in-transit at start should be in initial_inventory at destination
         in_transit_index = []
         for route in self.routes:
             for prod in model.products:
-                # Create in-transit variables for all departure dates (including pre-horizon)
-                for departure_date in departure_dates:
+                # Create in-transit variables ONLY for planning horizon departures
+                for departure_date in model.dates:
                     # In-transit can be in frozen or ambient state
                     for state in ['frozen', 'ambient']:
                         in_transit_index.append((
                             route.origin_node_id,
                             route.destination_node_id,
                             prod,
-                            departure_date,  # KEY: indexed by DEPARTURE (includes pre-horizon!)
+                            departure_date,  # Indexed by DEPARTURE (planning horizon only)
                             state
                         ))
 
@@ -648,9 +638,9 @@ class SlidingWindowModel(BaseOptimizationModel):
                     arrival_state = self._determine_arrival_state(route, node)
                     if arrival_state == 'ambient':
                         # Calculate departure date: goods must have left (tau - transit_days) to arrive on tau
-                        # NOTE: departure_date can be pre-horizon (first-day arrivals)
+                        # Only include if departure is within planning horizon
                         departure_date = tau - timedelta(days=route.transit_days)
-                        if (route.origin_node_id, node_id, prod, departure_date, 'ambient') in model.in_transit:
+                        if departure_date in model.dates and (route.origin_node_id, node_id, prod, departure_date, 'ambient') in model.in_transit:
                             Q_ambient += model.in_transit[route.origin_node_id, node_id, prod, departure_date, 'ambient']
 
             # Outflows from ambient: shipments + freeze + demand_consumed
@@ -881,12 +871,13 @@ class SlidingWindowModel(BaseOptimizationModel):
                 thaw_inflow = model.thaw[node_id, prod, t]
 
             # Arrivals: goods that DEPARTED (t - transit_days) ago
-            # NOTE: departure_date can be BEFORE planning horizon (pre-horizon in-transit)
+            # Only include if departure_date is within planning horizon
+            # (Pre-horizon arrivals should be in initial_inventory)
             arrivals = sum(
                 model.in_transit[route.origin_node_id, node_id, prod, departure_date, 'ambient']
                 for route in self.routes_to_node[node_id]
                 # Calculate when goods must have departed to arrive today
-                if (departure_date := t - timedelta(days=route.transit_days))
+                if (departure_date := t - timedelta(days=route.transit_days)) in model.dates
                 and (route.origin_node_id, node_id, prod, departure_date, 'ambient') in model.in_transit
                 and self._determine_arrival_state(route, node) == 'ambient'
             )
@@ -953,12 +944,12 @@ class SlidingWindowModel(BaseOptimizationModel):
                 freeze_inflow = model.freeze[node_id, prod, t]
 
             # Arrivals: goods that DEPARTED (t - transit_days) ago
-            # NOTE: departure_date can be BEFORE planning horizon (pre-horizon in-transit)
+            # Only include if departure_date is within planning horizon
             arrivals = sum(
                 model.in_transit[route.origin_node_id, node_id, prod, departure_date, 'frozen']
                 for route in self.routes_to_node[node_id]
                 # Calculate when goods must have departed to arrive today
-                if (departure_date := t - timedelta(days=route.transit_days))
+                if (departure_date := t - timedelta(days=route.transit_days)) in model.dates
                 and (route.origin_node_id, node_id, prod, departure_date, 'frozen') in model.in_transit
                 and self._determine_arrival_state(route, node) == 'frozen'
             )
@@ -1013,13 +1004,13 @@ class SlidingWindowModel(BaseOptimizationModel):
                 thaw_inflow = model.thaw[node_id, prod, t]
 
             # Arrivals: goods that DEPARTED (t - transit_days) ago
-            # NOTE: departure_date can be BEFORE planning horizon (pre-horizon in-transit)
+            # Only include if departure_date is within planning horizon
             # Thawed products arrive via ambient routes in 'ambient' state
             arrivals = sum(
                 model.in_transit[route.origin_node_id, node_id, prod, departure_date, 'ambient']
                 for route in self.routes_to_node[node_id]
                 # Calculate when goods must have departed to arrive today
-                if (departure_date := t - timedelta(days=route.transit_days))
+                if (departure_date := t - timedelta(days=route.transit_days)) in model.dates
                 and (route.origin_node_id, node_id, prod, departure_date, 'ambient') in model.in_transit
                 and self._determine_arrival_state(route, node) == 'thawed'
             )
