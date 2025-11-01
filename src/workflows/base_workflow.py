@@ -353,7 +353,13 @@ class BaseWorkflow(ABC):
         initial_inventory_dict = {}
         if self.initial_inventory:
             if hasattr(self.initial_inventory, 'to_optimization_dict'):
-                initial_inventory_dict = self.initial_inventory.to_optimization_dict()
+                # to_optimization_dict() returns 2-tuple: (location, product)
+                # But SlidingWindowModel needs 3-tuple: (location, product, state)
+                inv_2tuple = self.initial_inventory.to_optimization_dict()
+
+                # Convert to 3-tuple format (assume ambient state)
+                for (location, product), quantity in inv_2tuple.items():
+                    initial_inventory_dict[(location, product, 'ambient')] = quantity
             elif isinstance(self.initial_inventory, dict):
                 initial_inventory_dict = self.initial_inventory
 
