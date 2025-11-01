@@ -203,6 +203,10 @@ class SlidingWindowModel(BaseOptimizationModel):
         if not initial_inventory:
             return {}
 
+        print(f"\nPreprocessing initial inventory:")
+        print(f"  Input keys sample: {list(initial_inventory.keys())[:3]}")
+        print(f"  Input entry count: {len(initial_inventory)}")
+
         converted = {}
 
         for key, qty in initial_inventory.items():
@@ -233,6 +237,10 @@ class SlidingWindowModel(BaseOptimizationModel):
                 converted[key_3] = converted.get(key_3, 0) + qty
 
         print(f"  Initial inventory: {len(converted)} entries")
+        print(f"  Converted keys sample: {list(converted.keys())[:3]}")
+        print(f"  Converted entry count: {len(converted)}")
+        print(f"  Total quantity: {sum(converted.values()):,.0f} units")
+
         return converted
 
     def _build_network_indices(self):
