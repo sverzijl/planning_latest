@@ -365,6 +365,17 @@ class BaseWorkflow(ABC):
             elif 'inventory_snapshot_date' in input_data:
                 inventory_snapshot_date = input_data['inventory_snapshot_date']
 
+        # DIAGNOSTIC LOGGING for debugging infeasibility
+        logger.info("=" * 80)
+        logger.info(f"WORKFLOW MODEL PARAMETERS [allow_shortages={self.config.allow_shortages}]")
+        logger.info(f"  start_date: {input_data['planning_start_date']}")
+        logger.info(f"  end_date: {input_data['planning_end_date']}")
+        logger.info(f"  inventory_snapshot_date: {inventory_snapshot_date}")
+        logger.info(f"  initial_inventory entries: {len(initial_inventory_dict)}")
+        logger.info(f"  use_pallet_tracking: {self.config.use_pallet_costs}")
+        logger.info(f"  allow_shortages: {self.config.allow_shortages}")
+        logger.info("=" * 80)
+
         # Build model (using SlidingWindowModel for 60-220× speedup!)
         self.model = SlidingWindowModel(
             nodes=nodes,
