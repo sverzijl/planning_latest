@@ -349,6 +349,20 @@ class BaseWorkflow(ABC):
         # Convert products list to dict
         products_dict = {p.id: p for p in self.products} if isinstance(self.products, list) else self.products
 
+        # DIAGNOSTIC: Show product keys vs inventory keys
+        if products_dict:
+            print(f"\nProduct keys sample: {list(products_dict.keys())[:3]}")
+        if initial_inventory_dict:
+            inv_products = set(prod for (loc, prod, state) in initial_inventory_dict.keys())
+            print(f"Inventory product keys sample: {list(inv_products)[:3]}")
+            # Check if they match
+            product_keys_set = set(products_dict.keys())
+            inv_product_keys_set = inv_products
+            matching = product_keys_set & inv_product_keys_set
+            print(f"Matching products: {len(matching)} out of {len(product_keys_set)} products")
+            if len(matching) == 0:
+                print(f"WARNING: NO MATCHING PRODUCTS! Inventory will be ignored!")
+
         # Get initial inventory dict
         initial_inventory_dict = {}
         if self.initial_inventory:
