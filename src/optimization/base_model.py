@@ -297,16 +297,27 @@ class BaseOptimizationModel(ABC):
             results = solver.solve(self.model)
             solve_time = time.time() - solve_start
 
-            # Check if we should load solution
+            # DIAGNOSTIC: Show what APPSI actually returned
             from pyomo.contrib.appsi.base import TerminationCondition as AppsiTC
+            print(f"\nAPPSI Solver Results:")
+            print(f"  termination_condition: {results.termination_condition}")
+            print(f"  best_feasible_objective: {getattr(results, 'best_feasible_objective', None)}")
+            print(f"  best_objective_bound: {getattr(results, 'best_objective_bound', None)}")
+
+            # Check if we should load solution
             if results.termination_condition == AppsiTC.optimal:
+                print(f"  -> Solver reports OPTIMAL")
                 # Safe to load solution
                 try:
                     solver.load_vars()
+                    print(f"  -> Solution loaded successfully")
                 except Exception as load_error:
                     # Solution loading failed, but we still have objective value
                     # This is OK - we can continue with results.best_feasible_objective
+                    print(f"  -> Solution loading failed (but have objective): {load_error}")
                     pass
+            else:
+                print(f"  -> Solver did NOT report optimal")
         except RuntimeError as e:
             # Catch APPSI RuntimeError during solve
             solve_time = time.time() - solve_start
@@ -320,12 +331,17 @@ class BaseOptimizationModel(ABC):
         # Map APPSI termination conditions to legacy pyomo.opt.TerminationCondition
         # (OptimizationResult uses legacy enum for compatibility)
         appsi_tc = results.termination_condition
+        print(f"\nMapping APPSI result to legacy format:")
+        print(f"  APPSI termination: {appsi_tc}")
+
         if appsi_tc == AppsiTC.optimal:
             legacy_tc = TerminationCondition.optimal
             success = True
+            print(f"  -> Mapped to: optimal, success=True")
         elif appsi_tc == AppsiTC.infeasible:
             legacy_tc = TerminationCondition.infeasible
             success = False
+            print(f"  -> Mapped to: infeasible, success=False")
         elif appsi_tc == AppsiTC.unbounded:
             legacy_tc = TerminationCondition.unbounded
             success = False
