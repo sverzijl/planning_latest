@@ -298,12 +298,12 @@ class SlidingWindowModel(BaseOptimizationModel):
         # Build objective
         self._build_objective(model)
 
-        print(f"\n✅ Model built successfully")
+        print(f"\nModel built successfully")
         return model
 
     def _add_variables(self, model: ConcreteModel):
         """Add decision variables to model."""
-        print(f"\n📊 Adding variables...")
+        print(f"\nAdding variables...")
 
         # PRODUCTION VARIABLES (same as cohort model)
         # production[node, product, t] - continuous quantity
@@ -578,7 +578,7 @@ class SlidingWindowModel(BaseOptimizationModel):
 
     def _add_constraints(self, model: ConcreteModel):
         """Add constraints to model."""
-        print(f"\n🔗 Adding constraints...")
+        print(f"\nAdding constraints...")
 
         # Core constraints
         self._add_sliding_window_shelf_life(model)
@@ -589,7 +589,7 @@ class SlidingWindowModel(BaseOptimizationModel):
         self._add_changeover_detection(model)
         self._add_truck_constraints(model)
 
-        print(f"\n✅ Constraints added")
+        print(f"\nConstraints added")
 
     def _add_sliding_window_shelf_life(self, model: ConcreteModel):
         """Add sliding window shelf life constraints.
