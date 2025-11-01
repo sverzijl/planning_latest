@@ -283,7 +283,7 @@ class SlidingWindowModel(BaseOptimizationModel):
         model.dates = PyomoSet(initialize=self.dates, ordered=True)
         model.states = PyomoSet(initialize=['ambient', 'frozen', 'thawed'])
 
-        print(f"\n📐 Sets defined:")
+        print(f"\nSets defined:")
         print(f"  Nodes: {len(list(model.nodes))}")
         print(f"  Products: {len(list(model.products))}")
         print(f"  Dates: {len(list(model.dates))}")
@@ -564,7 +564,7 @@ class SlidingWindowModel(BaseOptimizationModel):
             )
             print(f"  Mix count variables: {len(mix_index)} integers")
 
-        print(f"\n✅ Variables created")
+        print(f"\nVariables created")
         total_vars = (len(production_index) + len(inventory_index) +
                      len(thaw_index) + len(freeze_index) + len(in_transit_index))
         total_integers = len(pallet_index) if self.use_pallet_tracking else 0
@@ -1409,7 +1409,7 @@ class SlidingWindowModel(BaseOptimizationModel):
 
         NO explicit staleness penalty - holding costs implicitly drive freshness.
         """
-        print(f"\n🎯 Building objective...")
+        print(f"\nBuilding objective...")
 
         # HOLDING COST (via integer pallets - drives turnover/freshness)
         holding_cost = 0
@@ -1574,7 +1574,7 @@ class SlidingWindowModel(BaseOptimizationModel):
             doc="Minimize total cost - holding drives freshness implicitly"
         )
 
-        print(f"\n✅ Objective built")
+        print(f"\nObjective built")
         print(f"  Active components: labor + transport + holding + shortage + changeover (cost + waste)")
         print(f"  Optional: waste (end-of-horizon penalty)")
         print(f"  Staleness: IMPLICIT via holding costs (inventory costs money)")
