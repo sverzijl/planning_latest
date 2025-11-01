@@ -80,8 +80,14 @@ class InitialWorkflow(BaseWorkflow):
             )
 
         # Calculate planning horizon dates
-        # Start from tomorrow (production planners typically plan ahead)
-        planning_start_date = Date.today() + timedelta(days=1)
+        # Start from inventory snapshot + 1 day (if provided), else tomorrow
+        if self.initial_inventory and hasattr(self.initial_inventory, 'snapshot_date'):
+            planning_start_date = self.initial_inventory.snapshot_date + timedelta(days=1)
+            logger.info(f"Planning starts from inventory snapshot + 1: {planning_start_date}")
+        else:
+            # No snapshot date available, use tomorrow
+            planning_start_date = Date.today() + timedelta(days=1)
+            logger.info(f"No snapshot date, planning starts tomorrow: {planning_start_date}")
 
         # End date = start + (weeks * 7 days) - 1 day (inclusive)
         horizon_days = self.config.planning_horizon_weeks * 7
