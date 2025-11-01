@@ -101,7 +101,7 @@ try:
     from pyomo.contrib.appsi.base import TerminationCondition as AppsiTC
 
     if results.termination_condition == AppsiTC.infeasible:
-        print(f"\n❌ INFEASIBLE - Analyzing constraints...")
+        print(f"\nINFEASIBLE - Analyzing constraints...")
 
         # Use Pyomo's infeasibility analysis
         print(f"\n" + "=" * 80)
@@ -138,10 +138,10 @@ try:
         print(f"  Shelf life limit: 17 days (ambient)")
 
         if inventory_age >= 17:
-            print(f"\n  ⚠️  INVENTORY TOO OLD! Violates shelf life")
+            print(f"\n  WARNING: INVENTORY TOO OLD! Violates shelf life")
 
     else:
-        print(f"\n✅ OPTIMAL")
+        print(f"\nOPTIMAL")
         print(f"  Objective: ${results.best_feasible_objective:,.2f}")
 
 finally:
