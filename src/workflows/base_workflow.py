@@ -447,6 +447,7 @@ class BaseWorkflow(ABC):
             solver_name=self.config.solver_name,
             time_limit_seconds=self.config.solve_time_limit,
             mip_gap=self.config.mip_gap_tolerance,
+            tee=True,  # DIAGNOSTIC: Show HiGHS output to see why it's infeasible
         )
 
         return solution
