@@ -270,8 +270,9 @@ class SlidingWindowModel(BaseOptimizationModel):
         Returns:
             Pyomo ConcreteModel ready to solve
         """
+        from ..utils.version import GIT_COMMIT
         print("\n" + "="*80)
-        print("BUILDING SLIDING WINDOW MODEL")
+        print(f"BUILDING SLIDING WINDOW MODEL [git:{GIT_COMMIT}]")
         print("="*80)
 
         model = ConcreteModel()

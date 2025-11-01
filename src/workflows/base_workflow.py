@@ -428,9 +428,10 @@ class BaseWorkflow(ABC):
 
         # Use OptimizationResult's built-in validation methods
         if not solution.is_feasible():
+            from ..utils.version import GIT_COMMIT
             return {
                 "valid": False,
-                "message": f"Solution not feasible. Termination: {solution.termination_condition}"
+                "message": f"Solution not feasible. Termination: {solution.termination_condition} [git:{GIT_COMMIT}]"
             }
 
         # Additional validation can be added here
