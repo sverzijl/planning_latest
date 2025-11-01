@@ -630,7 +630,11 @@ class SlidingWindowModel(BaseOptimizationModel):
             # After day 17, initial inventory is outside window (expired)
             first_date = min(model.dates)
             if first_date in window_dates:
-                Q_ambient += self.initial_inventory.get((node_id, prod, 'ambient'), 0)
+                init_inv_qty = self.initial_inventory.get((node_id, prod, 'ambient'), 0)
+                # DIAGNOSTIC: Log if we have significant initial inventory
+                if init_inv_qty > 1000 and t == first_date:
+                    print(f"    DEBUG: Initial inventory for ({node_id}, {prod[:30]}, ambient) = {init_inv_qty:.0f} units")
+                Q_ambient += init_inv_qty
 
             for tau in window_dates:
                 # Production that goes to ambient
