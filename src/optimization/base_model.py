@@ -517,13 +517,10 @@ class BaseOptimizationModel(ABC):
                 tee=True
             )
         """
-        # Build model (only if not already built)
+        # Build model (always - this creates the Pyomo ConcreteModel)
         build_start = time.time()
-        if self.model is None:
-            print("Building model in solve()...")
-            self.model = self.build_model()
-        else:
-            print("Model already built, using existing model")
+        print("Building Pyomo model in solve()...")
+        self.model = self.build_model()
         self._build_time = time.time() - build_start
 
         # Prepare solver options
