@@ -24,12 +24,16 @@ parser = MultiFileParser(
 
 forecast, locations, routes, labor_calendar, truck_schedules_list, cost_params = parser.parse_all()
 
-# Step 2: Parse inventory with snapshot date
+# Step 2: Parse inventory with snapshot date AND alias resolver
 print("Step 2: Parsing inventory...")
 # UI sets snapshot date to 2025-10-16
 snapshot_date_from_ui = date(2025, 10, 16)
 
-inv_parser = InventoryParser('data/examples/inventory_latest.XLSX')
+# Get alias resolver from network file (UI does this)
+alias_resolver = parser.parse_product_aliases()
+print(f"  Alias resolver loaded: {alias_resolver}")
+
+inv_parser = InventoryParser('data/examples/inventory_latest.XLSX', product_alias_resolver=alias_resolver)
 inventory_snapshot = inv_parser.parse()
 
 # Override snapshot date if different
