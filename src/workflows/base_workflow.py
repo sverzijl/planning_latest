@@ -349,20 +349,6 @@ class BaseWorkflow(ABC):
         # Convert products list to dict
         products_dict = {p.id: p for p in self.products} if isinstance(self.products, list) else self.products
 
-        # DIAGNOSTIC: Show product keys vs inventory keys
-        if products_dict:
-            print(f"\nProduct keys sample: {list(products_dict.keys())[:3]}")
-        if initial_inventory_dict:
-            inv_products = set(prod for (loc, prod, state) in initial_inventory_dict.keys())
-            print(f"Inventory product keys sample: {list(inv_products)[:3]}")
-            # Check if they match
-            product_keys_set = set(products_dict.keys())
-            inv_product_keys_set = inv_products
-            matching = product_keys_set & inv_product_keys_set
-            print(f"Matching products: {len(matching)} out of {len(product_keys_set)} products")
-            if len(matching) == 0:
-                print(f"WARNING: NO MATCHING PRODUCTS! Inventory will be ignored!")
-
         # Get initial inventory dict
         initial_inventory_dict = {}
         if self.initial_inventory:
@@ -396,6 +382,19 @@ class BaseWorkflow(ABC):
         print(f"  use_pallet_tracking: {self.config.use_pallet_costs}")
         print(f"  allow_shortages: {self.config.allow_shortages}")
         print("=" * 80)
+
+        # DIAGNOSTIC: Check product key matching
+        if products_dict and initial_inventory_dict:
+            print(f"\nProduct vs Inventory Key Matching:")
+            print(f"  Product keys sample: {list(products_dict.keys())[:3]}")
+            inv_products = set(prod for (loc, prod, state) in initial_inventory_dict.keys())
+            print(f"  Inventory product keys sample: {list(inv_products)[:3]}")
+            # Check if they match
+            product_keys_set = set(products_dict.keys())
+            matching = product_keys_set & inv_products
+            print(f"  Matching products: {len(matching)} out of {len(product_keys_set)} products")
+            if len(matching) == 0:
+                print(f"  *** WARNING: ZERO MATCHING PRODUCTS! Inventory will be treated as ZERO! ***")
 
         # Build model (using SlidingWindowModel for 60-220× speedup!)
         self.model = SlidingWindowModel(
