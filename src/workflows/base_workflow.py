@@ -347,7 +347,7 @@ class BaseWorkflow(ABC):
         )
 
         # Convert products list to dict
-        products_dict = {p.product_id: p for p in self.products} if isinstance(self.products, list) else self.products
+        products_dict = {p.id: p for p in self.products} if isinstance(self.products, list) else self.products
 
         # Get initial inventory dict
         initial_inventory_dict = {}
