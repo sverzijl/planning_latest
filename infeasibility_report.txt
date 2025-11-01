@@ -1,0 +1,110 @@
+================================================================================
+INFEASIBILITY ANALYSIS
+================================================================================
+
+Configuration:
+  Inventory snapshot: 2025-11-01
+  Planning start: 2025-11-02
+  Planning end: 2025-11-29
+  Initial inventory: 49 entries
+  Total units: 49,581
+  Initial inventory: 49 entries
+  Manufacturing nodes: 1
+  Demand nodes: 9
+
+Sliding Window Model Initialized:
+  Nodes: 11
+  Routes: 10
+  Products: 5
+  Planning horizon: 28 days
+  Demand entries: 1260
+  Pallet tracking: True
+
+================================================================================
+BUILDING SLIDING WINDOW MODEL [git:unknown]
+================================================================================
+
+Sets defined:
+  Nodes: 11
+  Products: 5
+  Dates: 28
+  States: 3
+
+Adding variables...
+  Production variables: 140
+  Inventory variables: 2940
+  State transition variables: 140 thaw + 0 freeze
+  In-transit variables: 2800 (indexed by DEPARTURE date)
+  Pallet storage variables: 1540 integers
+  Pallet entry variables: 1540 integers (for fixed costs)
+  Truck pallet variables: 1540 integers
+  Demand consumed variables: 1260
+  Shortage variables: 1260
+  Binary product indicators: 280
+  Labor variables: 28 (hours + overtime)
+  Mix count variables: 140 integers
+
+Variables created
+  Continuous: 6,020
+  Integers: 1,540
+  Binaries: 280
+  TOTAL: 7,840
+  (vs cohort model: ~500,000 total)
+
+Adding constraints...
+
+  Adding sliding window shelf life constraints...
+  Shelf life window constraints: 2,940
+    Ambient (17d): ~1,400
+    Frozen (120d): ~140
+    Thawed (14d): ~1,400
+
+  Adding state balance constraints...
+  State balance constraints: 2,940
+
+  Adding demand satisfaction...
+  Demand balance constraints: 1260
+
+  Adding pallet constraints...
+    Storage pallet ceiling constraints added
+    Pallet entry detection constraints added
+    Truck pallet ceiling constraints added
+
+  Adding production constraints...
+    Mix-based production constraints added
+    Production capacity constraints added
+    Overtime detection constraints added
+
+  Adding changeover detection...
+    Changeover detection constraints added
+
+  Adding truck constraints...
+    Truck capacity constraints added: 308
+
+Constraints added
+
+Building objective...
+  Frozen pallet fixed cost: $14.2600/pallet (on entry)
+  Frozen pallet daily cost: $0.9800/pallet/day
+  Shortage penalty: $10.00/unit
+  Labor cost: Weekday overtime ($660/h) + Weekend ($1320/h), fixed hours FREE
+  Changeover cost: $38.40 per start
+  Changeover waste: 30 units per start × $1.30/unit = $39.00 per start
+  Waste cost: $13.00/unit × (end_inventory + end_in_transit)
+
+Objective built
+  Active components: labor + transport + holding + shortage + changeover (cost + waste)
+  Optional: waste (end-of-horizon penalty)
+  Staleness: IMPLICIT via holding costs (inventory costs money)
+
+Model built successfully
+
+Solving...
+
+================================================================================
+SOLVE RESULT
+================================================================================
+Termination: TerminationCondition.optimal
+
+OPTIMAL
+  Objective: $358,363.82

@@ -1,0 +1,19 @@
+{
+  "note": "Run from Windows system - no git available",
+  "inventory_snapshot_date": "2025-11-01",
+  "inventory_entries": 49,
+  "start_date": "2025-11-02",
+  "end_date": "2025-11-29",
+  "horizon_days": 28,
+  "num_products": 5,
+  "num_routes": 10,
+  "max_transit_days": 7.0,
+  "initial_inventory_total": 49581.0,
+  "in_transit_var_count": 3500,
+  "departure_date_min": "2025-10-26",
+  "departure_date_max": "2025-11-29",
+  "pre_horizon_days": 7,
+  "termination": "TerminationCondition.optimal",
+  "objective": 185679.51923428566,
+  "is_feasible": true
+}
