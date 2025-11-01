@@ -501,9 +501,13 @@ class BaseOptimizationModel(ABC):
                 tee=True
             )
         """
-        # Build model
+        # Build model (only if not already built)
         build_start = time.time()
-        self.model = self.build_model()
+        if self.model is None:
+            print("Building model in solve()...")
+            self.model = self.build_model()
+        else:
+            print("Model already built, using existing model")
         self._build_time = time.time() - build_start
 
         # Prepare solver options
