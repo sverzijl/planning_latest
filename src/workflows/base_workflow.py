@@ -265,6 +265,15 @@ class BaseWorkflow(ABC):
             # Step 6: Solve
             logger.info("Step 6: Solving optimization model")
             print("\nStarting solve...")
+
+            # DIAGNOSTIC: Write model to file before solving
+            if self.model and hasattr(self.model, 'model'):
+                try:
+                    self.model.model.write('workflow_model_debug.lp', format='lp')
+                    print("  Model written to workflow_model_debug.lp for inspection")
+                except:
+                    pass
+
             solution = self._solve_model()
             print(f"Solve completed: termination={solution.termination_condition if solution else 'None'}")
 
