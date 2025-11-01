@@ -258,15 +258,21 @@ class BaseWorkflow(ABC):
 
             # Step 5: Apply fixed periods
             logger.info("Step 5: Applying fixed periods")
+            print("\nApplying fixed periods...")
             self.apply_fixed_periods()
+            print("Fixed periods applied")
 
             # Step 6: Solve
             logger.info("Step 6: Solving optimization model")
+            print("\nStarting solve...")
             solution = self._solve_model()
+            print(f"Solve completed: termination={solution.termination_condition if solution else 'None'}")
 
             # Step 7: Validate
             logger.info("Step 7: Validating solution")
+            print(f"Validating solution...")
             validation_result = self._validate_solution(solution)
+            print(f"Validation result: {validation_result['valid']}")
 
             if not validation_result["valid"]:
                 logger.warning(f"Solution validation failed: {validation_result['message']}")
