@@ -173,6 +173,7 @@ class SlidingWindowModel(BaseOptimizationModel):
         self.initial_inventory = self._preprocess_initial_inventory(
             initial_inventory, inventory_snapshot_date
         )
+        self.inventory_snapshot_date = inventory_snapshot_date  # Store for shelf life calculations
 
         # Build network indices
         self._build_network_indices()
@@ -686,17 +687,40 @@ class SlidingWindowModel(BaseOptimizationModel):
             window_start = max(0, list(model.dates).index(t) - 16)
             window_dates = list(model.dates)[window_start:list(model.dates).index(t)+1]
 
+            # DIAGNOSTIC: Log window on day 18
+            date_list = list(model.dates)
+            if len(date_list) > 17 and t == date_list[17]:  # Day 18 (index 17)
+                init_inv_check = self.initial_inventory.get((node_id, prod, 'ambient'), 0)
+                if init_inv_check > 1000:
+                    first_date = min(model.dates)
+                    days_from_start = (t - first_date).days
+                    print(f"  DAY 18 ambient_shelf_life[{node_id}, {prod[:30]}]:")
+                    print(f"    Window: {window_dates[0]} to {window_dates[-1]} ({len(window_dates)} days)")
+                    print(f"    days_from_start: {days_from_start}")
+                    print(f"    Condition (<=16): {days_from_start <= 16}")
+                    print(f"    Init_inv in Q: {'YES' if days_from_start <= 16 else 'NO'}")
+
             # Inflows to ambient: initial_inv (if start date in window) + production + thaw + arrivals
             Q_ambient = 0
 
-            # CRITICAL: Include initial inventory for first 17 days (ambient shelf life)
-            # Initial inventory can persist up to 17 days from planning start
-            # Must be in Q for ALL days where it could still exist, not just when first_date in window
-            first_date = min(model.dates)
-            days_from_start = (t - first_date).days
-            if days_from_start <= 16:  # Days 0-16 (= 17 days total): initial inventory might still exist
-                init_inv = self.initial_inventory.get((node_id, prod, 'ambient'), 0)
-                Q_ambient += init_inv
+            # CRITICAL: Include initial inventory based on its AGE, not days from planning start
+            # If snapshot is Oct 16 and planning starts Oct 17, init_inv is already 1 day old
+            # It can persist for (17 - 1) = 16 more days, until Nov 2 (day 16)
+            # On Nov 3 (day 17), init_inv is 18 days old and EXPIRED
+            if self.inventory_snapshot_date:
+                init_inv_age_on_t = (t - self.inventory_snapshot_date).days
+                # Include if still within 17-day shelf life
+                # Age 1-17 = valid (1 day old to 17 days old), age 18+ = expired
+                if init_inv_age_on_t <= 17:  # CORRECTED: <= 17, not < 17
+                    init_inv = self.initial_inventory.get((node_id, prod, 'ambient'), 0)
+                    Q_ambient += init_inv
+            else:
+                # Fallback: assume snapshot is 1 day before planning start
+                first_date = min(model.dates)
+                days_from_start = (t - first_date).days
+                if days_from_start <= 16:  # Valid for 17 days from day 0
+                    init_inv = self.initial_inventory.get((node_id, prod, 'ambient'), 0)
+                    Q_ambient += init_inv
 
             for tau in window_dates:
                 # Production that goes to ambient
@@ -783,12 +807,17 @@ class SlidingWindowModel(BaseOptimizationModel):
             # Inflows to frozen: initial_inv (if start date in window) + production_frozen + freeze + arrivals_frozen
             Q_frozen = 0
 
-            # CRITICAL: Include initial inventory for first 120 days (frozen shelf life)
-            # Initial frozen inventory can persist up to 120 days from planning start
-            first_date = min(model.dates)
-            days_from_start = (t - first_date).days
-            if days_from_start <= 119:  # Days 0-119 (= 120 days total): initial frozen inventory might still exist
-                Q_frozen += self.initial_inventory.get((node_id, prod, 'frozen'), 0)
+            # CRITICAL: Include initial inventory based on its AGE (frozen shelf life = 120 days)
+            if self.inventory_snapshot_date:
+                init_inv_age_on_t = (t - self.inventory_snapshot_date).days
+                if init_inv_age_on_t <= 120:  # Age 1-120 = valid, age 121+ = expired
+                    Q_frozen += self.initial_inventory.get((node_id, prod, 'frozen'), 0)
+            else:
+                # Fallback: assume snapshot is 1 day before planning start
+                first_date = min(model.dates)
+                days_from_start = (t - first_date).days
+                if days_from_start <= 119:  # Valid for 120 days from day 0
+                    Q_frozen += self.initial_inventory.get((node_id, prod, 'frozen'), 0)
 
             for tau in window_dates:
                 # Production that goes to frozen
@@ -858,12 +887,17 @@ class SlidingWindowModel(BaseOptimizationModel):
             # Inflows to thawed: initial_inv (if start date in window) + thaw + arrivals_from_frozen_routes
             Q_thawed = 0
 
-            # CRITICAL: Include initial inventory for first 14 days (thawed shelf life)
-            # Initial thawed inventory can persist up to 14 days from planning start
-            first_date = min(model.dates)
-            days_from_start = (t - first_date).days
-            if days_from_start <= 13:  # Days 0-13 (= 14 days total): initial thawed inventory might still exist
-                Q_thawed += self.initial_inventory.get((node_id, prod, 'thawed'), 0)
+            # CRITICAL: Include initial inventory based on its AGE (thawed shelf life = 14 days)
+            if self.inventory_snapshot_date:
+                init_inv_age_on_t = (t - self.inventory_snapshot_date).days
+                if init_inv_age_on_t <= 14:  # Age 1-14 = valid, age 15+ = expired
+                    Q_thawed += self.initial_inventory.get((node_id, prod, 'thawed'), 0)
+            else:
+                # Fallback: assume snapshot is 1 day before planning start
+                first_date = min(model.dates)
+                days_from_start = (t - first_date).days
+                if days_from_start <= 13:  # Valid for 14 days from day 0
+                    Q_thawed += self.initial_inventory.get((node_id, prod, 'thawed'), 0)
 
             for tau in window_dates:
                 # Thaw flow (frozen → thawed at this node)
@@ -1325,6 +1359,15 @@ class SlidingWindowModel(BaseOptimizationModel):
                             if (route.origin_node_id, dest, prod, departure_date, state) in model.in_transit:
                                 total_in_transit += model.in_transit[route.origin_node_id, dest, prod, departure_date, state]
 
+                # CRITICAL FIX: Skip if no in-transit shipments
+                # Otherwise creates constraint: truck_pallet_load * 320 >= 0, which wastes variables
+                # More importantly: prevents infeasibility from truck constraints on dates with no shipments
+                try:
+                    if total_in_transit == 0:
+                        return Constraint.Skip
+                except:
+                    pass  # Pyomo expression, can't compare to 0
+
                 # Truck pallets must be sufficient to carry all in-transit shipments
                 return model.truck_pallet_load[truck_idx, dest, prod, delivery_date] * self.UNITS_PER_PALLET >= total_in_transit
 
@@ -1333,7 +1376,22 @@ class SlidingWindowModel(BaseOptimizationModel):
                 rule=truck_pallet_ceiling_rule,
                 doc="Truck pallet ceiling: pallet_load * 320 >= shipments"
             )
-            print(f"    Truck pallet ceiling constraints added")
+
+            # DIAGNOSTIC: Count constraints
+            ceiling_count = sum(1 for _ in model.truck_pallet_ceiling_con)
+            print(f"    Truck pallet ceiling constraints added: {ceiling_count}")
+
+            # Check if any constraints reference dates beyond horizon
+            truck_pallet_dates = set(d for (_, _, _, d) in model.truck_pallet_load)
+            if truck_pallet_dates:
+                min_truck_date = min(truck_pallet_dates)
+                max_truck_date = max(truck_pallet_dates)
+                planning_end = max(model.dates)
+                if max_truck_date > planning_end:
+                    print(f"    WARNING: Truck pallets extend beyond planning horizon!")
+                    print(f"      Planning end: {planning_end}")
+                    print(f"      Max truck date: {max_truck_date}")
+                    print(f"      Days beyond: {(max_truck_date - planning_end).days}")
 
 
     def _add_production_constraints(self, model: ConcreteModel):
