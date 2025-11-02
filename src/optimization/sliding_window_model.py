@@ -1783,21 +1783,22 @@ class SlidingWindowModel(BaseOptimizationModel):
             print(f"  Shortage penalty: ${penalty:.2f}/unit")
 
         # DISPOSAL COST (for expired initial inventory)
-        # MIP Technique: Penalty to track disposal (free or low cost for expired goods)
-        # Disposal represents expired initial inventory that can't be consumed/shipped
+        # MIP Technique: Penalty ensures disposal only when inventory truly expires
+        # CRITICAL REQUIREMENT: disposal_penalty > shortage_penalty
+        # Otherwise model will dispose everything + take shortages instead of using inventory!
         disposal_cost = 0
         if hasattr(model, 'disposal'):
-            # Zero cost: Disposal is free (it's already expired/stranded inventory)
-            # The real cost was incurred when inventory became stranded, not when disposed
-            disposal_penalty = 0.0  # Free disposal
+            # Set disposal penalty HIGHER than shortage penalty to prevent pathological solution
+            shortage_penalty = self.cost_structure.shortage_penalty_per_unit if self.allow_shortages else 1000.0
+            disposal_penalty = shortage_penalty * 1.5  # 50% higher than shortage
+
+            # Rationale: Disposing good inventory is worse than having a shortage
+            # We only want disposal when inventory truly expires and can't be used
             disposal_cost = quicksum(
                 disposal_penalty * model.disposal[node_id, prod, state, t]
                 for (node_id, prod, state, t) in model.disposal
             )
-            if disposal_penalty > 0:
-                print(f"  Disposal penalty: ${disposal_penalty:.2f}/unit")
-            else:
-                print(f"  Disposal: Free (no penalty for expired inventory)")
+            print(f"  Disposal penalty: ${disposal_penalty:.2f}/unit (> shortage ${shortage_penalty:.2f}/unit)")
 
         # LABOR COST (piecewise: fixed hours FREE, overtime/weekend charged)
         labor_cost = 0
