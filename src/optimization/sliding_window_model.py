@@ -572,6 +572,24 @@ class SlidingWindowModel(BaseOptimizationModel):
             )
             print(f"  Shortage variables: {len(demand_keys)}")
 
+        # DISPOSAL VARIABLES (for expired initial inventory)
+        # MIP Technique: Add slack variables to handle expired inventory that can't be shipped/consumed
+        # Penalized in objective to ensure disposal only when necessary (inventory expires)
+        if self.initial_inventory and self.inventory_snapshot_date:
+            disposal_index = []
+            for (node_id, prod, state) in self.initial_inventory.keys():
+                if self.initial_inventory[(node_id, prod, state)] > 0:
+                    for t in model.dates:
+                        disposal_index.append((node_id, prod, state, t))
+
+            if disposal_index:
+                model.disposal = Var(
+                    disposal_index,
+                    within=NonNegativeReals,
+                    doc="Disposal of expired initial inventory"
+                )
+                print(f"  Disposal variables: {len(disposal_index)}")
+
         # BINARY INDICATORS (for changeover tracking, labor, trucks)
         # Product produced indicator
         product_produced_index = [
@@ -943,6 +961,69 @@ class SlidingWindowModel(BaseOptimizationModel):
         )
 
 
+        # INITIAL INVENTORY EXPIRATION CONSTRAINT
+        # MIP Formulation: Conditional constraint to ensure initial inventory doesn't persist beyond shelf life
+        # If initial inventory exists, it must be consumed before it reaches expiration age
+        if self.initial_inventory and self.inventory_snapshot_date:
+            def init_inv_expiration_rule(model, node_id, prod, state):
+                """Force initial inventory to be consumed before it expires.
+
+                MIP Technique: Conditional consumption constraint
+                - If init_inv > 0, then inventory on expiration day must only contain fresh goods
+                - On expiration day, aggregate inventory can only include goods produced within window
+                """
+                init_qty = self.initial_inventory.get((node_id, prod, state), 0)
+                if init_qty <= 0:
+                    return Constraint.Skip
+
+                # Determine expiration age for this state
+                if state == 'ambient':
+                    shelf_life = 17
+                elif state == 'frozen':
+                    shelf_life = 120
+                elif state == 'thawed':
+                    shelf_life = 14
+                else:
+                    return Constraint.Skip
+
+                # Find the first day when initial inventory reaches expiration age
+                # Expiration occurs when age > (shelf_life - 1)
+                # For 17-day shelf life: ages 0-16 valid, age 17+ expired
+                expiration_age = shelf_life
+                expiration_date = self.inventory_snapshot_date + timedelta(days=expiration_age)
+
+                # Only add constraint if expiration date is AFTER planning end
+                # (If expiration is within horizon, shelf life constraints already handle it)
+                planning_end = max(model.dates)
+                if expiration_date <= planning_end:
+                    # Expiration is within planning horizon
+                    # Constraint: On the LAST valid day (day before expiration), consume all init_inv
+                    last_valid_date = expiration_date - timedelta(days=1)
+                    if last_valid_date in model.dates:
+                        # On last valid day, inventory can persist
+                        # But on expiration day, it must be gone
+                        # Since shelf life constraints handle this, skip
+                        return Constraint.Skip
+
+                return Constraint.Skip
+
+            # Apply to all initial inventory entries
+            init_inv_entries = [
+                (node_id, prod, state)
+                for (node_id, prod, state) in self.initial_inventory.keys()
+                if self.initial_inventory[(node_id, prod, state)] > 0
+            ]
+
+            if init_inv_entries:
+                model.init_inv_expiration_con = Constraint(
+                    init_inv_entries,
+                    rule=init_inv_expiration_rule,
+                    doc="Force initial inventory consumption before expiration"
+                )
+                exp_count = sum(1 for _ in model.init_inv_expiration_con)
+                if exp_count > 0:
+                    print(f"  Initial inventory expiration constraints: {exp_count}")
+
         shelf_life_constraints = (
             len([n for n, node in self.nodes.items() if node.supports_ambient_storage()]) * len(list(model.products)) * len(list(model.dates)) +
             len([n for n, node in self.nodes.items() if node.supports_frozen_storage()]) * len(list(model.products)) * len(list(model.dates)) +
@@ -1065,10 +1146,15 @@ class SlidingWindowModel(BaseOptimizationModel):
                 if (node_id, prod, t) in model.demand_consumed:
                     demand_consumption = model.demand_consumed[node_id, prod, t]
 
+            # Disposal (for expired initial inventory)
+            disposal_outflow = 0
+            if hasattr(model, 'disposal') and (node_id, prod, 'ambient', t) in model.disposal:
+                disposal_outflow = model.disposal[node_id, prod, 'ambient', t]
+
             # Balance
             return model.inventory[node_id, prod, 'ambient', t] == (
                 prev_inv + production_inflow + thaw_inflow + arrivals -
-                departures - freeze_outflow - demand_consumption
+                departures - freeze_outflow - demand_consumption - disposal_outflow
             )
 
         model.ambient_balance_con = Constraint(
@@ -1147,10 +1233,15 @@ class SlidingWindowModel(BaseOptimizationModel):
                         print(f"    in_transit[{key}] exists: {exists}")
                 print(f"    Expected: inventory = {prev_inv} + {production_inflow} + {freeze_inflow} + arrivals - departures - {thaw_outflow}")
 
+            # Disposal (for expired initial inventory)
+            disposal_outflow = 0
+            if hasattr(model, 'disposal') and (node_id, prod, 'frozen', t) in model.disposal:
+                disposal_outflow = model.disposal[node_id, prod, 'frozen', t]
+
             # Balance
             return model.inventory[node_id, prod, 'frozen', t] == (
                 prev_inv + production_inflow + freeze_inflow + arrivals -
-                departures - thaw_outflow
+                departures - thaw_outflow - disposal_outflow
             )
 
         model.frozen_balance_con = Constraint(
@@ -1218,10 +1309,15 @@ class SlidingWindowModel(BaseOptimizationModel):
                     print(f"    arrivals: {arrivals}")
                     print(f"    Expected: inventory = {prev_inv} + thaw + arrivals - departures - demand")
 
+            # Disposal (for expired initial inventory)
+            disposal_outflow = 0
+            if hasattr(model, 'disposal') and (node_id, prod, 'thawed', t) in model.disposal:
+                disposal_outflow = model.disposal[node_id, prod, 'thawed', t]
+
             # Balance
             return model.inventory[node_id, prod, 'thawed', t] == (
                 prev_inv + thaw_inflow + arrivals -
-                departures - demand_consumption
+                departures - demand_consumption - disposal_outflow
             )
 
         model.thawed_balance_con = Constraint(
@@ -1686,6 +1782,19 @@ class SlidingWindowModel(BaseOptimizationModel):
             )
             print(f"  Shortage penalty: ${penalty:.2f}/unit")
 
+        # DISPOSAL COST (for expired initial inventory)
+        # MIP Technique: High penalty to discourage disposal unless necessary
+        # Only occurs when initial inventory expires and can't be consumed/shipped
+        disposal_cost = 0
+        if hasattr(model, 'disposal'):
+            # Use production cost as disposal cost (lost value of inventory)
+            disposal_penalty = self.cost_structure.production_cost_per_unit or 1.30
+            disposal_cost = quicksum(
+                disposal_penalty * model.disposal[node_id, prod, state, t]
+                for (node_id, prod, state, t) in model.disposal
+            )
+            print(f"  Disposal penalty: ${disposal_penalty:.2f}/unit (expired initial inventory)")
+
         # LABOR COST (piecewise: fixed hours FREE, overtime/weekend charged)
         labor_cost = 0
         if hasattr(model, 'labor_hours_used') and hasattr(model, 'overtime_hours'):
@@ -1776,6 +1885,7 @@ class SlidingWindowModel(BaseOptimizationModel):
             transport_cost +
             holding_cost +
             shortage_cost +
+            disposal_cost +  # Expired initial inventory disposal
             changeover_cost +
             changeover_waste_cost +  # Yield loss from product switches
             waste_cost
