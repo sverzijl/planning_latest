@@ -427,11 +427,13 @@ with tab4:
                 st.divider()
 
                 # Production by date (aggregate from production_by_date_product)
+                production_by_date = {}
                 if production_by_date_product:
                     from collections import defaultdict
                     production_by_date = defaultdict(float)
                     for (node, prod, date_val), qty in production_by_date_product.items():
                         production_by_date[date_val] += qty
+
                 if production_by_date:
                     st.subheader("Daily Production")
                     import pandas as pd
