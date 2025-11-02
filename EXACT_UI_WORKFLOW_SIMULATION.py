@@ -65,14 +65,17 @@ truck_schedules = TruckScheduleCollection(schedules=truck_schedules_list)
 
 # Step 5: Create workflow config (EXACT UI settings)
 print("Step 5: Creating workflow config...")
+import sys
+weeks_override = int(sys.argv[1]) if len(sys.argv) > 1 else 4
+
 config = WorkflowConfig(
     workflow_type=WorkflowType.INITIAL,
-    planning_horizon_weeks=4,
+    planning_horizon_weeks=weeks_override,
     solve_time_limit=120,
     mip_gap_tolerance=0.01,
     solver_name='appsi_highs',
     allow_shortages=True,  # UI checkbox
-    track_batches=True,    # UI checkbox
+    track_batches=False,   # Use SlidingWindowModel (not cohort tracking)
     use_pallet_costs=False  # UI checkbox - UNCHECKED per your test
 )
 

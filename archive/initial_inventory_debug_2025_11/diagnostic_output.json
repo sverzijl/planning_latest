@@ -1,0 +1,82 @@
+{
+  "git_commit": "63435f4e6305aa19257950d7638fd1d800c4a7e3",
+  "git_commit_short": "63435f4",
+  "inventory_snapshot_date": "2025-10-31",
+  "inventory_entries": 49,
+  "start_date": "2025-11-01",
+  "end_date": "2025-11-28",
+  "horizon_days": 28,
+  "num_products": 5,
+  "num_routes": 10,
+  "num_nodes": 11,
+  "routes": [
+    {
+      "origin": "6122",
+      "dest": "6104",
+      "transit_days": 1.0,
+      "mode": "ambient"
+    },
+    {
+      "origin": "6122",
+      "dest": "6110",
+      "transit_days": 2.0,
+      "mode": "ambient"
+    },
+    {
+      "origin": "6122",
+      "dest": "6125",
+      "transit_days": 1.0,
+      "mode": "ambient"
+    },
+    {
+      "origin": "6122",
+      "dest": "Lineage",
+      "transit_days": 1.0,
+      "mode": "ambient"
+    },
+    {
+      "origin": "6104",
+      "dest": "6105",
+      "transit_days": 1.0,
+      "mode": "ambient"
+    },
+    {
+      "origin": "6104",
+      "dest": "6103",
+      "transit_days": 1.0,
+      "mode": "ambient"
+    },
+    {
+      "origin": "6125",
+      "dest": "6123",
+      "transit_days": 1.0,
+      "mode": "ambient"
+    },
+    {
+      "origin": "6125",
+      "dest": "6134",
+      "transit_days": 1.0,
+      "mode": "ambient"
+    },
+    {
+      "origin": "6125",
+      "dest": "6120",
+      "transit_days": 1.0,
+      "mode": "ambient"
+    },
+    {
+      "origin": "Lineage",
+      "dest": "6130",
+      "transit_days": 7.0,
+      "mode": "frozen"
+    }
+  ],
+  "initial_inventory_keys": 49,
+  "initial_inventory_total": 49581.0,
+  "in_transit_var_count": 3500,
+  "departure_date_min": "2025-10-25",
+  "departure_date_max": "2025-11-28",
+  "termination": "TerminationCondition.optimal",
+  "objective": 195158.96023857142,
+  "is_feasible": true
+}
