@@ -241,6 +241,47 @@ class SlidingWindowModel(BaseOptimizationModel):
         print(f"  Converted entry count: {len(converted)}")
         print(f"  Total quantity: {sum(converted.values()):,.0f} units")
 
+        # DIAGNOSTIC: Check if any initial inventory has states that don't match node capabilities
+        print(f"\nValidating initial inventory against node capabilities:")
+        issues = []
+        product_mismatches = []
+        for (node_id, prod, state), qty in converted.items():
+            node = self.nodes.get(node_id)
+            if not node:
+                issues.append(f"  ❌ ({node_id}, {prod[:30]}, {state}): Node not found!")
+                continue
+
+            # Check if product exists in products dict
+            if prod not in self.products:
+                product_mismatches.append(f"  ❌ ({node_id}, {prod[:30]}, {state}): Product not in model.products!")
+                continue
+
+            # Check if this state is valid for this node
+            valid_states = []
+            if node.supports_frozen_storage():
+                valid_states.append('frozen')
+            if node.supports_ambient_storage() or node.has_demand_capability():
+                valid_states.extend(['ambient', 'thawed'])
+
+            if state not in valid_states:
+                issues.append(f"  ❌ ({node_id}, {prod[:30]}, {state}): Node doesn't support this state! Valid: {valid_states}")
+
+        if product_mismatches:
+            print(f"  Found {len(product_mismatches)} product ID mismatches:")
+            for issue in product_mismatches[:10]:
+                print(issue)
+            print(f"  Available products: {list(self.products.keys())[:5]}...")
+
+        if issues:
+            print(f"  Found {len(issues)} incompatible state assignments:")
+            for issue in issues[:10]:  # Show first 10
+                print(issue)
+            if len(issues) > 10:
+                print(f"  ... and {len(issues) - 10} more")
+
+        if not product_mismatches and not issues:
+            print(f"  ✓ All {len(converted)} entries have compatible states and products")
+
         return converted
 
     def _build_network_indices(self):
@@ -271,6 +312,18 @@ class SlidingWindowModel(BaseOptimizationModel):
 
         print(f"  Manufacturing nodes: {len(self.manufacturing_nodes)}")
         print(f"  Demand nodes: {len(self.demand_nodes)}")
+
+        # DIAGNOSTIC: Log routes from Lineage
+        lineage_routes_from = self.routes_from_node.get("Lineage", [])
+        lineage_routes_to = self.routes_to_node.get("Lineage", [])
+        print(f"  Routes FROM Lineage: {len(lineage_routes_from)}")
+        if lineage_routes_from:
+            for route in lineage_routes_from:
+                print(f"    - Lineage → {route.destination_node_id} (mode={route.transport_mode}, days={route.transit_days})")
+        print(f"  Routes TO Lineage: {len(lineage_routes_to)}")
+        if lineage_routes_to:
+            for route in lineage_routes_to:
+                print(f"    - {route.origin_node_id} → Lineage (mode={route.transport_mode}, days={route.transit_days})")
 
     def build_model(self) -> ConcreteModel:
         """Build the Pyomo optimization model.
@@ -355,15 +408,26 @@ class SlidingWindowModel(BaseOptimizationModel):
         )
         print(f"  Inventory variables: {len(inventory_index)}")
 
+        # DIAGNOSTIC: Check if inventory variables exist for initial inventory entries
+        if self.initial_inventory:
+            print(f"  Checking inventory variables for initial_inventory entries:")
+            for (node_id, prod, state), qty in list(self.initial_inventory.items())[:5]:
+                first_date = min(model.dates)
+                key = (node_id, prod, state, first_date)
+                exists = key in inventory_index
+                print(f"    {key}: exists={exists}, qty={qty:.0f}")
+
         # STATE TRANSITION VARIABLES (NEW - enables freeze/thaw flows)
         # Only create where transitions make sense!
 
-        # Thaw: frozen → thawed (only for nodes WITH frozen storage capability)
+        # Thaw: frozen → thawed (only for nodes that can BOTH hold frozen AND use ambient/thawed)
+        # CRITICAL FIX: Frozen-only nodes (like Lineage) cannot thaw - they only ship frozen!
         # Ambient-only nodes receiving frozen shipments: thaw happens automatically on arrival (no thaw variable)
         thaw_index = [
             (node_id, prod, t)
             for node_id, node in self.nodes.items()
-            if node.supports_frozen_storage()  # Only nodes that can HOLD frozen inventory
+            # Can only thaw if node has frozen storage AND can use ambient/thawed inventory
+            if node.supports_frozen_storage() and (node.supports_ambient_storage() or node.has_demand_capability())
             for prod in model.products
             for t in model.dates
         ]
@@ -622,19 +686,17 @@ class SlidingWindowModel(BaseOptimizationModel):
             window_start = max(0, list(model.dates).index(t) - 16)
             window_dates = list(model.dates)[window_start:list(model.dates).index(t)+1]
 
-            # Inflows to ambient: initial_inv + production + thaw + arrivals
+            # Inflows to ambient: initial_inv (if start date in window) + production + thaw + arrivals
             Q_ambient = 0
 
-            # Include initial inventory if planning start is in window
-            # This allows initial inventory to exist within first 17 days
-            # After day 17, initial inventory is outside window (expired)
+            # CRITICAL: Include initial inventory for first 17 days (ambient shelf life)
+            # Initial inventory can persist up to 17 days from planning start
+            # Must be in Q for ALL days where it could still exist, not just when first_date in window
             first_date = min(model.dates)
-            if first_date in window_dates:
-                init_inv_qty = self.initial_inventory.get((node_id, prod, 'ambient'), 0)
-                # DIAGNOSTIC: Log if we have significant initial inventory
-                if init_inv_qty > 1000 and t == first_date:
-                    print(f"    DEBUG: Initial inventory for ({node_id}, {prod[:30]}, ambient) = {init_inv_qty:.0f} units")
-                Q_ambient += init_inv_qty
+            days_from_start = (t - first_date).days
+            if days_from_start <= 16:  # Days 0-16 (= 17 days total): initial inventory might still exist
+                init_inv = self.initial_inventory.get((node_id, prod, 'ambient'), 0)
+                Q_ambient += init_inv
 
             for tau in window_dates:
                 # Production that goes to ambient
@@ -684,6 +746,15 @@ class SlidingWindowModel(BaseOptimizationModel):
             except:
                 pass  # Pyomo expressions can't be compared to 0 easily
 
+            # DIAGNOSTIC: Log day 2 constraint for nodes with initial inventory
+            if self.initial_inventory.get((node_id, prod, 'ambient'), 0) > 0:
+                date_list = list(model.dates)
+                if len(date_list) >= 2 and t == date_list[1]:  # Day 2
+                    print(f"  DAY2 ambient_shelf_life[{node_id}, {prod[:30]}]:")
+                    print(f"    Window: {len(window_dates)} days")
+                    print(f"    Q (should NOT include init_inv): {Q_ambient}")
+                    print(f"    O: {O_ambient}")
+
             # CRITICAL FIX: Direct inventory constraint (not just material balance)
             # Previous: O <= Q (material conservation, but doesn't prevent old inventory)
             # Correct: inventory[t] <= Q - O (directly limits inventory to window sources)
@@ -709,31 +780,58 @@ class SlidingWindowModel(BaseOptimizationModel):
             window_start = max(0, list(model.dates).index(t) - 119)
             window_dates = list(model.dates)[window_start:list(model.dates).index(t)+1]
 
-            # Inflows to frozen: initial_inv + production_frozen + freeze
+            # Inflows to frozen: initial_inv (if start date in window) + production_frozen + freeze + arrivals_frozen
             Q_frozen = 0
 
-            # Include initial frozen inventory if planning start in window
+            # CRITICAL: Include initial inventory for first 120 days (frozen shelf life)
+            # Initial frozen inventory can persist up to 120 days from planning start
             first_date = min(model.dates)
-            if first_date in window_dates:
+            days_from_start = (t - first_date).days
+            if days_from_start <= 119:  # Days 0-119 (= 120 days total): initial frozen inventory might still exist
                 Q_frozen += self.initial_inventory.get((node_id, prod, 'frozen'), 0)
 
-            Q_frozen += sum(
-                model.production[node_id, prod, tau]
-                for tau in window_dates
-                if node.can_produce() and node.get_production_state() == 'frozen'
-                and (node_id, prod, tau) in model.production
-            ) + sum(
-                model.freeze[node_id, prod, tau]
-                for tau in window_dates
-                if (node_id, prod, tau) in model.freeze
-            )
+            for tau in window_dates:
+                # Production that goes to frozen
+                if node.can_produce() and (node_id, prod, tau) in model.production:
+                    if node.get_production_state() == 'frozen':
+                        Q_frozen += model.production[node_id, prod, tau]
 
-            # Outflows from frozen: shipments_frozen + thaw
-            O_frozen = sum(
-                model.thaw[node_id, prod, tau]
-                for tau in window_dates
-                if (node_id, prod, tau) in model.thaw
-            )
+                # Freeze flow (ambient → frozen)
+                if (node_id, prod, tau) in model.freeze:
+                    Q_frozen += model.freeze[node_id, prod, tau]
+
+                # Arrivals in frozen state
+                for route in self.routes_to_node[node_id]:
+                    arrival_state = self._determine_arrival_state(route, node)
+                    if arrival_state == 'frozen':
+                        departure_date = tau - timedelta(days=route.transit_days)
+                        if departure_date in model.dates and (route.origin_node_id, node_id, prod, departure_date, 'frozen') in model.in_transit:
+                            Q_frozen += model.in_transit[route.origin_node_id, node_id, prod, departure_date, 'frozen']
+
+            # Outflows from frozen: departures_frozen + thaw
+            O_frozen = 0
+            for tau in window_dates:
+                # Departures in frozen state
+                for route in self.routes_from_node[node_id]:
+                    if route.transport_mode == TransportMode.FROZEN:
+                        if (node_id, route.destination_node_id, prod, tau, 'frozen') in model.in_transit:
+                            O_frozen += model.in_transit[node_id, route.destination_node_id, prod, tau, 'frozen']
+
+                # Thaw flow (frozen → ambient/thawed)
+                if (node_id, prod, tau) in model.thaw:
+                    O_frozen += model.thaw[node_id, prod, tau]
+
+            # DIAGNOSTIC: Log Lineage constraint on day 1
+            if node_id == "Lineage" and t == min(model.dates):
+                try:
+                    q_val = value(Q_frozen, exception=False)
+                    o_val = value(O_frozen, exception=False)
+                    if q_val is not None or o_val is not None:
+                        print(f"    Q_frozen (inflows): {q_val if q_val is not None else Q_frozen}")
+                        print(f"    O_frozen (outflows): {o_val if o_val is not None else O_frozen}")
+                        print(f"    Shelf life bound: inventory <= {q_val - o_val if q_val and o_val else 'Q-O'}")
+                except:
+                    pass
 
             # CRITICAL FIX: Direct inventory constraint
             return model.inventory[node_id, prod, 'frozen', t] <= Q_frozen - O_frozen
@@ -757,19 +855,29 @@ class SlidingWindowModel(BaseOptimizationModel):
             window_start = max(0, list(model.dates).index(t) - 13)
             window_dates = list(model.dates)[window_start:list(model.dates).index(t)+1]
 
-            # Inflows to thawed: initial_inv + thaw (resets age!)
+            # Inflows to thawed: initial_inv (if start date in window) + thaw + arrivals_from_frozen_routes
             Q_thawed = 0
 
-            # Include initial thawed inventory if planning start in window
+            # CRITICAL: Include initial inventory for first 14 days (thawed shelf life)
+            # Initial thawed inventory can persist up to 14 days from planning start
             first_date = min(model.dates)
-            if first_date in window_dates:
+            days_from_start = (t - first_date).days
+            if days_from_start <= 13:  # Days 0-13 (= 14 days total): initial thawed inventory might still exist
                 Q_thawed += self.initial_inventory.get((node_id, prod, 'thawed'), 0)
 
-            Q_thawed += sum(
-                model.thaw[node_id, prod, tau]
-                for tau in window_dates
-                if (node_id, prod, tau) in model.thaw
-            )
+            for tau in window_dates:
+                # Thaw flow (frozen → thawed at this node)
+                if (node_id, prod, tau) in model.thaw:
+                    Q_thawed += model.thaw[node_id, prod, tau]
+
+                # CRITICAL FIX: Arrivals from frozen routes (frozen goods arriving at ambient-only nodes)
+                for route in self.routes_to_node[node_id]:
+                    arrival_state = self._determine_arrival_state(route, node)
+                    if arrival_state == 'thawed':
+                        # Frozen goods shipped to this ambient-only node arrive as thawed
+                        departure_date = tau - timedelta(days=route.transit_days)
+                        if departure_date in model.dates and (route.origin_node_id, node_id, prod, departure_date, 'frozen') in model.in_transit:
+                            Q_thawed += model.in_transit[route.origin_node_id, node_id, prod, departure_date, 'frozen']
 
             # Outflows from thawed: demand consumption
             # (Thawed is consumed at demand nodes, not shipped further)
@@ -778,9 +886,11 @@ class SlidingWindowModel(BaseOptimizationModel):
                 if node.has_demand_capability() and (node_id, prod, tau) in model.demand_consumed:
                     O_thawed += model.demand_consumed[node_id, prod, tau]
 
-            # Skip if no activity
-            if Q_thawed == 0:
-                return Constraint.Skip
+            # Skip if no activity (only check constant part - arrivals make this complex)
+            # Can't use == 0 check anymore since Q_thawed may contain Pyomo expressions
+            # Let Pyomo handle trivial constraints
+            # if Q_thawed == 0:
+            #     return Constraint.Skip
 
             # CRITICAL FIX: Direct inventory constraint
             return model.inventory[node_id, prod, 'thawed', t] <= Q_thawed - O_thawed
@@ -980,6 +1090,23 @@ class SlidingWindowModel(BaseOptimizationModel):
                 and (node_id, route.destination_node_id, prod, t, 'frozen') in model.in_transit
             )
 
+            # DIAGNOSTIC: Log Lineage frozen balance on day 1
+            if node_id == "Lineage" and t == min(model.dates):
+                print(f"  DEBUG frozen_balance[{node_id}, {prod[:30]}, {t}]:")
+                print(f"    prev_inv: {prev_inv}")
+                print(f"    production_inflow: {production_inflow}")
+                print(f"    freeze_inflow: {freeze_inflow}")
+                print(f"    arrivals: {arrivals}")
+                print(f"    thaw_outflow: {thaw_outflow}")
+                print(f"    departures: {departures}")
+                # Check if departure variables exist
+                for route in self.routes_from_node[node_id]:
+                    if route.transport_mode == TransportMode.FROZEN:
+                        key = (node_id, route.destination_node_id, prod, t, 'frozen')
+                        exists = key in model.in_transit
+                        print(f"    in_transit[{key}] exists: {exists}")
+                print(f"    Expected: inventory = {prev_inv} + {production_inflow} + {freeze_inflow} + arrivals - departures - {thaw_outflow}")
+
             # Balance
             return model.inventory[node_id, prod, 'frozen', t] == (
                 prev_inv + production_inflow + freeze_inflow + arrivals -
@@ -1016,15 +1143,15 @@ class SlidingWindowModel(BaseOptimizationModel):
             if (node_id, prod, t) in model.thaw:
                 thaw_inflow = model.thaw[node_id, prod, t]
 
-            # Arrivals: goods that DEPARTED (t - transit_days) ago
-            # Only include if departure_date is within planning horizon
-            # Thawed products arrive via ambient routes in 'ambient' state
+            # Arrivals: goods that DEPARTED (t - transit_days) ago and arrive as 'thawed'
+            # CRITICAL: Frozen goods arriving at ambient-only nodes become thawed
+            # Must look for in_transit in FROZEN state (departure state), not ambient!
             arrivals = sum(
-                model.in_transit[route.origin_node_id, node_id, prod, departure_date, 'ambient']
+                model.in_transit[route.origin_node_id, node_id, prod, departure_date, 'frozen']
                 for route in self.routes_to_node[node_id]
                 # Calculate when goods must have departed to arrive today
                 if (departure_date := t - timedelta(days=route.transit_days)) in model.dates
-                and (route.origin_node_id, node_id, prod, departure_date, 'ambient') in model.in_transit
+                and (route.origin_node_id, node_id, prod, departure_date, 'frozen') in model.in_transit
                 and self._determine_arrival_state(route, node) == 'thawed'
             )
 
@@ -1040,6 +1167,16 @@ class SlidingWindowModel(BaseOptimizationModel):
             # Thawed inventory can satisfy demand
             # In current implementation, demand primarily satisfied from ambient
             # (Thawed state tracking is minimal in sliding window model)
+
+            # DIAGNOSTIC: Log 6130 thawed balance when receiving from Lineage
+            if node_id == "6130" and prod == "HELGAS GFREE MIXED GRAIN 500G":
+                date_list = list(model.dates)
+                if t == date_list[0] or (len(date_list) > 7 and t == date_list[7]):  # Day 1 or Day 8
+                    print(f"  DEBUG thawed_balance[{node_id}, {prod[:30]}, {t}]:")
+                    print(f"    prev_inv: {prev_inv}")
+                    print(f"    thaw_inflow: {thaw_inflow}")
+                    print(f"    arrivals: {arrivals}")
+                    print(f"    Expected: inventory = {prev_inv} + thaw + arrivals - departures - demand")
 
             # Balance
             return model.inventory[node_id, prod, 'thawed', t] == (

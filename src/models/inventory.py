@@ -44,20 +44,32 @@ class InventorySnapshot:
     def to_optimization_dict(self) -> Dict[Tuple[str, str], float]:
         """Convert inventory to optimization model format.
 
+        Storage location mapping:
+        - 4000: At plant (use entry.location_id as-is)
+        - 4070: At Lineage frozen storage (map to "Lineage" location)
+        - 5000: Excluded (already filtered by parser)
+
         Returns:
             Dictionary mapping (location_id, product_id) to total quantity in units
 
         Example:
             {
-                ("6122", "176283"): 320.0,  # 32 cases * 10 units/case
-                ("6130", "176283"): 770.0,  # 77 cases * 10 units/case
+                ("6122", "176283"): 320.0,  # 32 cases at plant
+                ("Lineage", "176283"): 640.0,  # 64 cases at Lineage frozen
             }
         """
         inventory_dict = {}
 
         # Aggregate quantities by (location_id, product_id)
         for entry in self.entries:
-            key = (entry.location_id, entry.product_id)
+            # Map storage location 4070 to Lineage
+            if entry.storage_location == "4070":
+                location_id = "Lineage"
+            else:
+                # 4000 or no storage_location: use original location_id
+                location_id = entry.location_id
+
+            key = (location_id, entry.product_id)
             inventory_dict[key] = inventory_dict.get(key, 0.0) + entry.quantity
 
         return inventory_dict

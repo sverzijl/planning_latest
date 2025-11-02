@@ -372,11 +372,37 @@ class BaseWorkflow(ABC):
                 # But SlidingWindowModel needs 3-tuple: (location, product, state)
                 inv_2tuple = self.initial_inventory.to_optimization_dict()
 
-                # Convert to 3-tuple format (assume ambient state)
+                # Convert to 3-tuple format - infer state from location storage mode
                 for (location, product), quantity in inv_2tuple.items():
-                    initial_inventory_dict[(location, product, 'ambient')] = quantity
+                    # Find location in network
+                    loc_node = None
+                    for loc in self.locations:
+                        if loc.id == location:
+                            loc_node = loc
+                            break
+
+                    # Infer state from location storage mode
+                    if loc_node and str(loc_node.storage_mode) == 'frozen':
+                        # Frozen-only location (e.g., Lineage)
+                        state = 'frozen'
+                    else:
+                        # Ambient or both → assume ambient (default)
+                        state = 'ambient'
+
+                    initial_inventory_dict[(location, product, state)] = quantity
             elif isinstance(self.initial_inventory, dict):
                 initial_inventory_dict = self.initial_inventory
+
+        # DIAGNOSTIC: Show initial inventory by state
+        if initial_inventory_dict:
+            from collections import defaultdict
+            by_state = defaultdict(float)
+            for (loc, prod, state), qty in initial_inventory_dict.items():
+                by_state[state] += qty
+            print(f"  Initial inventory by state:")
+            for state in ['ambient', 'frozen', 'thawed']:
+                if state in by_state:
+                    print(f"    {state}: {by_state[state]:.0f} units")
 
         # Get inventory snapshot date if available
         inventory_snapshot_date = None
