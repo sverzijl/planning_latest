@@ -1367,6 +1367,42 @@ class SlidingWindowModel(BaseOptimizationModel):
             doc="Demand = consumed + shortage"
         )
 
+        # INVENTORY AVAILABILITY CONSTRAINT
+        # CRITICAL: Consumption cannot exceed available inventory at the node
+        # Without this, model can choose consumed=0, shortage=demand (leaving inventory unused!)
+        def inventory_availability_rule(model, node_id, prod, t):
+            """Consumption limited by available inventory (ambient + thawed).
+
+            This prevents the pathological solution where model takes all demand
+            as shortages while leaving inventory unused.
+            """
+            if (node_id, prod, t) not in self.demand:
+                return Constraint.Skip
+
+            # Available inventory at this node (before consumption)
+            # Note: This is end-of-day inventory AFTER consumption in material balance
+            # But before consumption happens, inventory includes what's available
+            # So we need to use prev_day inventory + arrivals, not current inventory
+            # Actually, simpler: material balance already enforces this implicitly via inv >= 0
+            # But we need explicit upper bound on consumption
+
+            # Available inventory states for consumption
+            available_inv = 0
+            if (node_id, prod, 'ambient', t) in model.inventory:
+                # Can consume from ambient (but inventory[t] is AFTER consumption)
+                # Need to account for the fact that material balance is:
+                # inventory[t] = inventory[t-1] + arrivals - consumed
+                # So: consumed <= inventory[t-1] + arrivals
+                # This is complex - simpler approach: just bound consumed by a large number
+                # Actually, the issue is that material balance doesn't FORCE consumption
+                # Let's try a different approach: make shortage MORE expensive than production
+                return Constraint.Skip
+
+            return Constraint.Skip
+
+        # Actually, the real issue is different - let me not add this constraint yet
+        # and instead check why material balance isn't working
+
         print(f"  Demand balance constraints: {len(demand_keys)}")
 
     def _add_pallet_constraints(self, model: ConcreteModel):
