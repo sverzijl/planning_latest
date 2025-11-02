@@ -703,22 +703,25 @@ class SlidingWindowModel(BaseOptimizationModel):
             # Inflows to ambient: initial_inv (if start date in window) + production + thaw + arrivals
             Q_ambient = 0
 
-            # CRITICAL: Include initial inventory based on its AGE, not days from planning start
-            # If snapshot is Oct 16 and planning starts Oct 17, init_inv is already 1 day old
-            # It can persist for (17 - 1) = 16 more days, until Nov 2 (day 16)
-            # On Nov 3 (day 17), init_inv is 18 days old and EXPIRED
+            # CRITICAL: Include initial inventory based on its AGE
+            # 17-day sliding window means goods with age 0-16 are valid
+            # On day 17, window = [day 1, ..., day 17] with goods aged 0-16
+            # Initial inventory on day 17 has age 17, outside the window
+            # Snapshot Oct 16, Planning starts Oct 17:
+            #   - Oct 17 (day 1): init_inv age = 1 day ✓ valid (1 <= 16)
+            #   - Nov 1 (day 16): init_inv age = 16 days ✓ valid (16 <= 16)
+            #   - Nov 2 (day 17): init_inv age = 17 days ✗ EXPIRED (17 > 16)
             if self.inventory_snapshot_date:
                 init_inv_age_on_t = (t - self.inventory_snapshot_date).days
-                # Include if still within 17-day shelf life
-                # Age 1-17 = valid (1 day old to 17 days old), age 18+ = expired
-                if init_inv_age_on_t <= 17:  # CORRECTED: <= 17, not < 17
+                # Window includes goods aged 0-16, so init_inv valid if age <= 16
+                if init_inv_age_on_t <= 16:  # Ages 1-16 = valid, age 17+ = expired
                     init_inv = self.initial_inventory.get((node_id, prod, 'ambient'), 0)
                     Q_ambient += init_inv
             else:
                 # Fallback: assume snapshot is 1 day before planning start
                 first_date = min(model.dates)
                 days_from_start = (t - first_date).days
-                if days_from_start <= 16:  # Valid for 17 days from day 0
+                if days_from_start <= 15:  # Valid for days 0-15 (assuming 1-day snapshot age)
                     init_inv = self.initial_inventory.get((node_id, prod, 'ambient'), 0)
                     Q_ambient += init_inv
 
@@ -808,15 +811,16 @@ class SlidingWindowModel(BaseOptimizationModel):
             Q_frozen = 0
 
             # CRITICAL: Include initial inventory based on its AGE (frozen shelf life = 120 days)
+            # 120-day sliding window means goods with age 0-119 are valid
             if self.inventory_snapshot_date:
                 init_inv_age_on_t = (t - self.inventory_snapshot_date).days
-                if init_inv_age_on_t <= 120:  # Age 1-120 = valid, age 121+ = expired
+                if init_inv_age_on_t <= 119:  # Ages 1-119 = valid, age 120+ = expired
                     Q_frozen += self.initial_inventory.get((node_id, prod, 'frozen'), 0)
             else:
                 # Fallback: assume snapshot is 1 day before planning start
                 first_date = min(model.dates)
                 days_from_start = (t - first_date).days
-                if days_from_start <= 119:  # Valid for 120 days from day 0
+                if days_from_start <= 118:  # Valid for ages 0-118 (assuming 1-day snapshot age)
                     Q_frozen += self.initial_inventory.get((node_id, prod, 'frozen'), 0)
 
             for tau in window_dates:
@@ -888,15 +892,16 @@ class SlidingWindowModel(BaseOptimizationModel):
             Q_thawed = 0
 
             # CRITICAL: Include initial inventory based on its AGE (thawed shelf life = 14 days)
+            # 14-day sliding window means goods with age 0-13 are valid
             if self.inventory_snapshot_date:
                 init_inv_age_on_t = (t - self.inventory_snapshot_date).days
-                if init_inv_age_on_t <= 14:  # Age 1-14 = valid, age 15+ = expired
+                if init_inv_age_on_t <= 13:  # Ages 1-13 = valid, age 14+ = expired
                     Q_thawed += self.initial_inventory.get((node_id, prod, 'thawed'), 0)
             else:
                 # Fallback: assume snapshot is 1 day before planning start
                 first_date = min(model.dates)
                 days_from_start = (t - first_date).days
-                if days_from_start <= 13:  # Valid for 14 days from day 0
+                if days_from_start <= 12:  # Valid for ages 0-12 (assuming 1-day snapshot age)
                     Q_thawed += self.initial_inventory.get((node_id, prod, 'thawed'), 0)
 
             for tau in window_dates:
@@ -936,6 +941,7 @@ class SlidingWindowModel(BaseOptimizationModel):
             rule=thawed_shelf_life_rule,
             doc="Thawed shelf life: 14-day sliding window (resets on thaw!)"
         )
+
 
         shelf_life_constraints = (
             len([n for n, node in self.nodes.items() if node.supports_ambient_storage()]) * len(list(model.products)) * len(list(model.dates)) +
