@@ -392,13 +392,20 @@ class SlidingWindowModel(BaseOptimizationModel):
                 print(f"    - {route.origin_node_id} → Lineage (mode={route.transport_mode}, days={route.transit_days})")
 
     def _expand_intermediate_stop_routes(self) -> List[UnifiedRoute]:
-        """Expand truck routes with intermediate stops into explicit route legs.
+        """Expand truck routes to include intermediate stop destinations.
 
         For trucks with intermediate stops (e.g., 6122 → Lineage → 6125),
-        creates explicit routes for each leg if they don't already exist.
+        the truck can deliver to BOTH Lineage and 6125 on the same trip.
+
+        We need to create routes: origin → each intermediate stop
+        We DO NOT create intermediate_stop → final_destination (goods stay on truck)
+
+        Example: Wednesday truck (6122 → Lineage → 6125)
+        Creates: 6122 → Lineage route (drop-off at intermediate stop)
+        Does NOT create: Lineage → 6125 (goods continue on same truck)
 
         Returns:
-            Extended route list with intermediate stop legs added
+            Extended route list with intermediate stop destinations added
         """
         from src.models.unified_route import TransportMode
 
@@ -412,34 +419,32 @@ class SlidingWindowModel(BaseOptimizationModel):
             if not truck.intermediate_stops:
                 continue
 
-            # Build full path: origin → stop1 → stop2 → ... → destination
-            path = [truck.origin_node_id] + truck.intermediate_stops + [truck.destination_node_id]
+            # Create routes: origin → each intermediate stop (drop-off points)
+            # The truck can deliver to intermediate stop AND continue to final destination
+            origin = truck.origin_node_id
 
-            # Create route for each leg
-            for i in range(len(path) - 1):
-                origin = path[i]
-                dest = path[i + 1]
-
+            for stop in truck.intermediate_stops:
                 # Check if route already exists
+                route_key = (origin, stop)
                 existing = any(r for r in extended_routes
-                              if r.origin_node_id == origin and r.destination_node_id == dest)
+                              if r.origin_node_id == origin and r.destination_node_id == stop)
 
                 if existing:
                     continue  # Route already exists
 
-                # Create new route for this intermediate leg
-                # Use defaults: 1 day transit, ambient mode, 0 cost
+                # Create new route: origin → intermediate_stop
+                # Goods delivered here stay at intermediate stop (don't continue)
                 new_route = UnifiedRoute(
-                    id=f"ROUTE_{origin}_to_{dest}_intermediate",
+                    id=f"ROUTE_{origin}_to_{stop}_drop_off",
                     origin_node_id=origin,
-                    destination_node_id=dest,
-                    transit_days=1.0,  # Default for intermediate transfers
-                    transport_mode=TransportMode.AMBIENT,  # Will transform at intermediate node
-                    cost_per_unit=0.0  # No additional cost for intermediate transfer
+                    destination_node_id=stop,
+                    transit_days=1.0,  # Same-day delivery for intermediate stops
+                    transport_mode=TransportMode.AMBIENT,  # Will transform at destination
+                    cost_per_unit=0.0  # No additional cost (included in truck)
                 )
 
                 extended_routes.append(new_route)
-                routes_added.append(f"{origin} → {dest}")
+                routes_added.append(f"{origin} → {stop} (drop-off)")
 
         if routes_added:
             print(f"\n  Expanded {len(routes_added)} intermediate stop routes:")
@@ -472,16 +477,19 @@ class SlidingWindowModel(BaseOptimizationModel):
         }
 
         for truck in self.truck_schedules:
-            # Build path including intermediate stops
-            path_nodes = [truck.origin_node_id]
-            if truck.intermediate_stops:
-                path_nodes.extend(truck.intermediate_stops)
-            path_nodes.append(truck.destination_node_id)
+            # This truck can deliver to:
+            # 1. Final destination (origin → destination)
+            # 2. Intermediate stops (origin → stop) - drop-offs
 
-            # Each leg in the path can be used on this truck's day
-            for i in range(len(path_nodes) - 1):
-                origin = path_nodes[i]
-                dest = path_nodes[i + 1]
+            origin = truck.origin_node_id
+            destinations = [truck.destination_node_id]
+
+            # Add intermediate stops as drop-off destinations
+            if truck.intermediate_stops:
+                destinations = truck.intermediate_stops + [truck.destination_node_id]
+
+            # Create route entries for origin → each destination
+            for dest in destinations:
                 route_key = (origin, dest)
 
                 if route_key not in truck_route_days:

@@ -77,9 +77,18 @@ class TruckScheduleValidator:
     def _validate_intermediate_stop_routes(self) -> List[TruckValidationIssue]:
         """Validate that intermediate stops have necessary routes.
 
+        Intermediate stops are DROP-OFF points, not transfer points.
+
+        Truck with intermediate stops can deliver to:
+        - origin → intermediate_stop (drop-off at stop)
+        - origin → final_destination (goods continue on truck)
+
+        We do NOT need: intermediate_stop → final_destination
+        (Goods that continue stay on the truck, don't transfer between nodes)
+
         Checks:
-        1. Route exists: origin → intermediate_stop
-        2. Route exists: intermediate_stop → next_stop (or final destination)
+        1. Route exists: origin → intermediate_stop (for drop-offs)
+        2. Route exists: origin → final_destination (for continuing goods)
         """
         issues = []
 
@@ -87,22 +96,29 @@ class TruckScheduleValidator:
             if not truck.intermediate_stops:
                 continue
 
-            # Build full path
-            path = [truck.origin_node_id] + truck.intermediate_stops + [truck.destination_node_id]
+            origin = truck.origin_node_id
 
-            # Check each leg
-            for i in range(len(path) - 1):
-                origin = path[i]
-                dest = path[i + 1]
-                route_key = (origin, dest)
+            # Check route to final destination
+            final_route_key = (origin, truck.destination_node_id)
+            if final_route_key not in self.route_index:
+                issues.append(TruckValidationIssue(
+                    severity='error',
+                    category='Missing Route',
+                    message=f"Truck '{truck.id}' requires route {origin} → {truck.destination_node_id} but route doesn't exist",
+                    truck_id=truck.id,
+                    route=final_route_key
+                ))
 
-                if route_key not in self.route_index:
+            # Check routes to each intermediate stop (drop-off points)
+            for stop in truck.intermediate_stops:
+                stop_route_key = (origin, stop)
+                if stop_route_key not in self.route_index:
                     issues.append(TruckValidationIssue(
                         severity='error',
                         category='Missing Route',
-                        message=f"Truck '{truck.id}' requires route {origin} → {dest} (intermediate stop leg) but route doesn't exist",
+                        message=f"Truck '{truck.id}' requires route {origin} → {stop} (intermediate drop-off) but route doesn't exist",
                         truck_id=truck.id,
-                        route=route_key
+                        route=stop_route_key
                     ))
 
         return issues
