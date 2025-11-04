@@ -1959,6 +1959,20 @@ class SlidingWindowModel(BaseOptimizationModel):
                 doc="Link any_production lower: forces 0 if not producing (overhead optimization)"
             )
 
+            def total_starts_zero_when_not_producing_rule(model, node_id, t):
+                """If any_production = 0, force total_starts = 0."""
+                # Big-M: total_starts <= N * any_production
+                # If any_production = 0, forces total_starts = 0
+                # If any_production = 1, allows total_starts up to N
+                num_products = len(model.products)
+                return model.total_starts[node_id, t] <= num_products * model.any_production[node_id, t]
+
+            model.total_starts_zero_link_con = Constraint(
+                [(node.id, t) for node in self.manufacturing_nodes for t in model.dates],
+                rule=total_starts_zero_when_not_producing_rule,
+                doc="Force total_starts = 0 when any_production = 0 (overhead optimization)"
+            )
+
             print(f"    Changeover aggregation linking constraints added (overhead optimization)")
 
         print(f"    Changeover detection constraints added")
