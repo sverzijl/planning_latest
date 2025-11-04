@@ -3224,6 +3224,21 @@ class SlidingWindowModel(BaseOptimizationModel):
         # Pydantic allows extra fields with Extra.allow configuration
         opt_solution.shipments_by_route_product_date = solution_dict.get('shipments_by_route_product_date', {})
 
+        # MANDATORY BUSINESS RULE VALIDATION
+        # This catches bugs that made it through the optimization model
+        # FAILS LOUDLY if solution violates business rules
+        from src.validation.solution_validator import validate_solution
+        try:
+            is_valid, validation_errors = validate_solution(
+                opt_solution,
+                demand_data=self.demand,
+                fail_on_error=True  # CRITICAL: Fail immediately on violation
+            )
+        except Exception as e:
+            logger.error(f"❌ SOLUTION VALIDATION FAILED: {e}")
+            logger.error(f"   Solution violates business rules - DO NOT USE")
+            raise
+
         # Validate solution before returning (fail-fast on data issues)
         # Use comprehensive validation from validation_utils
         from src.optimization.validation_utils import validate_optimization_solution_complete
