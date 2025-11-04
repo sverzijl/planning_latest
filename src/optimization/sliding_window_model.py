@@ -909,7 +909,16 @@ class SlidingWindowModel(BaseOptimizationModel):
             doc="Overtime hours (hours beyond fixed hours on weekdays)"
         )
 
-        print(f"  Labor variables: {len(labor_index)} (hours + overtime)")
+        # Labor hours paid (for 4-hour minimum on weekends/holidays)
+        # paid_hours >= used_hours (always pay for time worked)
+        # paid_hours >= 4 × any_production (4-hour minimum if producing on non-fixed day)
+        model.labor_hours_paid = Var(
+            labor_index,
+            within=NonNegativeReals,
+            doc="Labor hours paid (includes 4-hour minimum on weekends/holidays)"
+        )
+
+        print(f"  Labor variables: {len(labor_index)} (used + paid + overtime)")
 
         # Mix count variables (integer production batches)
         mix_index = []
@@ -2028,6 +2037,54 @@ class SlidingWindowModel(BaseOptimizationModel):
             )
             print(f"    Overtime detection constraints added")
 
+        # LABOR HOURS PAID: Enforce 4-hour minimum on weekends/holidays
+        if hasattr(model, 'labor_hours_paid'):
+            def labor_hours_paid_lower_rule(model, node_id, t):
+                """Paid hours must at least equal used hours."""
+                return model.labor_hours_paid[node_id, t] >= model.labor_hours_used[node_id, t]
+
+            model.labor_hours_paid_lower_con = Constraint(
+                [(node.id, t) for node in self.manufacturing_nodes for t in model.dates],
+                rule=labor_hours_paid_lower_rule,
+                doc="Paid hours >= used hours (always pay for time worked)"
+            )
+
+            def minimum_payment_enforcement_rule(model, node_id, t):
+                """Enforce 4-hour minimum payment on weekends/holidays when producing.
+
+                Business rule: If you use ANY labor on a non-fixed day, you must pay
+                for at least 4 hours (even if you only work 0.25 hours).
+
+                MIP formulation:
+                  paid_hours >= minimum_hours × any_production
+
+                If any_production = 0: paid_hours >= 0 (can be 0)
+                If any_production = 1: paid_hours >= 4 (minimum payment)
+                """
+                labor_day = self.labor_calendar.get_labor_day(t)
+
+                if not labor_day or labor_day.is_fixed_day:
+                    return Constraint.Skip  # Only applies to weekends/holidays
+
+                # Get minimum hours (default 4.0 if not specified)
+                minimum_hours = getattr(labor_day, 'minimum_hours', 4.0) or 4.0
+
+                # Use any_production binary (already exists from changeover overhead)
+                # This links minimum payment to production decision
+                if (node_id, t) in model.any_production:
+                    return model.labor_hours_paid[node_id, t] >= minimum_hours * model.any_production[node_id, t]
+                else:
+                    # No any_production variable - skip minimum enforcement
+                    return Constraint.Skip
+
+            model.minimum_payment_con = Constraint(
+                [(node.id, t) for node in self.manufacturing_nodes for t in model.dates],
+                rule=minimum_payment_enforcement_rule,
+                doc="Enforce 4-hour minimum payment on weekends/holidays when producing"
+            )
+
+            print(f"    Labor payment constraints added (4-hour minimum on weekends)")
+
     def _add_changeover_detection(self, model: ConcreteModel):
         """Add changeover detection constraints (start tracking)."""
         print(f"\n  Adding changeover detection...")
@@ -2331,10 +2388,15 @@ class SlidingWindowModel(BaseOptimizationModel):
                         labor_cost += overtime_rate * model.overtime_hours[node_id, t]
                     else:
                         # Weekend/holiday: ALL hours charged at non_fixed_rate
+                        # Use labor_hours_paid (includes 4-hour minimum if producing)
                         non_fixed_rate = labor_day.non_fixed_rate if hasattr(labor_day, 'non_fixed_rate') else 1320.0
-                        labor_cost += non_fixed_rate * model.labor_hours_used[node_id, t]
+                        if hasattr(model, 'labor_hours_paid') and (node_id, t) in model.labor_hours_paid:
+                            labor_cost += non_fixed_rate * model.labor_hours_paid[node_id, t]
+                        else:
+                            # Fallback to labor_hours_used if labor_hours_paid doesn't exist
+                            labor_cost += non_fixed_rate * model.labor_hours_used[node_id, t]
 
-            print(f"  Labor cost: Weekday overtime ($660/h) + Weekend ($1320/h), fixed hours FREE")
+            print(f"  Labor cost: Weekday overtime ($660/h) + Weekend ($1320/h with 4h minimum), fixed hours FREE")
 
         # TRANSPORT COST (per-route costs)
         transport_cost = 0
@@ -2623,9 +2685,13 @@ class SlidingWindowModel(BaseOptimizationModel):
                                 else:
                                     labor_cost_by_date[t] = 0.0
                             else:
-                                # Weekend: all hours cost money
+                                # Weekend: use paid hours (includes 4-hour minimum)
                                 non_fixed_rate = labor_day.non_fixed_rate if hasattr(labor_day, 'non_fixed_rate') else 1320.0
-                                labor_cost_by_date[t] = hours * non_fixed_rate
+                                if hasattr(model, 'labor_hours_paid') and (node_id, t) in model.labor_hours_paid:
+                                    paid_hours = value(model.labor_hours_paid[node_id, t])
+                                    labor_cost_by_date[t] = paid_hours * non_fixed_rate
+                                else:
+                                    labor_cost_by_date[t] = hours * non_fixed_rate
                         else:
                             labor_cost_by_date[t] = 0.0
                 except:
