@@ -398,9 +398,21 @@ class SlidingWindowModel(BaseOptimizationModel):
                     if node.supports_frozen_storage():
                         inventory_index.append((node_id, prod, 'frozen', t))
                     if node.supports_ambient_storage() or node.has_demand_capability():
-                        # Demand nodes need ambient inventory to satisfy demand from
+                        # Ambient inventory for all ambient-capable nodes
                         inventory_index.append((node_id, prod, 'ambient', t))
-                        inventory_index.append((node_id, prod, 'thawed', t))
+
+                        # Thawed inventory ONLY for nodes that can receive frozen goods and thaw them
+                        # Typically: nodes that receive from frozen routes (like 6130 from Lineage)
+                        # Don't create for pure ambient nodes like manufacturing
+                        # SIMPLIFIED: Only create if node has incoming frozen routes OR has thaw capability
+                        has_frozen_inbound = any(
+                            r.destination_node_id == node_id and r.transport_mode == TransportMode.FROZEN
+                            for r in self.routes
+                        )
+                        can_thaw = node.supports_frozen_storage()  # Can hold frozen AND ambient
+
+                        if has_frozen_inbound or can_thaw:
+                            inventory_index.append((node_id, prod, 'thawed', t))
 
         model.inventory = Var(
             inventory_index,
@@ -574,21 +586,56 @@ class SlidingWindowModel(BaseOptimizationModel):
 
         # DISPOSAL VARIABLES (for expired initial inventory)
         # MIP Technique: Add slack variables to handle expired inventory that can't be shipped/consumed
-        # Penalized in objective to ensure disposal only when necessary (inventory expires)
+        # CRITICAL FIX: Only allow disposal when initial inventory has ACTUALLY EXPIRED
+        # This prevents the model from disposing fresh inventory to avoid production costs
         if self.initial_inventory and self.inventory_snapshot_date:
             disposal_index = []
+            disposal_details = []  # For diagnostic output
+
             for (node_id, prod, state) in self.initial_inventory.keys():
                 if self.initial_inventory[(node_id, prod, state)] > 0:
+                    # Determine shelf life for this state
+                    if state == 'ambient':
+                        shelf_life = 17
+                    elif state == 'frozen':
+                        shelf_life = 120
+                    elif state == 'thawed':
+                        shelf_life = 14
+                    else:
+                        continue  # Unknown state, skip
+
+                    # Calculate expiration date (when inventory age exceeds shelf life)
+                    # For 17-day ambient: ages 0-16 valid, age 17+ expired
+                    expiration_date = self.inventory_snapshot_date + timedelta(days=shelf_life)
+
+                    # Only create disposal variable for dates AT OR AFTER expiration
+                    # Before expiration, inventory must flow through normal channels
+                    disposal_count_for_item = 0
                     for t in model.dates:
-                        disposal_index.append((node_id, prod, state, t))
+                        if t >= expiration_date:
+                            disposal_index.append((node_id, prod, state, t))
+                            disposal_count_for_item += 1
+
+                    if disposal_count_for_item > 0:
+                        disposal_details.append(
+                            f"{node_id}/{state[:3]}: expires {expiration_date}, {disposal_count_for_item} disposal dates"
+                        )
 
             if disposal_index:
                 model.disposal = Var(
                     disposal_index,
                     within=NonNegativeReals,
-                    doc="Disposal of expired initial inventory"
+                    doc="Disposal of expired initial inventory (only after expiration date)"
                 )
-                print(f"  Disposal variables: {len(disposal_index)}")
+                print(f"  Disposal variables: {len(disposal_index)} (only for expired inventory)")
+                if disposal_details and len(disposal_details) <= 10:
+                    print(f"  Disposal details (sample):")
+                    for detail in disposal_details[:10]:
+                        print(f"    - {detail}")
+                elif disposal_details:
+                    print(f"  Disposal for {len(disposal_details)} inventory items")
+            else:
+                print(f"  No disposal variables needed (no initial inventory expires within horizon)")
 
         # BINARY INDICATORS (for changeover tracking, labor, trucks)
         # Product produced indicator
@@ -682,6 +729,65 @@ class SlidingWindowModel(BaseOptimizationModel):
 
         print(f"\nConstraints added")
 
+        # ====================================================================
+        # DIAGNOSTIC: Check model structure to debug zero production
+        # ====================================================================
+        print("\n" + "="*80)
+        print("MODEL STRUCTURE DIAGNOSTIC")
+        print("="*80)
+
+        # Check production variables at manufacturing node
+        mfg_nodes = [n for n in self.nodes.keys() if self.nodes[n].can_produce()]
+        if mfg_nodes:
+            mfg_id = mfg_nodes[0]  # Usually '6122'
+            mfg_prod_vars = [(n, p, t) for (n, p, t) in model.production if n == mfg_id]
+            print(f"\nProduction variables at {mfg_id}: {len(mfg_prod_vars)}")
+            if mfg_prod_vars:
+                print(f"  Sample: {mfg_prod_vars[0]}")
+            else:
+                print(f"  ❌ NO PRODUCTION VARIABLES AT {mfg_id}!")
+
+            # Check material balance constraints at manufacturing
+            if hasattr(model, 'ambient_balance_con'):
+                mfg_balance = [k for k in model.ambient_balance_con if k[0] == mfg_id]
+                print(f"Ambient balance constraints at {mfg_id}: {len(mfg_balance)}")
+                if not mfg_balance:
+                    print(f"  ❌ NO MATERIAL BALANCE AT {mfg_id}!")
+            else:
+                print(f"  ❌ ambient_balance_con DOES NOT EXIST!")
+
+            # Check in_transit variables FROM manufacturing
+            if hasattr(model, 'in_transit'):
+                intransit_from_mfg = [(o,d,p,t,s) for (o,d,p,t,s) in model.in_transit if o == mfg_id]
+                print(f"In-transit variables FROM {mfg_id}: {len(intransit_from_mfg)}")
+                if intransit_from_mfg:
+                    print(f"  Sample: {intransit_from_mfg[0]}")
+                else:
+                    print(f"  ❌ NO IN_TRANSIT FROM {mfg_id}!")
+            else:
+                print(f"  ❌ in_transit DOES NOT EXIST!")
+
+        # Check demand_consumed variables
+        if hasattr(model, 'demand_consumed'):
+            print(f"\nDemand_consumed variables: {len(model.demand_consumed)}")
+            sample = list(model.demand_consumed.keys())[:3]
+            if sample:
+                print(f"  Sample: {sample}")
+        else:
+            print(f"\n❌ demand_consumed DOES NOT EXIST!")
+
+        # Check sliding window constraints
+        if hasattr(model, 'ambient_shelf_life_con'):
+            mfg_sliding = [k for k in model.ambient_shelf_life_con if k[0] == mfg_id] if mfg_nodes else []
+            print(f"\nSliding window constraints at {mfg_nodes[0] if mfg_nodes else 'N/A'}: {len(mfg_sliding)}")
+
+        print(f"\nOverall model:")
+        print(f"  Total variables: {model.nvariables():,}")
+        print(f"  Total constraints: {model.nconstraints():,}")
+
+        print("="*80 + "\n")
+        # ====================================================================
+
     def _add_sliding_window_shelf_life(self, model: ConcreteModel):
         """Add sliding window shelf life constraints.
 
@@ -721,27 +827,35 @@ class SlidingWindowModel(BaseOptimizationModel):
             # Inflows to ambient: initial_inv (if start date in window) + production + thaw + arrivals
             Q_ambient = 0
 
-            # CRITICAL: Include initial inventory based on its AGE
-            # 17-day sliding window means goods with age 0-16 are valid
-            # On day 17, window = [day 1, ..., day 17] with goods aged 0-16
-            # Initial inventory on day 17 has age 17, outside the window
-            # Snapshot Oct 16, Planning starts Oct 17:
-            #   - Oct 17 (day 1): init_inv age = 1 day ✓ valid (1 <= 16)
-            #   - Nov 1 (day 16): init_inv age = 16 days ✓ valid (16 <= 16)
-            #   - Nov 2 (day 17): init_inv age = 17 days ✗ EXPIRED (17 > 16)
-            if self.inventory_snapshot_date:
+            # CRITICAL FIX: Initial inventory should only be counted ONCE
+            # It should be included ONLY when the window includes Day 1 (planning start)
+            # NOT on every day where age <= 16!
+            #
+            # WRONG (old): Add init_inv to Q on every day where age <= 16
+            # RIGHT (new): Add init_inv to Q only when window includes first planning day
+            #
+            # Example: 4-week plan starting Nov 3
+            #   Day 1 (Nov 3): window = [Nov 3], includes Day 1 → add init_inv ✓
+            #   Day 2 (Nov 4): window = [Nov 3, Nov 4], includes Day 1 → add init_inv ✓
+            #   Day 17 (Nov 19): window = [Nov 3-Nov 19], includes Day 1 → add init_inv ✓
+            #   Day 18 (Nov 20): window = [Nov 4-Nov 20], EXCLUDES Day 1 → DON'T add init_inv ✗
+            first_date = min(model.dates)
+            window_includes_day1 = first_date in window_dates
+
+            if window_includes_day1 and self.inventory_snapshot_date:
+                # Only add initial inventory if:
+                # 1. Window includes Day 1 (where init_inv enters the system)
+                # 2. Inventory hasn't expired yet (age <= shelf life - 1)
                 init_inv_age_on_t = (t - self.inventory_snapshot_date).days
-                # Window includes goods aged 0-16, so init_inv valid if age <= 16
-                if init_inv_age_on_t <= 16:  # Ages 1-16 = valid, age 17+ = expired
+                if init_inv_age_on_t <= 16:  # Not expired
                     init_inv = self.initial_inventory.get((node_id, prod, 'ambient'), 0)
                     Q_ambient += init_inv
-            else:
-                # Fallback: assume snapshot is 1 day before planning start
-                first_date = min(model.dates)
-                days_from_start = (t - first_date).days
-                if days_from_start <= 15:  # Valid for days 0-15 (assuming 1-day snapshot age)
-                    init_inv = self.initial_inventory.get((node_id, prod, 'ambient'), 0)
-                    Q_ambient += init_inv
+
+                    # DIAGNOSTIC: Verify fix is working
+                    if node_id == '6122' and t == list(model.dates)[5] and init_inv > 100:
+                        print(f"  FIX CHECK ambient[{node_id},{prod[:30]},day{list(model.dates).index(t)+1}]:")
+                        print(f"    window_includes_day1: {window_includes_day1}")
+                        print(f"    init_inv added to Q: {init_inv:.0f} (SHOULD only add when window includes Day 1)")
 
             for tau in window_dates:
                 # Production that goes to ambient
@@ -800,11 +914,18 @@ class SlidingWindowModel(BaseOptimizationModel):
                     print(f"    Q (should NOT include init_inv): {Q_ambient}")
                     print(f"    O: {O_ambient}")
 
-            # CRITICAL FIX: Direct inventory constraint (not just material balance)
-            # Previous: O <= Q (material conservation, but doesn't prevent old inventory)
-            # Correct: inventory[t] <= Q - O (directly limits inventory to window sources)
-            # This makes inventory older than 17 days STRUCTURALLY IMPOSSIBLE
-            return model.inventory[node_id, prod, 'ambient', t] <= Q_ambient - O_ambient
+            # CRITICAL FIX (2025-11-03): Correct sliding window formulation
+            # WRONG (causes infeasibility): inventory[t] <= Q - O
+            #   - Compares cumulative inventory to window net flow
+            #   - Ignores carryover from before window
+            #   - Makes model infeasible when inventory includes pre-window stock
+            #
+            # CORRECT (standard perishables formulation): O <= Q
+            #   - Outflows in window cannot exceed inflows in window
+            #   - Prevents using inventory older than L days
+            #   - Material balance handles actual inventory levels
+            #   - Structurally prevents old inventory use (can't ship what didn't arrive in window)
+            return O_ambient <= Q_ambient
 
         model.ambient_shelf_life_con = Constraint(
             [(n, p, t) for n, node in self.nodes.items()
@@ -828,17 +949,17 @@ class SlidingWindowModel(BaseOptimizationModel):
             # Inflows to frozen: initial_inv (if start date in window) + production_frozen + freeze + arrivals_frozen
             Q_frozen = 0
 
-            # CRITICAL: Include initial inventory based on its AGE (frozen shelf life = 120 days)
-            # 120-day sliding window means goods with age 0-119 are valid
-            if self.inventory_snapshot_date:
+            # CRITICAL FIX: Initial inventory should only be counted ONCE
+            # Include only when window includes Day 1 (where init_inv enters system)
+            first_date = min(model.dates)
+            window_includes_day1 = first_date in window_dates
+
+            if window_includes_day1 and self.inventory_snapshot_date:
+                # Only add initial inventory if:
+                # 1. Window includes Day 1
+                # 2. Inventory hasn't expired yet
                 init_inv_age_on_t = (t - self.inventory_snapshot_date).days
-                if init_inv_age_on_t <= 119:  # Ages 1-119 = valid, age 120+ = expired
-                    Q_frozen += self.initial_inventory.get((node_id, prod, 'frozen'), 0)
-            else:
-                # Fallback: assume snapshot is 1 day before planning start
-                first_date = min(model.dates)
-                days_from_start = (t - first_date).days
-                if days_from_start <= 118:  # Valid for ages 0-118 (assuming 1-day snapshot age)
+                if init_inv_age_on_t <= 119:  # Not expired (frozen shelf life = 120 days)
                     Q_frozen += self.initial_inventory.get((node_id, prod, 'frozen'), 0)
 
             for tau in window_dates:
@@ -884,8 +1005,10 @@ class SlidingWindowModel(BaseOptimizationModel):
                 except:
                     pass
 
-            # CRITICAL FIX: Direct inventory constraint
-            return model.inventory[node_id, prod, 'frozen', t] <= Q_frozen - O_frozen
+            # CRITICAL FIX (2025-11-03): Correct sliding window formulation
+            # Changed from: inventory[t] <= Q - O (causes infeasibility)
+            # Changed to: O <= Q (standard perishables formulation)
+            return O_frozen <= Q_frozen
 
         model.frozen_shelf_life_con = Constraint(
             [(n, p, t) for n, node in self.nodes.items()
@@ -902,6 +1025,10 @@ class SlidingWindowModel(BaseOptimizationModel):
             if not node.supports_ambient_storage():  # Thawed only at ambient nodes
                 return Constraint.Skip
 
+            # Skip if no thawed inventory variable exists (most nodes don't have thawed state)
+            if (node_id, prod, 'thawed', t) not in model.inventory:
+                return Constraint.Skip
+
             # Window: last 14 days
             window_start = max(0, list(model.dates).index(t) - 13)
             window_dates = list(model.dates)[window_start:list(model.dates).index(t)+1]
@@ -909,17 +1036,15 @@ class SlidingWindowModel(BaseOptimizationModel):
             # Inflows to thawed: initial_inv (if start date in window) + thaw + arrivals_from_frozen_routes
             Q_thawed = 0
 
-            # CRITICAL: Include initial inventory based on its AGE (thawed shelf life = 14 days)
-            # 14-day sliding window means goods with age 0-13 are valid
-            if self.inventory_snapshot_date:
+            # CRITICAL FIX: Initial inventory should only be counted ONCE
+            # Include only when window includes Day 1 (where init_inv enters system)
+            first_date = min(model.dates)
+            window_includes_day1 = first_date in window_dates
+
+            if window_includes_day1 and self.inventory_snapshot_date:
+                # Only add if window includes Day 1 and inventory not expired
                 init_inv_age_on_t = (t - self.inventory_snapshot_date).days
-                if init_inv_age_on_t <= 13:  # Ages 1-13 = valid, age 14+ = expired
-                    Q_thawed += self.initial_inventory.get((node_id, prod, 'thawed'), 0)
-            else:
-                # Fallback: assume snapshot is 1 day before planning start
-                first_date = min(model.dates)
-                days_from_start = (t - first_date).days
-                if days_from_start <= 12:  # Valid for ages 0-12 (assuming 1-day snapshot age)
+                if init_inv_age_on_t <= 13:  # Not expired (thawed shelf life = 14 days)
                     Q_thawed += self.initial_inventory.get((node_id, prod, 'thawed'), 0)
 
             for tau in window_dates:
@@ -943,14 +1068,10 @@ class SlidingWindowModel(BaseOptimizationModel):
                 if node.has_demand_capability() and (node_id, prod, tau) in model.demand_consumed:
                     O_thawed += model.demand_consumed[node_id, prod, tau]
 
-            # Skip if no activity (only check constant part - arrivals make this complex)
-            # Can't use == 0 check anymore since Q_thawed may contain Pyomo expressions
-            # Let Pyomo handle trivial constraints
-            # if Q_thawed == 0:
-            #     return Constraint.Skip
-
-            # CRITICAL FIX: Direct inventory constraint
-            return model.inventory[node_id, prod, 'thawed', t] <= Q_thawed - O_thawed
+            # CRITICAL FIX (2025-11-03): Correct sliding window formulation
+            # Changed from: inventory[t] <= Q - O (causes infeasibility)
+            # Changed to: O <= Q (standard perishables formulation)
+            return O_thawed <= Q_thawed
 
         model.thawed_shelf_life_con = Constraint(
             [(n, p, t) for n, node in self.nodes.items()
@@ -1117,14 +1238,24 @@ class SlidingWindowModel(BaseOptimizationModel):
             # Arrivals: goods that DEPARTED (t - transit_days) ago
             # Only include if departure_date is within planning horizon
             # (Pre-horizon arrivals should be in initial_inventory)
-            arrivals = sum(
-                model.in_transit[route.origin_node_id, node_id, prod, departure_date, 'ambient']
-                for route in self.routes_to_node[node_id]
-                # Calculate when goods must have departed to arrive today
-                if (departure_date := t - timedelta(days=route.transit_days)) in model.dates
-                and (route.origin_node_id, node_id, prod, departure_date, 'ambient') in model.in_transit
-                and self._determine_arrival_state(route, node) == 'ambient'
-            )
+            arrivals = 0
+            for route in self.routes_to_node[node_id]:
+                departure_date = t - timedelta(days=route.transit_days)
+                key = (route.origin_node_id, node_id, prod, departure_date, 'ambient')
+
+                # DIAGNOSTIC: Log for debugging arrivals issues
+                if node_id in ['6104', '6125'] and t == list(model.dates)[1] if len(list(model.dates)) > 1 else False:
+                    print(f"  DEBUG arrivals for {node_id}, {prod[:30]}, {t}:")
+                    print(f"    Route from {route.origin_node_id}, transit={route.transit_days}")
+                    print(f"    Departure date: {departure_date}")
+                    print(f"    departure_date in model.dates: {departure_date in model.dates}")
+                    print(f"    Key in model.in_transit: {key in model.in_transit}")
+                    print(f"    Arrival state: {self._determine_arrival_state(route, node)}")
+
+                if (departure_date in model.dates
+                    and key in model.in_transit
+                    and self._determine_arrival_state(route, node) == 'ambient'):
+                    arrivals += model.in_transit[key]
 
             # Outflows
             freeze_outflow = 0
@@ -1366,42 +1497,6 @@ class SlidingWindowModel(BaseOptimizationModel):
             rule=demand_balance_rule,
             doc="Demand = consumed + shortage"
         )
-
-        # INVENTORY AVAILABILITY CONSTRAINT
-        # CRITICAL: Consumption cannot exceed available inventory at the node
-        # Without this, model can choose consumed=0, shortage=demand (leaving inventory unused!)
-        def inventory_availability_rule(model, node_id, prod, t):
-            """Consumption limited by available inventory (ambient + thawed).
-
-            This prevents the pathological solution where model takes all demand
-            as shortages while leaving inventory unused.
-            """
-            if (node_id, prod, t) not in self.demand:
-                return Constraint.Skip
-
-            # Available inventory at this node (before consumption)
-            # Note: This is end-of-day inventory AFTER consumption in material balance
-            # But before consumption happens, inventory includes what's available
-            # So we need to use prev_day inventory + arrivals, not current inventory
-            # Actually, simpler: material balance already enforces this implicitly via inv >= 0
-            # But we need explicit upper bound on consumption
-
-            # Available inventory states for consumption
-            available_inv = 0
-            if (node_id, prod, 'ambient', t) in model.inventory:
-                # Can consume from ambient (but inventory[t] is AFTER consumption)
-                # Need to account for the fact that material balance is:
-                # inventory[t] = inventory[t-1] + arrivals - consumed
-                # So: consumed <= inventory[t-1] + arrivals
-                # This is complex - simpler approach: just bound consumed by a large number
-                # Actually, the issue is that material balance doesn't FORCE consumption
-                # Let's try a different approach: make shortage MORE expensive than production
-                return Constraint.Skip
-
-            return Constraint.Skip
-
-        # Actually, the real issue is different - let me not add this constraint yet
-        # and instead check why material balance isn't working
 
         print(f"  Demand balance constraints: {len(demand_keys)}")
 
@@ -1750,11 +1845,22 @@ class SlidingWindowModel(BaseOptimizationModel):
     def _build_objective(self, model: ConcreteModel):
         """Build objective function.
 
-        Minimize: labor + transport + holding + shortage + changeover + waste
+        Minimize: production + labor + transport + holding + shortage + disposal + changeover + waste
 
         NO explicit staleness penalty - holding costs implicitly drive freshness.
         """
         print(f"\nBuilding objective...")
+
+        # PRODUCTION COST (direct manufacturing cost)
+        production_cost = 0
+        if hasattr(model, 'production'):
+            prod_cost_per_unit = self.cost_structure.production_cost_per_unit or 1.30
+            from pyomo.environ import quicksum
+            production_cost = prod_cost_per_unit * quicksum(
+                model.production[node_id, prod, t]
+                for (node_id, prod, t) in model.production
+            )
+            print(f"  Production cost: ${prod_cost_per_unit:.2f}/unit")
 
         # HOLDING COST (via integer pallets - drives turnover/freshness)
         holding_cost = 0
@@ -1865,8 +1971,8 @@ class SlidingWindowModel(BaseOptimizationModel):
                 route = next((r for r in self.routes if r.origin_node_id == origin and r.destination_node_id == dest), None)
                 if route and hasattr(route, 'cost_per_unit') and route.cost_per_unit:
                     transport_cost += route.cost_per_unit * model.in_transit[origin, dest, prod, departure_date, state]
-            if transport_cost > 0:
-                print(f"  Transport cost: route costs included")
+            # Note: Can't check if transport_cost > 0 (it's a Pyomo expression)
+            print(f"  Transport cost: route costs included")
 
         # CHANGEOVER COST (per product start) + YIELD LOSS
         changeover_cost = 0
@@ -1922,6 +2028,7 @@ class SlidingWindowModel(BaseOptimizationModel):
 
         # TOTAL OBJECTIVE
         total_cost = (
+            production_cost +  # CRITICAL: Direct manufacturing cost
             labor_cost +
             transport_cost +
             holding_cost +
@@ -1939,8 +2046,7 @@ class SlidingWindowModel(BaseOptimizationModel):
         )
 
         print(f"\nObjective built")
-        print(f"  Active components: labor + transport + holding + shortage + changeover (cost + waste)")
-        print(f"  Optional: waste (end-of-horizon penalty)")
+        print(f"  Active components: production + labor + transport + holding + shortage + disposal + changeover (cost + waste) + waste")
         print(f"  Staleness: IMPLICIT via holding costs (inventory costs money)")
 
     def extract_solution(self, model: ConcreteModel) -> 'OptimizationSolution':
@@ -1987,6 +2093,27 @@ class SlidingWindowModel(BaseOptimizationModel):
             logger.warning("NO PRODUCTION EXTRACTED! Check if model.production variable exists and has values.")
             if hasattr(model, 'production'):
                 logger.info(f"model.production index size: {len(model.production)}")
+
+                # Check if ANY production variables have non-zero values
+                non_zero_count = 0
+                sample_values = []
+                for key in list(model.production.keys())[:20]:  # Check first 20
+                    try:
+                        val = value(model.production[key])
+                        if val and abs(val) > 0.01:
+                            non_zero_count += 1
+                            if len(sample_values) < 5:
+                                sample_values.append((key, val))
+                    except:
+                        pass
+
+                logger.info(f"Non-zero production variables found: {non_zero_count}")
+                if sample_values:
+                    logger.info(f"Sample production values:")
+                    for key, val in sample_values:
+                        logger.info(f"  production{key} = {val:.2f}")
+                else:
+                    logger.error("All production variables are ZERO! This confirms zero production solution.")
             else:
                 logger.error("model.production does not exist!")
 

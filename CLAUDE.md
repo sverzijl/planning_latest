@@ -354,6 +354,9 @@ pytest tests/test_ui_integration_complete.py -v
 14. **Mix-based production enforcement:** (2025-10-23) Production occurs in integer multiples of product-specific batch sizes. Each product has a `units_per_mix` parameter (e.g., 415 units per mix), and the optimization model uses integer `mix_count` variables with production as a derived expression (`production = mix_count × units_per_mix`). This reflects real manufacturing constraints where products are made in discrete batches, not continuous quantities.
 
 **Recent Key Updates:**
+- **Data Validation Architecture** (Nov 3, 2025): Robust fail-fast validation layer with Pydantic schemas; automatic product ID resolution; network topology validation; prevents entire classes of bugs. See `docs/DATA_VALIDATION_ARCHITECTURE.md`
+- **Disposal Pathway Fix** (Nov 3, 2025): Disposal variables now only created for dates ≥ expiration date; prevents disposing fresh inventory to avoid production costs; fixes potential zero-production issue (`src/optimization/sliding_window_model.py` lines 575-626)
+- **Zero Production Bug Fix** (Nov 3, 2025): Root cause was product ID mismatch (inventory SKUs vs forecast names); fixed via validation layer with automatic resolution; see `docs/SESSION_SUMMARY_VALIDATION_AND_DISPOSAL.md`
 - **Sliding Window Model** (Oct 27, 2025): Complete rewrite using sliding window shelf life constraints; 60-220× speedup, 46× fewer variables, production-ready and validated
 - **APPSI HiGHS Integration**: Modern persistent solver interface with proper termination condition mapping
 - **Shipment Date Range Fix**: Extended shipment variables to handle deliveries beyond planning horizon (critical for material balance)
