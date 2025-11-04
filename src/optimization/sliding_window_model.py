@@ -140,9 +140,10 @@ class SlidingWindowModel(BaseOptimizationModel):
         # Store inputs (compatible with UnifiedNodeModel)
         self.nodes = {node.id: node for node in nodes}
         self.nodes_list = nodes
-        self.routes = routes
+        self.routes = routes  # Will be expanded below
         self.products = products
         self.products_dict = products
+        self.truck_schedules = truck_schedules or []
 
         # Convert forecast to demand dict (FILTER to planning horizon only!)
         self.demand = {}
@@ -174,6 +175,38 @@ class SlidingWindowModel(BaseOptimizationModel):
             initial_inventory, inventory_snapshot_date
         )
         self.inventory_snapshot_date = inventory_snapshot_date  # Store for shelf life calculations
+
+        # CRITICAL FIX: Expand intermediate stops and build truck-day mapping
+        # This fixes two bugs:
+        # 1. Lineage not receiving goods (intermediate stop ignored)
+        # 2. Trucks running on wrong days (day-of-week not enforced)
+        if self.truck_schedules:
+            # Expand routes to include intermediate stop legs FIRST
+            self.routes = self._expand_intermediate_stop_routes()
+
+            # FAIL-FAST VALIDATION: Check truck schedules AFTER expansion
+            from src.validation.truck_schedule_validator import validate_truck_schedules
+            is_valid, validation_issues = validate_truck_schedules(
+                self.truck_schedules, self.routes, self.nodes
+            )
+
+            # Log warnings and errors
+            for issue in validation_issues:
+                if issue.severity == 'error':
+                    print(f"  ❌ ERROR: {issue.message}")
+                elif issue.severity == 'warning':
+                    print(f"  ⚠️  WARNING: {issue.message}")
+
+            if not is_valid:
+                error_messages = [issue.message for issue in validation_issues if issue.severity == 'error']
+                raise ValueError(
+                    f"Truck schedule validation failed:\n" + "\n".join(f"  - {msg}" for msg in error_messages)
+                )
+
+            # Build mapping of which routes can run on which days
+            self.truck_route_days = self._build_truck_route_day_mapping()
+        else:
+            self.truck_route_days = {}
 
         # Build network indices
         self._build_network_indices()
@@ -358,6 +391,112 @@ class SlidingWindowModel(BaseOptimizationModel):
             for route in lineage_routes_to:
                 print(f"    - {route.origin_node_id} → Lineage (mode={route.transport_mode}, days={route.transit_days})")
 
+    def _expand_intermediate_stop_routes(self) -> List[UnifiedRoute]:
+        """Expand truck routes with intermediate stops into explicit route legs.
+
+        For trucks with intermediate stops (e.g., 6122 → Lineage → 6125),
+        creates explicit routes for each leg if they don't already exist.
+
+        Returns:
+            Extended route list with intermediate stop legs added
+        """
+        from src.models.unified_route import TransportMode
+
+        extended_routes = self.routes.copy()
+        routes_added = []
+
+        if not self.truck_schedules:
+            return extended_routes
+
+        for truck in self.truck_schedules:
+            if not truck.intermediate_stops:
+                continue
+
+            # Build full path: origin → stop1 → stop2 → ... → destination
+            path = [truck.origin_node_id] + truck.intermediate_stops + [truck.destination_node_id]
+
+            # Create route for each leg
+            for i in range(len(path) - 1):
+                origin = path[i]
+                dest = path[i + 1]
+
+                # Check if route already exists
+                existing = any(r for r in extended_routes
+                              if r.origin_node_id == origin and r.destination_node_id == dest)
+
+                if existing:
+                    continue  # Route already exists
+
+                # Create new route for this intermediate leg
+                # Use defaults: 1 day transit, ambient mode, 0 cost
+                new_route = UnifiedRoute(
+                    id=f"ROUTE_{origin}_to_{dest}_intermediate",
+                    origin_node_id=origin,
+                    destination_node_id=dest,
+                    transit_days=1.0,  # Default for intermediate transfers
+                    transport_mode=TransportMode.AMBIENT,  # Will transform at intermediate node
+                    cost_per_unit=0.0  # No additional cost for intermediate transfer
+                )
+
+                extended_routes.append(new_route)
+                routes_added.append(f"{origin} → {dest}")
+
+        if routes_added:
+            print(f"\n  Expanded {len(routes_added)} intermediate stop routes:")
+            for route_str in routes_added:
+                print(f"    + {route_str}")
+
+        return extended_routes
+
+    def _build_truck_route_day_mapping(self) -> Dict[Tuple[str, str], Set[str]]:
+        """Build mapping of which routes can be used on which days.
+
+        Returns:
+            Dict[(origin_id, dest_id), Set[day_of_week_name]]
+
+        Example:
+            {('6122', '6125'): {'monday', 'tuesday', 'wednesday', 'thursday', 'friday'},
+             ('6122', '6104'): {'monday', 'wednesday', 'friday'},
+             ('6122', '6110'): {'tuesday', 'thursday'},
+             ('6122', 'Lineage'): {'wednesday'}}
+        """
+        truck_route_days = {}
+
+        if not self.truck_schedules:
+            # No truck schedules - all routes available every day
+            return {}
+
+        day_map = {
+            0: 'monday', 1: 'tuesday', 2: 'wednesday', 3: 'thursday',
+            4: 'friday', 5: 'saturday', 6: 'sunday'
+        }
+
+        for truck in self.truck_schedules:
+            # Build path including intermediate stops
+            path_nodes = [truck.origin_node_id]
+            if truck.intermediate_stops:
+                path_nodes.extend(truck.intermediate_stops)
+            path_nodes.append(truck.destination_node_id)
+
+            # Each leg in the path can be used on this truck's day
+            for i in range(len(path_nodes) - 1):
+                origin = path_nodes[i]
+                dest = path_nodes[i + 1]
+                route_key = (origin, dest)
+
+                if route_key not in truck_route_days:
+                    truck_route_days[route_key] = set()
+
+                if truck.day_of_week:
+                    # Specific day only
+                    day_str = truck.day_of_week.value if hasattr(truck.day_of_week, 'value') else str(truck.day_of_week)
+                    truck_route_days[route_key].add(day_str.lower())
+                else:
+                    # Runs every day
+                    truck_route_days[route_key].update(day_map.values())
+
+        return truck_route_days
+
     def build_model(self) -> ConcreteModel:
         """Build the Pyomo optimization model.
 
@@ -519,11 +658,35 @@ class SlidingWindowModel(BaseOptimizationModel):
         # First-day arrivals from pre-horizon departures are NOT modeled as variables
         # (You can't decide to ship goods before planning starts!)
         # Any goods in-transit at start should be in initial_inventory at destination
+        #
+        # CRITICAL FIX (2025-11-04): Enforce truck day-of-week restrictions
+        # Only create variables for route-day combinations where a truck actually runs
         in_transit_index = []
+        skipped_no_truck_days = 0
+
+        day_of_week_map = {
+            0: 'monday', 1: 'tuesday', 2: 'wednesday', 3: 'thursday',
+            4: 'friday', 5: 'saturday', 6: 'sunday'
+        }
+
         for route in self.routes:
+            route_key = (route.origin_node_id, route.destination_node_id)
+            valid_days = self.truck_route_days.get(route_key, set())
+
+            # If no truck schedule for this route, allow any day (backwards compatibility)
+            has_truck_schedule = len(valid_days) > 0
+
             for prod in model.products:
                 # Create in-transit variables ONLY for planning horizon departures
                 for departure_date in model.dates:
+                    # CRITICAL: Check if truck runs on this day of week
+                    if has_truck_schedule:
+                        day_name = day_of_week_map[departure_date.weekday()]
+                        if day_name not in valid_days:
+                            # No truck on this day for this route - skip variable
+                            skipped_no_truck_days += 2  # 2 states
+                            continue
+
                     # In-transit can be in frozen or ambient state
                     for state in ['frozen', 'ambient']:
                         in_transit_index.append((
@@ -540,6 +703,8 @@ class SlidingWindowModel(BaseOptimizationModel):
             doc="In-transit inventory by route, product, DEPARTURE date, state"
         )
         print(f"  In-transit variables: {len(in_transit_index)} (indexed by DEPARTURE date)")
+        if skipped_no_truck_days > 0:
+            print(f"    Skipped {skipped_no_truck_days} invalid route-day combinations (day-of-week enforcement)")
 
         # PALLET VARIABLES (optional - for storage costs)
         if self.use_pallet_tracking:
