@@ -2371,26 +2371,45 @@ class SlidingWindowModel(BaseOptimizationModel):
         solution['total_changeover_waste_cost'] = 0
         solution['total_waste_cost'] = 0
 
-        # Try to extract holding cost from pallet variables
+        # Extract holding cost from pallet variables
         if hasattr(model, 'pallet_count'):
+            print(f"\nDEBUG: Extracting holding cost from {len(model.pallet_count)} pallet_count variables...")
+
             try:
                 frozen_cost_per_pallet_day = getattr(self.cost_structure, 'storage_cost_per_pallet_day_frozen', 0) or 0
                 ambient_cost_per_pallet_day = getattr(self.cost_structure, 'storage_cost_per_pallet_day_ambient', 0) or 0
 
+                print(f"  Frozen cost/pallet/day: ${frozen_cost_per_pallet_day:.2f}")
+                print(f"  Ambient cost/pallet/day: ${ambient_cost_per_pallet_day:.2f}")
+
+                pallet_days_frozen = 0
+                pallet_days_ambient = 0
+
                 for (node_id, prod, state, t) in model.pallet_count:
-                    pallets = value(model.pallet_count[node_id, prod, state, t])
-                    if pallets > 0.01:
-                        if state == 'frozen':
-                            solution['frozen_holding_cost'] += pallets * frozen_cost_per_pallet_day
-                        elif state in ['ambient', 'thawed']:
-                            solution['ambient_holding_cost'] += pallets * ambient_cost_per_pallet_day
+                    try:
+                        pallets = value(model.pallet_count[node_id, prod, state, t])
+                        if pallets > 0.01:
+                            if state == 'frozen':
+                                solution['frozen_holding_cost'] += pallets * frozen_cost_per_pallet_day
+                                pallet_days_frozen += pallets
+                            elif state in ['ambient', 'thawed']:
+                                solution['ambient_holding_cost'] += pallets * ambient_cost_per_pallet_day
+                                pallet_days_ambient += pallets
+                    except Exception as e:
+                        # Skip variables that aren't set
+                        pass
 
                 solution['total_holding_cost'] = solution['frozen_holding_cost'] + solution['ambient_holding_cost']
 
-                logger.info(f"Holding cost extracted: frozen=${solution['frozen_holding_cost']:,.2f}, ambient=${solution['ambient_holding_cost']:,.2f}")
+                print(f"  Pallet-days: frozen={pallet_days_frozen:.0f}, ambient={pallet_days_ambient:.0f}")
+                print(f"  Holding cost extracted: frozen=${solution['frozen_holding_cost']:,.2f}, ambient=${solution['ambient_holding_cost']:,.2f}, total=${solution['total_holding_cost']:,.2f}")
+
             except Exception as e:
-                logger.warning(f"Failed to extract holding cost from pallet variables: {e}")
-                pass
+                print(f"  ERROR extracting holding cost: {e}")
+                import traceback
+                traceback.print_exc()
+        else:
+            print(f"\nDEBUG: Model does not have pallet_count variables - holding cost will be $0")
 
         # Extract pallet entry costs (fixed costs)
         if hasattr(model, 'pallet_entry'):
