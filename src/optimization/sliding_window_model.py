@@ -1925,11 +1925,10 @@ class SlidingWindowModel(BaseOptimizationModel):
                 doc="Link total_starts to sum of product_start (overhead optimization)"
             )
 
-            def any_production_link_rule(model, node_id, t):
-                """If ANY product is produced, any_production must be 1."""
+            def any_production_upper_link_rule(model, node_id, t):
+                """If ANY product is produced, any_production must be 1 (upper bound)."""
                 # Big-M approach: any_production * N >= sum of product_produced
                 # If sum > 0, forces any_production = 1
-                # If sum = 0, allows any_production = 0 (minimization will set to 0)
                 num_products = len(model.products)
                 return model.any_production[node_id, t] * num_products >= sum(
                     model.product_produced[node_id, prod, t]
@@ -1937,10 +1936,27 @@ class SlidingWindowModel(BaseOptimizationModel):
                     if (node_id, prod, t) in model.product_produced
                 )
 
-            model.any_production_link_con = Constraint(
+            def any_production_lower_link_rule(model, node_id, t):
+                """If NO products produced, any_production must be 0 (lower bound)."""
+                # If any_production = 1, at least one product must be produced
+                # Equivalently: any_production <= sum of product_produced
+                # This ensures: production = 0 → any_production = 0
+                return model.any_production[node_id, t] <= sum(
+                    model.product_produced[node_id, prod, t]
+                    for prod in model.products
+                    if (node_id, prod, t) in model.product_produced
+                )
+
+            model.any_production_upper_link_con = Constraint(
                 [(node.id, t) for node in self.manufacturing_nodes for t in model.dates],
-                rule=any_production_link_rule,
-                doc="Link any_production to existence of product_produced (overhead optimization)"
+                rule=any_production_upper_link_rule,
+                doc="Link any_production upper: forces 1 if producing (overhead optimization)"
+            )
+
+            model.any_production_lower_link_con = Constraint(
+                [(node.id, t) for node in self.manufacturing_nodes for t in model.dates],
+                rule=any_production_lower_link_rule,
+                doc="Link any_production lower: forces 0 if not producing (overhead optimization)"
             )
 
             print(f"    Changeover aggregation linking constraints added (overhead optimization)")
