@@ -2135,8 +2135,41 @@ class SlidingWindowModel(BaseOptimizationModel):
             [(node.id, prod, t) for node in self.manufacturing_nodes
              for prod in model.products for t in model.dates],
             rule=product_binary_linking_rule,
-            doc="Link production quantity to product_produced binary"
+            doc="Link production quantity to product_produced binary (upper bound)"
         )
+
+        # REVERSE LINKING: If production > 0, force product_produced = 1
+        def product_binary_reverse_linking_rule(model, node_id, prod, t):
+            """If production > 0, product_produced must be 1 (lower bound).
+
+            This is the reverse of the Big-M constraint above.
+            Together they ensure: production > 0 ↔ product_produced = 1
+
+            Using epsilon forcing:
+              product_produced >= production / M
+
+            If production > 0: product_produced >= ε > 0, so product_produced = 1 (binary)
+            If production = 0: product_produced >= 0, can be 0 or 1 (minimization sets to 0)
+            """
+            if (node_id, prod, t) not in model.production:
+                return Constraint.Skip
+
+            node = self.nodes[node_id]
+            production_rate = node.capabilities.production_rate_per_hour or 1400
+            max_daily_production = production_rate * 14  # Max hours per day
+
+            # Force: product_produced >= production / M
+            # If production > 0, forces product_produced = 1
+            return model.product_produced[node_id, prod, t] >= model.production[node_id, prod, t] / max_daily_production
+
+        model.product_binary_reverse_linking_con = Constraint(
+            [(node.id, prod, t) for node in self.manufacturing_nodes
+             for prod in model.products for t in model.dates],
+            rule=product_binary_reverse_linking_rule,
+            doc="Link product_produced binary to production quantity (lower bound)"
+        )
+
+        print(f"    Product-binary bidirectional linking constraints added")
 
         # CHANGEOVER AGGREGATION LINKING (Overhead optimization)
         # Link pre-aggregated variables to binary sums for efficient overhead calculation
