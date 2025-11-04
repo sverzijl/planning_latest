@@ -275,8 +275,17 @@ class BaseOptimizationModel(ABC):
         # Configure HiGHS-specific options (same as legacy interface)
         solver.highs_options['presolve'] = 'on'
         solver.highs_options['parallel'] = 'on'
-        solver.highs_options['threads'] = os.cpu_count() or 4
         solver.highs_options['mip_detect_symmetry'] = True
+
+        # MEMORY OPTIMIZATION: Limit memory-intensive B&B operations
+        # These options prevent OOM errors on large problems (12+ week horizons)
+        solver.highs_options['mip_max_leaves'] = 1000          # Limit B&B tree size
+        solver.highs_options['mip_pool_soft_limit'] = 100      # Limit solution pool
+
+        # Thread count: Use fewer threads to reduce memory per thread
+        # Full cores can cause OOM on large problems
+        max_threads = os.cpu_count() or 4
+        solver.highs_options['threads'] = min(4, max_threads)  # Cap at 4 threads
 
         if use_aggressive_heuristics:
             solver.highs_options['mip_heuristic_effort'] = 1.0
@@ -284,6 +293,7 @@ class BaseOptimizationModel(ABC):
             solver.highs_options['mip_heuristic_run_zi_round'] = True
             solver.highs_options['mip_heuristic_run_shifting'] = True
         else:
+            # Memory-efficient heuristics for large problems
             solver.highs_options['mip_heuristic_effort'] = 0.5
             solver.highs_options['mip_lp_age_limit'] = 10
 

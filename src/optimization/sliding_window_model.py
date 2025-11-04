@@ -692,6 +692,26 @@ class SlidingWindowModel(BaseOptimizationModel):
 
         print(f"  Binary product indicators: {len(product_produced_index) * 2}")
 
+        # CHANGEOVER OVERHEAD OPTIMIZATION: Pre-aggregated variables
+        # Instead of inline sums in overhead calculation, pre-compute totals
+        # This reduces constraint complexity from 2N binaries to 1 binary + 1 integer
+        changeover_agg_index = [(node.id, t) for node in self.manufacturing_nodes for t in model.dates]
+
+        model.total_starts = Var(
+            changeover_agg_index,
+            within=NonNegativeIntegers,
+            bounds=(0, len(model.products)),
+            doc="Total product starts on date (optimization: pre-aggregated sum)"
+        )
+
+        model.any_production = Var(
+            changeover_agg_index,
+            within=Binary,
+            doc="1 if any production on date (optimization: replaces sum check)"
+        )
+
+        print(f"  Changeover aggregation variables: {len(changeover_agg_index) * 2} (overhead optimization)")
+
         # LABOR VARIABLES (for cost modeling)
         labor_index = [
             (node.id, t)
@@ -1718,27 +1738,18 @@ class SlidingWindowModel(BaseOptimizationModel):
             production_time = total_production / production_rate
 
             # Calculate overhead time (startup + shutdown + changeover)
+            # OPTIMIZED: Use pre-aggregated variables instead of inline sums
             overhead_time = 0
-            if hasattr(model, 'product_start'):
+            if hasattr(model, 'total_starts') and (node_id, t) in model.total_starts:
                 # Get overhead parameters from node capabilities
                 startup_hours = node.capabilities.daily_startup_hours or 0.5
                 shutdown_hours = node.capabilities.daily_shutdown_hours or 0.25
                 changeover_hours = node.capabilities.default_changeover_hours or 0.5
 
-                # Count number of product starts (0→1 transitions)
-                num_starts = sum(
-                    model.product_start[node_id, prod, t]
-                    for prod in model.products
-                    if (node_id, prod, t) in model.product_start
-                )
-
-                # Check if we're producing anything (at least one product)
-                producing = sum(
-                    model.product_produced[node_id, prod, t]
-                    for prod in model.products
-                    if (node_id, prod, t) in model.product_produced
-                )
-
+                # Use pre-computed aggregation variables (reduces constraint complexity)
+                # Old: 2N binary variables in inline sums
+                # New: 1 binary + 1 integer variable (N linking constraints elsewhere)
+                #
                 # Overhead calculation:
                 # - Startup/shutdown: applied once if producing (any products)
                 # - Changeover: applied per product start
@@ -1746,12 +1757,12 @@ class SlidingWindowModel(BaseOptimizationModel):
                 # If 2 products: overhead = startup + shutdown + 1 changeover (2 starts)
                 # If N products: overhead = startup + shutdown + (N-1) changeovers (N starts)
                 #
-                # Formula: overhead = (startup + shutdown) * producing + changeover * num_starts
-                # Since num_starts = producing when producing 1 product, we subtract to avoid double counting:
-                # overhead = (startup + shutdown) * producing + changeover * (num_starts - producing)
-                #
-                # This simplifies to: (startup + shutdown - changeover) * producing + changeover * num_starts
-                overhead_time = (startup_hours + shutdown_hours) * producing + changeover_hours * (num_starts - producing)
+                # Formula: overhead = (startup + shutdown) * any_production +
+                #                     changeover * (total_starts - any_production)
+                overhead_time = (
+                    (startup_hours + shutdown_hours) * model.any_production[node_id, t] +
+                    changeover_hours * (model.total_starts[node_id, t] - model.any_production[node_id, t])
+                )
 
             # Total time = production time + overhead time
             total_time = production_time + overhead_time
@@ -1896,6 +1907,43 @@ class SlidingWindowModel(BaseOptimizationModel):
             rule=product_binary_linking_rule,
             doc="Link production quantity to product_produced binary"
         )
+
+        # CHANGEOVER AGGREGATION LINKING (Overhead optimization)
+        # Link pre-aggregated variables to binary sums for efficient overhead calculation
+        if hasattr(model, 'total_starts'):
+            def total_starts_link_rule(model, node_id, t):
+                """Sum of product starts equals total_starts variable."""
+                return model.total_starts[node_id, t] == sum(
+                    model.product_start[node_id, prod, t]
+                    for prod in model.products
+                    if (node_id, prod, t) in model.product_start
+                )
+
+            model.total_starts_link_con = Constraint(
+                [(node.id, t) for node in self.manufacturing_nodes for t in model.dates],
+                rule=total_starts_link_rule,
+                doc="Link total_starts to sum of product_start (overhead optimization)"
+            )
+
+            def any_production_link_rule(model, node_id, t):
+                """If ANY product is produced, any_production must be 1."""
+                # Big-M approach: any_production * N >= sum of product_produced
+                # If sum > 0, forces any_production = 1
+                # If sum = 0, allows any_production = 0 (minimization will set to 0)
+                num_products = len(model.products)
+                return model.any_production[node_id, t] * num_products >= sum(
+                    model.product_produced[node_id, prod, t]
+                    for prod in model.products
+                    if (node_id, prod, t) in model.product_produced
+                )
+
+            model.any_production_link_con = Constraint(
+                [(node.id, t) for node in self.manufacturing_nodes for t in model.dates],
+                rule=any_production_link_rule,
+                doc="Link any_production to existence of product_produced (overhead optimization)"
+            )
+
+            print(f"    Changeover aggregation linking constraints added (overhead optimization)")
 
         print(f"    Changeover detection constraints added")
 
