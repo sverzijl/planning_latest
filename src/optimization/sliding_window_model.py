@@ -2386,7 +2386,10 @@ class SlidingWindowModel(BaseOptimizationModel):
                             solution['ambient_holding_cost'] += pallets * ambient_cost_per_pallet_day
 
                 solution['total_holding_cost'] = solution['frozen_holding_cost'] + solution['ambient_holding_cost']
-            except:
+
+                logger.info(f"Holding cost extracted: frozen=${solution['frozen_holding_cost']:,.2f}, ambient=${solution['ambient_holding_cost']:,.2f}")
+            except Exception as e:
+                logger.warning(f"Failed to extract holding cost from pallet variables: {e}")
                 pass
 
         # Extract pallet entry costs (fixed costs)
@@ -2407,7 +2410,10 @@ class SlidingWindowModel(BaseOptimizationModel):
                 # Add pallet entry costs to holding costs
                 solution['total_holding_cost'] += pallet_entry_cost
                 solution['frozen_holding_cost'] += pallet_entry_cost  # Simplified - mostly frozen
-            except:
+
+                logger.info(f"Pallet entry cost extracted: ${pallet_entry_cost:,.2f}")
+            except Exception as e:
+                logger.warning(f"Failed to extract pallet entry costs: {e}")
                 pass
 
         # Try to extract changeover costs

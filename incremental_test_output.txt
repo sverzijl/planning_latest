@@ -1,0 +1,197 @@
+
+
+
+╔==============================================================================╗
+║                    INCREMENTAL MODEL BUILD TEST SUITE                        ║
+╚==============================================================================╝
+
+================================================================================
+LEVEL 1: BASIC PRODUCTION-DEMAND MODEL
+================================================================================
+
+Setup:
+  Days: 3
+  Demand: [100, 150, 200] (total: 450 units)
+
+Variables created:
+  production[t]: 3
+  shipment[t]: 3
+  shortage[t]: 3
+
+Constraints added:
+  demand_satisfaction: 3
+  shipment_limit: 3
+
+Objective:
+  Min: production ($1.30/unit) + transport ($0.10/unit) + shortage ($10/unit)
+
+Solving...
+  Status: optimal
+  Objective: $630.00
+
+Solution:
+  production (non-zero values):
+    production2025-11-03 = 100.00
+    production2025-11-04 = 150.00
+    production2025-11-05 = 200.00
+  shipment (non-zero values):
+    shipment2025-11-03 = 100.00
+    shipment2025-11-04 = 150.00
+    shipment2025-11-05 = 200.00
+  shortage: ALL ZERO
+
+Summary:
+  Total demand: 450
+  Total production: 450
+  Total shipment: 450
+  Total shortage: 0
+
+✓ LEVEL 1 PASSED: Basic model works correctly!
+================================================================================
+
+================================================================================
+LEVEL 2: ADD MATERIAL BALANCE
+================================================================================
+
+Setup: Same as Level 1
+
+Constraints added:
+  material_balance: 3 (NEW)
+  demand_satisfaction: 3
+
+Solving...
+  Status: optimal
+  Objective: $630.00
+
+Solution:
+  production (non-zero values):
+    production2025-11-03 = 100.00
+    production2025-11-04 = 150.00
+    production2025-11-05 = 200.00
+  inventory: ALL ZERO
+  shipment (non-zero values):
+    shipment2025-11-03 = 100.00
+    shipment2025-11-04 = 150.00
+    shipment2025-11-05 = 200.00
+  shortage: ALL ZERO
+
+  Material Balance Verification:
+    ✓ 2025-11-03: inv=0 = 0 + 100 - 100
+    ✓ 2025-11-04: inv=0 = 0 + 150 - 150
+    ✓ 2025-11-05: inv=0 = 0 + 200 - 200
+
+Summary:
+  Total production: 450
+  Total shortage: 0
+
+✓ LEVEL 2 PASSED: Material balance works correctly!
+================================================================================
+
+================================================================================
+LEVEL 3: ADD INITIAL INVENTORY
+================================================================================
+
+Setup:
+  Days: 3
+  Demand: [100, 150, 200] (total: 450)
+  Initial inventory: 100 units (NEW)
+
+Constraints:
+  material_balance (with init_inv on Day 1): 3
+  demand_satisfaction: 3
+
+Solving...
+  Status: optimal
+  Objective: $500.00
+
+Solution:
+  production (non-zero values):
+    production2025-11-04 = 150.00
+    production2025-11-05 = 200.00
+  inventory: ALL ZERO
+  shipment (non-zero values):
+    shipment2025-11-03 = 100.00
+    shipment2025-11-04 = 150.00
+    shipment2025-11-05 = 200.00
+  shortage: ALL ZERO
+
+  Material Balance Verification:
+    ✓ 2025-11-03: inv=0 = 100 + -0 - 100
+    ✓ 2025-11-04: inv=0 = 0 + 150 - 150
+    ✓ 2025-11-05: inv=0 = 0 + 200 - 200
+
+Summary:
+  Total demand: 450
+  Initial inventory: 100
+  Required production: 350
+  Actual production: 350
+  Actual shortage: 0
+
+✓ LEVEL 3 PASSED: Initial inventory handled correctly!
+================================================================================
+
+================================================================================
+LEVEL 4: ADD SLIDING WINDOW CONSTRAINTS
+================================================================================
+CRITICAL: This is where we expect the zero production bug to appear!
+
+Setup:
+  Days: 5
+  Demand: [80, 80, 80, 80, 80] (total: 400)
+  Initial inventory: 100 units
+  Shelf life: 3 days (sliding window)
+  Required production: 300 units
+
+  Day 1 sliding_window:
+    Window dates: [1] (indices)
+    Window size: 1 days
+    Init_inv in Q: YES (100 units) - window includes Day 1
+    Constraint: inventory[1] <= Q - O
+
+  Day 2 sliding_window:
+    Window dates: [1, 2] (indices)
+    Window size: 2 days
+    Init_inv in Q: YES (100 units) - window includes Day 1
+    Constraint: inventory[2] <= Q - O
+
+  Day 3 sliding_window:
+    Window dates: [1, 2, 3] (indices)
+    Window size: 3 days
+    Init_inv in Q: YES (100 units) - window includes Day 1
+    Constraint: inventory[3] <= Q - O
+
+  Day 4 sliding_window:
+    Window dates: [2, 3, 4] (indices)
+    Window size: 3 days
+    Init_inv in Q: NO - window excludes Day 1
+    Constraint: inventory[4] <= Q - O
+
+  Day 5 sliding_window:
+    Window dates: [3, 4, 5] (indices)
+    Window size: 3 days
+    Init_inv in Q: NO - window excludes Day 1
+    Constraint: inventory[5] <= Q - O
+
+Constraints added:
+  sliding_window (shelf_life=3): 5
+
+Solving...
+Traceback (most recent call last):
+  File "/home/sverzijl/planning_latest/tests/test_incremental_model_levels.py", line 691, in <module>
+    test_level4_add_sliding_window()  # CRITICAL: Bug expected here
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/sverzijl/planning_latest/tests/test_incremental_model_levels.py", line 626, in test_level4_add_sliding_window
+    result = solver.solve(model, tee=False)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pyomo/contrib/appsi/base.py", line 1568, in solve
+    results: Results = super(LegacySolverInterface, self).solve(model)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pyomo/contrib/appsi/solvers/highs.py", line 297, in solve
+    res = self._solve(timer)
+          ^^^^^^^^^^^^^^^^^^
+  File "/home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pyomo/contrib/appsi/solvers/highs.py", line 281, in _solve
+    return self._postsolve(timer)
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/sverzijl/planning_latest/venv/lib/python3.11/site-packages/pyomo/contrib/appsi/solvers/highs.py", line 721, in _postsolve
+    raise RuntimeError(
+RuntimeError: A feasible solution was not found, so no solution can be loaded. If using the appsi.solvers.Highs interface, you can set opt.config.load_solution=False. If using the environ.SolverFactory interface, you can set opt.solve(model, load_solutions = False). Then you can check results.termination_condition and results.best_feasible_objective before loading a solution.

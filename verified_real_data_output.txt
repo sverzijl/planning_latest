@@ -1,0 +1,75 @@
+/home/sverzijl/planning_latest/src/parsers/inventory_parser.py:167: UserWarning: Found 8 negative quantity values. These were set to 0.
+  warnings.warn(
+/home/sverzijl/planning_latest/src/parsers/inventory_parser.py:173: UserWarning: Skipped 39 entries with Storage Location 5000 (excluded from inventory).
+  warnings.warn(
+================================================================================
+TESTING VERIFIED MODEL WITH REAL DATA
+================================================================================
+
+Data loaded:
+  Forecast entries: 20295
+  Locations: 11
+  Routes: 10
+  Initial inventory: 49 entries
+  Snapshot date: 2025-11-03
+  Nodes (unified): 11
+  Products: 5
+
+Planning horizon: 2025-11-03 to 2025-12-01
+  Demand in horizon: 346,687 units
+  Initial inventory: 49,581 units
+
+Building VerifiedSlidingWindowModel...
+
+================================================================================
+VERIFIED SLIDING WINDOW MODEL - Incrementally Built
+================================================================================
+Nodes: 11
+Routes: 10
+Products: 5
+Demand entries: 1305
+Initial inventory entries: 49
+Planning horizon: 2025-11-03 to 2025-12-01
+  Initialization took: 0.0s
+  Now building Pyomo model...
+
+Building Verified Sliding Window Model...
+  Dates: 29
+  Products: 5
+
+Adding variables...
+  Production variables: 145
+  Mix count variables: 145 (integer)
+  Inventory variables: 1595 (ambient + frozen)
+  Freeze flow variables: 0
+  Thaw flow variables: 0
+  In-transit variables: 1595 (ambient + frozen)
+  Demand_consumed variables: 1305
+  Shortage variables: 1305
+
+Adding constraints...
+  Adding mix production constraints...
+    Mix production: 145
+  Adding ambient material balance...
+    Ambient balance: 1450
+  Adding frozen material balance...
+    Frozen balance: 145
+  Adding sliding window...
+    Ambient sliding window: 1450
+    Frozen sliding window: 145
+  Adding demand satisfaction...
+    Demand satisfaction: 1305
+Constraints added
+
+Building objective...
+  Production cost: $1.30/unit
+  Transport cost: route costs included
+  Shortage cost: $10.00/unit
+Objective built: min(production + transport + shortage)
+
+Model built:
+  Variables: 6,090
+  Constraints: 4,640
+  Model building took: 0.1s
+
+Solving...
