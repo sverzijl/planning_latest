@@ -273,6 +273,29 @@ class SlidingWindowModel(BaseOptimizationModel):
                 print(issue)
             print(f"  Available products: {list(self.products.keys())[:5]}...")
 
+            # FAIL FAST: Product ID mismatches will cause incorrect results!
+            # Initial inventory won't be used, leading to excessive production or shortages
+            raise ValueError(
+                f"\n{'='*80}\n"
+                f"PRODUCT ID MISMATCH ERROR\n"
+                f"{'='*80}\n"
+                f"Found {len(product_mismatches)} inventory entries with product IDs that don't match model products.\n"
+                f"\n"
+                f"This will cause:\n"
+                f"  - Initial inventory to be ignored\n"
+                f"  - Incorrect production planning\n"
+                f"  - Wrong shortage calculations\n"
+                f"\n"
+                f"Solution:\n"
+                f"  1. Use validation architecture: load_validated_data() automatically resolves product IDs\n"
+                f"  2. Or ensure inventory file uses same product IDs as forecast\n"
+                f"  3. Or add Alias sheet to Excel file for automatic mapping\n"
+                f"\n"
+                f"Inventory uses: {list(set(k[1] for k in initial_inventory.keys()))[:5]}\n"
+                f"Forecast uses: {list(self.products.keys())[:5]}\n"
+                f"{'='*80}\n"
+            )
+
         if issues:
             print(f"  Found {len(issues)} incompatible state assignments:")
             for issue in issues[:10]:  # Show first 10
@@ -280,8 +303,17 @@ class SlidingWindowModel(BaseOptimizationModel):
             if len(issues) > 10:
                 print(f"  ... and {len(issues) - 10} more")
 
-        if not product_mismatches and not issues:
-            print(f"  ✓ All {len(converted)} entries have compatible states and products")
+            # FAIL FAST: Incompatible states will cause constraint errors
+            raise ValueError(
+                f"\n{'='*80}\n"
+                f"STATE COMPATIBILITY ERROR\n"
+                f"{'='*80}\n"
+                f"Found {len(issues)} inventory entries with incompatible storage states.\n"
+                f"Nodes don't support the states specified in initial inventory.\n"
+                f"{'='*80}\n"
+            )
+
+        print(f"  ✓ All {len(converted)} entries have compatible states and products")
 
         return converted
 
