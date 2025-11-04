@@ -1686,8 +1686,20 @@ class SlidingWindowModel(BaseOptimizationModel):
             print(f"    Mix-based production constraints added")
 
         # PRODUCTION CAPACITY: production_time <= labor_hours
-        def production_capacity_rule(model, node_id, t):
-            """Total production time cannot exceed available labor hours."""
+        # We need TWO constraints per manufacturing node-date:
+        # 1. Link labor_hours_used to production_time (equality)
+        # 2. Enforce labor_hours_used <= max_hours (capacity limit)
+
+        def production_time_link_rule(model, node_id, t):
+            """Link labor_hours_used to production time + overhead time.
+
+            This constraint sets labor_hours_used = production_time + overhead_time.
+
+            Overhead includes:
+            - Startup time (if producing)
+            - Shutdown time (if producing)
+            - Changeover time (per product start)
+            """
             node = self.nodes[node_id]
             if not node.can_produce():
                 return Constraint.Skip
@@ -1705,29 +1717,107 @@ class SlidingWindowModel(BaseOptimizationModel):
             )
             production_time = total_production / production_rate
 
+            # Calculate overhead time (startup + shutdown + changeover)
+            overhead_time = 0
+            if hasattr(model, 'product_start'):
+                # Get overhead parameters from node capabilities
+                startup_hours = node.capabilities.daily_startup_hours or 0.5
+                shutdown_hours = node.capabilities.daily_shutdown_hours or 0.25
+                changeover_hours = node.capabilities.default_changeover_hours or 0.5
+
+                # Count number of product starts (0→1 transitions)
+                num_starts = sum(
+                    model.product_start[node_id, prod, t]
+                    for prod in model.products
+                    if (node_id, prod, t) in model.product_start
+                )
+
+                # Check if we're producing anything (at least one product)
+                producing = sum(
+                    model.product_produced[node_id, prod, t]
+                    for prod in model.products
+                    if (node_id, prod, t) in model.product_produced
+                )
+
+                # Overhead calculation:
+                # - Startup/shutdown: applied once if producing (any products)
+                # - Changeover: applied per product start
+                # If 1 product: overhead = startup + shutdown (1 start, no changeover between products)
+                # If 2 products: overhead = startup + shutdown + 1 changeover (2 starts)
+                # If N products: overhead = startup + shutdown + (N-1) changeovers (N starts)
+                #
+                # Formula: overhead = (startup + shutdown) * producing + changeover * num_starts
+                # Since num_starts = producing when producing 1 product, we subtract to avoid double counting:
+                # overhead = (startup + shutdown) * producing + changeover * (num_starts - producing)
+                #
+                # This simplifies to: (startup + shutdown - changeover) * producing + changeover * num_starts
+                overhead_time = (startup_hours + shutdown_hours) * producing + changeover_hours * (num_starts - producing)
+
+            # Total time = production time + overhead time
+            total_time = production_time + overhead_time
+
             # Get available hours
             labor_day = self.labor_calendar.get_labor_day(t)
             if not labor_day:
                 return total_production == 0  # No labor → no production
 
-            # Simple capacity: use total available hours (fixed + overtime)
+            # Link to labor hours variable (if it exists)
+            if (node_id, t) in model.labor_hours_used:
+                return model.labor_hours_used[node_id, t] == total_time
+            else:
+                # No labor variable, skip linking
+                return Constraint.Skip
+
+        def production_capacity_limit_rule(model, node_id, t):
+            """Enforce labor capacity: labor_hours_used <= max_hours.
+
+            This constraint enforces the upper bound on labor hours.
+            It is separate from the linking constraint to ensure both are active.
+            """
+            node = self.nodes[node_id]
+            if not node.can_produce():
+                return Constraint.Skip
+
+            # Get production rate
+            production_rate = node.capabilities.production_rate_per_hour
+            if not production_rate or production_rate <= 0:
+                return Constraint.Skip
+
+            # Get available hours
+            labor_day = self.labor_calendar.get_labor_day(t)
+            if not labor_day:
+                return Constraint.Skip  # No labor day means production=0 (handled by link constraint)
+
+            # Calculate max hours
             if labor_day.is_fixed_day:
                 max_hours = labor_day.fixed_hours + (labor_day.overtime_hours if hasattr(labor_day, 'overtime_hours') else 0)
             else:
                 max_hours = 14.0  # Weekend/holiday max
 
-            # Link to labor hours variable
+            # Enforce capacity limit
             if (node_id, t) in model.labor_hours_used:
-                return model.labor_hours_used[node_id, t] == production_time
+                return model.labor_hours_used[node_id, t] <= max_hours
             else:
-                return production_time <= max_hours
+                # No labor variable - constraint handled elsewhere
+                return Constraint.Skip
 
-        model.production_capacity_con = Constraint(
-            [(node.id, t) for node in self.manufacturing_nodes for t in model.dates],
-            rule=production_capacity_rule,
-            doc="Production capacity: time <= available labor hours"
+        # Add both constraints
+        manufacturing_date_pairs = [(node.id, t) for node in self.manufacturing_nodes for t in model.dates]
+
+        model.production_time_link_con = Constraint(
+            manufacturing_date_pairs,
+            rule=production_time_link_rule,
+            doc="Link labor_hours_used to production time"
         )
-        print(f"    Production capacity constraints added")
+
+        model.production_capacity_limit_con = Constraint(
+            manufacturing_date_pairs,
+            rule=production_capacity_limit_rule,
+            doc="Enforce labor capacity: labor_hours_used <= max_hours"
+        )
+
+        print(f"    Production time linking constraints added")
+        print(f"    Production capacity limit constraints added")
 
         # OVERTIME DETECTION: overtime_hours >= hours_used - fixed_hours (for weekdays)
         if hasattr(model, 'overtime_hours'):
