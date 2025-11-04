@@ -205,6 +205,9 @@ class SlidingWindowModel(BaseOptimizationModel):
 
             # Build mapping of which routes can run on which days
             self.truck_route_days = self._build_truck_route_day_mapping()
+
+            # VALIDATION: Warn about first-day arrival gaps
+            self._validate_first_day_arrivals()
         else:
             self.truck_route_days = {}
 
@@ -504,6 +507,52 @@ class SlidingWindowModel(BaseOptimizationModel):
                     truck_route_days[route_key].update(day_map.values())
 
         return truck_route_days
+
+    def _validate_first_day_arrivals(self):
+        """Validate that first-day arrivals are properly handled in initial inventory.
+
+        Goods arriving on day 1 of planning horizon must have departed before horizon start.
+        Since we don't model pre-horizon decisions, these goods should be in initial_inventory.
+
+        This validation warns when routes have short transit times and destinations
+        may be missing in-transit goods from their initial inventory.
+        """
+        if not self.routes or not self.dates:
+            return
+
+        first_date = min(self.dates)
+        warnings = []
+
+        for route in self.routes:
+            # Check if goods could arrive on first day
+            if route.transit_days <= 0:
+                continue
+
+            # Departure needed for first-day arrival
+            needed_departure = first_date - timedelta(days=route.transit_days)
+
+            # If departure is before horizon, arrivals come from initial inventory
+            if needed_departure < first_date:
+                dest_id = route.destination_node_id
+
+                # Check if destination has initial inventory
+                has_init_inv = any(
+                    key[0] == dest_id
+                    for key in self.initial_inventory.keys()
+                )
+
+                # Special warning for critical nodes
+                if dest_id in ['Lineage', '6130'] and not has_init_inv:
+                    warnings.append(
+                        f"⚠️  Route {route.origin_node_id} → {dest_id} ({route.transit_days}d transit): "
+                        f"Goods arriving on {first_date} departed {needed_departure} (before horizon). "
+                        f"Should be in initial inventory at {dest_id}."
+                    )
+
+        if warnings:
+            print(f"\n  First-day arrival validation:")
+            for warning in warnings:
+                print(f"    {warning}")
 
     def build_model(self) -> ConcreteModel:
         """Build the Pyomo optimization model.
@@ -1470,12 +1519,26 @@ class SlidingWindowModel(BaseOptimizationModel):
                 thaw_inflow = model.thaw[node_id, prod, t]
 
             # Arrivals: goods that DEPARTED (t - transit_days) ago
-            # Only include if departure_date is within planning horizon
-            # (Pre-horizon arrivals should be in initial_inventory)
+            # CRITICAL FIX: Match on route transport mode, not arrival state!
+            # in_transit state = route transport mode (how shipped)
+            # arrival state = after transformation at destination
             arrivals = 0
             for route in self.routes_to_node[node_id]:
                 departure_date = t - timedelta(days=route.transit_days)
-                key = (route.origin_node_id, node_id, prod, departure_date, 'ambient')
+
+                if departure_date not in model.dates:
+                    continue
+
+                # Determine how goods arrive (may transform from transport mode)
+                arrival_state = self._determine_arrival_state(route, node)
+
+                if arrival_state != 'ambient':
+                    continue  # Not arriving as ambient inventory
+
+                # Look for in_transit variable using route's TRANSPORT mode
+                ship_state = 'frozen' if route.transport_mode == TransportMode.FROZEN else 'ambient'
+
+                key = (route.origin_node_id, node_id, prod, departure_date, ship_state)
 
                 # DIAGNOSTIC: Log for debugging arrivals issues
                 if node_id in ['6104', '6125'] and t == list(model.dates)[1] if len(list(model.dates)) > 1 else False:
@@ -1484,11 +1547,9 @@ class SlidingWindowModel(BaseOptimizationModel):
                     print(f"    Departure date: {departure_date}")
                     print(f"    departure_date in model.dates: {departure_date in model.dates}")
                     print(f"    Key in model.in_transit: {key in model.in_transit}")
-                    print(f"    Arrival state: {self._determine_arrival_state(route, node)}")
+                    print(f"    Arrival state: {arrival_state}")
 
-                if (departure_date in model.dates
-                    and key in model.in_transit
-                    and self._determine_arrival_state(route, node) == 'ambient'):
+                if key in model.in_transit:
                     arrivals += model.in_transit[key]
 
             # Outflows
@@ -1558,15 +1619,31 @@ class SlidingWindowModel(BaseOptimizationModel):
                 freeze_inflow = model.freeze[node_id, prod, t]
 
             # Arrivals: goods that DEPARTED (t - transit_days) ago
-            # Only include if departure_date is within planning horizon
-            arrivals = sum(
-                model.in_transit[route.origin_node_id, node_id, prod, departure_date, 'frozen']
-                for route in self.routes_to_node[node_id]
-                # Calculate when goods must have departed to arrive today
-                if (departure_date := t - timedelta(days=route.transit_days)) in model.dates
-                and (route.origin_node_id, node_id, prod, departure_date, 'frozen') in model.in_transit
-                and self._determine_arrival_state(route, node) == 'frozen'
-            )
+            # CRITICAL FIX: Match on route transport mode, not arrival state!
+            # Example: Lineage receives ambient goods that become frozen on arrival
+            #   - in_transit variable state = 'ambient' (route mode)
+            #   - arrival state = 'frozen' (transformation at destination)
+            arrivals = 0
+            for route in self.routes_to_node[node_id]:
+                departure_date = t - timedelta(days=route.transit_days)
+
+                if departure_date not in model.dates:
+                    continue
+
+                # Determine how goods arrive (may transform from transport mode)
+                arrival_state = self._determine_arrival_state(route, node)
+
+                if arrival_state != 'frozen':
+                    continue  # Not arriving as frozen inventory
+
+                # Look for in_transit variable using route's TRANSPORT mode
+                # (Not arrival state! in_transit state = how goods are shipped)
+                ship_state = 'frozen' if route.transport_mode == TransportMode.FROZEN else 'ambient'
+
+                key = (route.origin_node_id, node_id, prod, departure_date, ship_state)
+
+                if key in model.in_transit:
+                    arrivals += model.in_transit[key]
 
             # Outflows
             thaw_outflow = 0
@@ -1588,6 +1665,23 @@ class SlidingWindowModel(BaseOptimizationModel):
                 print(f"    production_inflow: {production_inflow}")
                 print(f"    freeze_inflow: {freeze_inflow}")
                 print(f"    arrivals: {arrivals}")
+
+                # DETAILED: Check each incoming route
+                print(f"    Routes TO Lineage: {len(self.routes_to_node[node_id])}")
+                for route in self.routes_to_node[node_id]:
+                    dep_date = t - timedelta(days=route.transit_days)
+                    arrival_state = self._determine_arrival_state(route, node)
+                    ship_state = 'frozen' if route.transport_mode == TransportMode.FROZEN else 'ambient'
+                    key = (route.origin_node_id, node_id, prod, dep_date, ship_state)
+
+                    print(f"      Route: {route.origin_node_id} → {node_id}")
+                    print(f"        Transport mode: {route.transport_mode}")
+                    print(f"        Ship state: {ship_state}")
+                    print(f"        Arrival state: {arrival_state}")
+                    print(f"        Departure date: {dep_date}")
+                    print(f"        Dep in horizon: {dep_date in model.dates}")
+                    print(f"        Key in model: {key in model.in_transit}")
+
                 print(f"    thaw_outflow: {thaw_outflow}")
                 print(f"    departures: {departures}")
                 # Check if departure variables exist
