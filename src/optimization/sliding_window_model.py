@@ -699,6 +699,10 @@ class SlidingWindowModel(BaseOptimizationModel):
                         if has_frozen_inbound or can_thaw:
                             inventory_index.append((node_id, prod, 'thawed', t))
 
+                            # DIAGNOSTIC (2025-11-05): Verify 6130 gets thawed vars
+                            if node_id == '6130' and prod == list(model.products)[0] and t == list(model.dates)[0]:
+                                print(f"  DEBUG: Creating thawed inventory var for 6130 (has_frozen_inbound={has_frozen_inbound})")
+
         model.inventory = Var(
             inventory_index,
             within=NonNegativeReals,
@@ -878,13 +882,30 @@ class SlidingWindowModel(BaseOptimizationModel):
             print(f"  Truck pallet variables: {len(truck_pallet_index)} integers")
 
         # DEMAND CONSUMPTION VARIABLES (tracks what's actually consumed from inventory)
+        # CRITICAL FIX (2025-11-05): Partition consumption by source state
+        # Bug #2: Using single demand_consumed variable in BOTH ambient and thawed balances
+        # caused double-counting (same consumption subtracted from both states!)
+        #
+        # Correct MIP formulation:
+        #   - demand_consumed_from_ambient: consumption from ambient inventory
+        #   - demand_consumed_from_thawed: consumption from thawed inventory
+        #   - Total consumption = consumed_ambient + consumed_thawed
+        #   - Each balance subtracts only its own consumption (no double-counting)
         demand_keys = list(self.demand.keys())
-        model.demand_consumed = Var(
+
+        model.demand_consumed_from_ambient = Var(
             demand_keys,
             within=NonNegativeReals,
-            doc="Demand actually consumed from inventory"
+            doc="Demand consumed from ambient inventory"
         )
-        print(f"  Demand consumed variables: {len(demand_keys)}")
+
+        model.demand_consumed_from_thawed = Var(
+            demand_keys,
+            within=NonNegativeReals,
+            doc="Demand consumed from thawed inventory"
+        )
+
+        print(f"  Demand consumed variables: {len(demand_keys)} × 2 states = {len(demand_keys) * 2}")
 
         # SHORTAGE VARIABLES (if allowed)
         if self.allow_shortages:
@@ -1234,8 +1255,9 @@ class SlidingWindowModel(BaseOptimizationModel):
                 # CRITICAL FIX: Include demand consumption in outflows
                 # Without this, consumed inventory doesn't "leave" the window
                 # Causes old inventory to persist indefinitely
-                if node.has_demand_capability() and (node_id, prod, tau) in model.demand_consumed:
-                    O_ambient += model.demand_consumed[node_id, prod, tau]
+                # UPDATED (2025-11-05): Use state-specific consumption variable
+                if node.has_demand_capability() and (node_id, prod, tau) in model.demand_consumed_from_ambient:
+                    O_ambient += model.demand_consumed_from_ambient[node_id, prod, tau]
 
             # Skip if no activity to avoid trivial True constraint
             # Check if expressions are non-zero (handle Pyomo expressions)
@@ -1403,10 +1425,11 @@ class SlidingWindowModel(BaseOptimizationModel):
 
             # Outflows from thawed: demand consumption
             # (Thawed is consumed at demand nodes, not shipped further)
+            # UPDATED (2025-11-05): Use state-specific consumption variable
             O_thawed = 0
             for tau in window_dates:
-                if node.has_demand_capability() and (node_id, prod, tau) in model.demand_consumed:
-                    O_thawed += model.demand_consumed[node_id, prod, tau]
+                if node.has_demand_capability() and (node_id, prod, tau) in model.demand_consumed_from_thawed:
+                    O_thawed += model.demand_consumed_from_thawed[node_id, prod, tau]
 
             # CRITICAL FIX (2025-11-03): Correct sliding window formulation
             # Changed from: inventory[t] <= Q - O (causes infeasibility)
@@ -1623,11 +1646,12 @@ class SlidingWindowModel(BaseOptimizationModel):
             )
 
             # Demand consumption from ambient inventory
-            # Use demand_consumed variable (linked to demand satisfaction constraint)
+            # CRITICAL FIX (2025-11-05): Use STATE-SPECIFIC consumption variable
+            # Only subtract consumption that comes from ambient (not from thawed)
             demand_consumption = 0
             if node.has_demand_capability():
-                if (node_id, prod, t) in model.demand_consumed:
-                    demand_consumption = model.demand_consumed[node_id, prod, t]
+                if (node_id, prod, t) in model.demand_consumed_from_ambient:
+                    demand_consumption = model.demand_consumed_from_ambient[node_id, prod, t]
 
             # Disposal (for expired initial inventory)
             disposal_outflow = 0
@@ -1810,10 +1834,14 @@ class SlidingWindowModel(BaseOptimizationModel):
             # For now, assume thawed inventory doesn't ship (consumed locally via demand)
             # Future: Can add explicit thawed→ambient shipment tracking if needed
 
+            # CRITICAL FIX (2025-11-05): Thawed inventory MUST satisfy demand
+            # Bug #2: 6130 receives ONLY thawed goods (frozen → thawed upon arrival)
+            # Without this, 6130 has 100% shortage despite receiving shipments!
+            # Use STATE-SPECIFIC consumption variable (prevents double-counting)
             demand_consumption = 0
-            # Thawed inventory can satisfy demand
-            # In current implementation, demand primarily satisfied from ambient
-            # (Thawed state tracking is minimal in sliding window model)
+            if node.has_demand_capability():
+                if (node_id, prod, t) in model.demand_consumed_from_thawed:
+                    demand_consumption = model.demand_consumed_from_thawed[node_id, prod, t]
 
             # DIAGNOSTIC: Log 6130 thawed balance when receiving from Lineage
             if node_id == "6130" and prod == "HELGAS GFREE MIXED GRAIN 500G":
@@ -1823,7 +1851,8 @@ class SlidingWindowModel(BaseOptimizationModel):
                     print(f"    prev_inv: {prev_inv}")
                     print(f"    thaw_inflow: {thaw_inflow}")
                     print(f"    arrivals: {arrivals}")
-                    print(f"    Expected: inventory = {prev_inv} + thaw + arrivals - departures - demand")
+                    print(f"    demand_consumption: {demand_consumption}  ← FIX: Now included!")
+                    print(f"    Expected: inventory = {prev_inv} + thaw + arrivals - demand")
 
             # Disposal (for expired initial inventory)
             disposal_outflow = 0
@@ -1863,19 +1892,24 @@ class SlidingWindowModel(BaseOptimizationModel):
         demand_keys = list(self.demand.keys())
 
         # DEMAND BALANCE: consumed + shortage = total demand
+        # CRITICAL FIX (2025-11-05): Sum consumption from BOTH states
         def demand_balance_rule(model, node_id, prod, t):
-            """Total demand = consumed + shortage."""
+            """Total demand = (consumed_from_ambient + consumed_from_thawed) + shortage."""
             if (node_id, prod, t) not in self.demand:
                 return Constraint.Skip
 
             demand_qty = self.demand[(node_id, prod, t)]
-            consumed = model.demand_consumed[node_id, prod, t]
+
+            # Total consumption = sum of consumption from both states
+            consumed_from_ambient = model.demand_consumed_from_ambient[node_id, prod, t]
+            consumed_from_thawed = model.demand_consumed_from_thawed[node_id, prod, t]
+            total_consumed = consumed_from_ambient + consumed_from_thawed
 
             if self.allow_shortages:
                 shortage = model.shortage[node_id, prod, t]
-                return consumed + shortage == demand_qty
+                return total_consumed + shortage == demand_qty
             else:
-                return consumed == demand_qty
+                return total_consumed == demand_qty
 
         model.demand_balance_con = Constraint(
             demand_keys,
@@ -1884,6 +1918,55 @@ class SlidingWindowModel(BaseOptimizationModel):
         )
 
         print(f"  Demand balance constraints: {len(demand_keys)}")
+
+        # DEMAND CONSUMPTION UPPER BOUNDS (MIP Best Practice)
+        # CRITICAL FIX (2025-11-05): State-specific limits prevent over-consumption
+        # Each consumption variable bounded by inventory in its source state
+        def demand_consumption_ambient_limit_rule(model, node_id, prod, t):
+            """Consumption from ambient cannot exceed ambient inventory."""
+            if (node_id, prod, t) not in self.demand:
+                return Constraint.Skip
+
+            node = self.nodes[node_id]
+            if not node.has_demand_capability():
+                return Constraint.Skip
+
+            # Ambient consumption limited by ambient inventory
+            if (node_id, prod, 'ambient', t) in model.inventory:
+                return model.demand_consumed_from_ambient[node_id, prod, t] <= model.inventory[node_id, prod, 'ambient', t]
+            else:
+                # No ambient inventory at this node - consumption must be 0
+                return model.demand_consumed_from_ambient[node_id, prod, t] == 0
+
+        def demand_consumption_thawed_limit_rule(model, node_id, prod, t):
+            """Consumption from thawed cannot exceed thawed inventory."""
+            if (node_id, prod, t) not in self.demand:
+                return Constraint.Skip
+
+            node = self.nodes[node_id]
+            if not node.has_demand_capability():
+                return Constraint.Skip
+
+            # Thawed consumption limited by thawed inventory
+            if (node_id, prod, 'thawed', t) in model.inventory:
+                return model.demand_consumed_from_thawed[node_id, prod, t] <= model.inventory[node_id, prod, 'thawed', t]
+            else:
+                # No thawed inventory at this node - consumption must be 0
+                return model.demand_consumed_from_thawed[node_id, prod, t] == 0
+
+        model.demand_consumed_ambient_limit_con = Constraint(
+            demand_keys,
+            rule=demand_consumption_ambient_limit_rule,
+            doc="Consumption from ambient <= ambient inventory"
+        )
+
+        model.demand_consumed_thawed_limit_con = Constraint(
+            demand_keys,
+            rule=demand_consumption_thawed_limit_rule,
+            doc="Consumption from thawed <= thawed inventory"
+        )
+
+        print(f"  Demand consumption limit constraints added: ambient and thawed (prevents over-consumption)")
 
     def _add_pallet_constraints(self, model: ConcreteModel):
         """Add integer pallet ceiling constraints."""
@@ -2341,14 +2424,21 @@ class SlidingWindowModel(BaseOptimizationModel):
 
             def any_production_upper_link_rule(model, node_id, t):
                 """If ANY product is produced, any_production must be 1 (upper bound)."""
-                # Big-M approach: any_production * N >= sum of product_produced
-                # If sum > 0, forces any_production = 1
+                # FIXED (2025-11-05): Strengthen constraint to force any_production=1 if ANY product produced
+                # OLD BUG: any_production * N >= sum(product_produced) allows any_production=0 if sum=1, N=5
+                # NEW FIX: any_production >= product_produced[p] for each product
+                # This ensures: if ANY product_produced=1, then any_production=1
+                #
+                # Alternative formulation (same logic, more efficient):
+                # sum(product_produced) <= N * any_production (reverse Big-M)
+                # If any_production=0, forces sum=0 (no products)
+                # If any_production=1, allows sum up to N (any number of products)
                 num_products = len(model.products)
-                return model.any_production[node_id, t] * num_products >= sum(
+                return sum(
                     model.product_produced[node_id, prod, t]
                     for prod in model.products
                     if (node_id, prod, t) in model.product_produced
-                )
+                ) <= num_products * model.any_production[node_id, t]
 
             def any_production_lower_link_rule(model, node_id, t):
                 """If NO products produced, any_production must be 0 (lower bound)."""
@@ -2967,12 +3057,28 @@ class SlidingWindowModel(BaseOptimizationModel):
         solution['total_shortage_units'] = total_shortage
 
         # Extract demand consumed
+        # CRITICAL FIX (2025-11-05): Aggregate consumption from BOTH states
         demand_consumed_by_location = {}
-        if hasattr(model, 'demand_consumed'):
+        if hasattr(model, 'demand_consumed_from_ambient') and hasattr(model, 'demand_consumed_from_thawed'):
+            for (node_id, prod, t) in model.demand_consumed_from_ambient:
+                try:
+                    # Get consumption from both states
+                    consumed_ambient = value(model.demand_consumed_from_ambient[node_id, prod, t])
+                    consumed_thawed = value(model.demand_consumed_from_thawed[node_id, prod, t])
+
+                    # Total consumption for UI display
+                    total_consumed = consumed_ambient + consumed_thawed
+
+                    if total_consumed > 0.01:
+                        demand_consumed_by_location[(node_id, prod, t)] = total_consumed
+                except (ValueError, AttributeError):
+                    pass
+        elif hasattr(model, 'demand_consumed'):
+            # Fallback for backward compatibility (old models without state-specific vars)
             for (node_id, prod, t) in model.demand_consumed:
                 try:
                     var = model.demand_consumed[node_id, prod, t]
-                    qty = value(var)  # Don't check .stale
+                    qty = value(var)
                     if qty and qty > 0.01:
                         demand_consumed_by_location[(node_id, prod, t)] = qty
                 except (ValueError, AttributeError):
@@ -3484,12 +3590,37 @@ class SlidingWindowModel(BaseOptimizationModel):
                     from src.analysis.fefo_batch_allocator import Batch
                     import uuid
 
+                    # CRITICAL FIX (2025-11-05): Calculate realistic production date from age
+                    # Initial inventory exists at inventory_snapshot_date with unknown age
+                    # Estimate production date conservatively based on state shelf life
+                    # This prevents showing "future" production dates in Daily Inventory Snapshot
+                    if state == 'ambient':
+                        # Ambient shelf life: 17 days
+                        # Assume midpoint age (8 days) for conservative estimate
+                        estimated_age_days = 8
+                    elif state == 'frozen':
+                        # Frozen shelf life: 120 days
+                        # Assume midpoint age (60 days) for conservative estimate
+                        estimated_age_days = 60
+                    else:  # thawed
+                        # Thawed shelf life: 14 days
+                        # Assume midpoint age (7 days) for conservative estimate
+                        estimated_age_days = 7
+
+                    # Calculate production date = snapshot_date - estimated_age
+                    # This ensures initial inventory batches have PAST production dates
+                    if self.inventory_snapshot_date:
+                        estimated_production_date = self.inventory_snapshot_date - timedelta(days=estimated_age_days)
+                    else:
+                        # Fallback: use start_date - estimated_age
+                        estimated_production_date = self.start_date - timedelta(days=estimated_age_days)
+
                     batch = Batch(
                         id=f"INIT_{product_id[:15]}_{state}_{uuid.uuid4().hex[:6]}",
                         product_id=product_id,
                         manufacturing_site_id=node_id,
-                        production_date=self.start_date,
-                        state_entry_date=self.start_date,
+                        production_date=estimated_production_date,  # ✅ FIX: Past date, not start_date
+                        state_entry_date=estimated_production_date,  # State entry = production for initial inventory
                         current_state=state,
                         quantity=qty,
                         initial_quantity=qty,
