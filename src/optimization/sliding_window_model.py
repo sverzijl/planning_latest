@@ -72,6 +72,8 @@ class SlidingWindowModel(BaseOptimizationModel):
         - freeze[node, product, t]: Ambient → frozen flow
         - pallet_count[node, product, state, t]: Integer pallets for storage
         - truck_pallet_load[truck, dest, product, t]: Integer pallets for trucks
+        - demand_consumed_from_ambient[node, product, t]: Consumption from ambient
+        - demand_consumed_from_thawed[node, product, t]: Consumption from thawed
 
     Constraints:
         - Sliding window shelf life (ambient: 17d, frozen: 120d, thawed: 14d)
@@ -84,6 +86,25 @@ class SlidingWindowModel(BaseOptimizationModel):
     Objective:
         Minimize: labor + transport + holding + shortage + changeover + waste
         (NO explicit staleness - implicit via holding costs)
+
+    MIP Formulation Patterns:
+        1. Time-Stepped State Variables: inventory[t] ← inventory[t-1] (ACYCLIC)
+        2. Big-M Indicators: production ≤ M × binary (proper direction)
+        3. Accounting Identities: consumption + shortage = demand
+        4. Inequality Bounds: Shelf life windows O ≤ Q
+
+    Circular Dependency Prevention:
+        - Material balance is SUFFICIENT to bound consumption (no explicit limits needed)
+        - Consumption bounded by: inventory[t] = inv[t-1] + prod - cons ≥ 0
+        - No variable appears on both LHS and RHS of same constraint
+        - Big-M constraints use correct direction (sum <= N×indicator, not indicator×N >= sum)
+
+    Performance: O(H) variables where H = horizon length
+        - 1-week: <2s, ~2,800 vars
+        - 4-week: <120s, ~12,000 vars
+        - vs. O(H³) for explicit age-cohort tracking (~500k vars)
+
+    Verified Acyclic: 2025-11-05 (see docs/CONSTRAINT_STRUCTURE_AND_ACYCLICITY.md)
     """
 
     # Shelf life constants (days)
