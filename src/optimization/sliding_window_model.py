@@ -795,22 +795,8 @@ class SlidingWindowModel(BaseOptimizationModel):
             has_truck_schedule = len(valid_days) > 0
 
             for prod in model.products:
-                # Create in-transit variables ONLY for planning horizon departures
-                # CRITICAL FIX (2025-11-05): Also check delivery date is within horizon!
-                # Bug: Shipments departing on last day deliver AFTER horizon, serving no known demand
-                last_date = max(model.dates)
-
+                # Create in-transit variables for planning horizon departures
                 for departure_date in model.dates:
-                    # Calculate delivery date for this shipment
-                    delivery_date = departure_date + timedelta(days=route.transit_days)
-
-                    # CRITICAL: Only create shipment if it delivers WITHIN horizon
-                    # Shipments delivering after horizon serve NO known demand (demand only defined ≤ last_date)
-                    if delivery_date > last_date:
-                        # Skip - shipment would deliver after planning horizon ends
-                        skipped_no_truck_days += 2  # Count for diagnostic
-                        continue
-
                     # CRITICAL: Check if truck runs on this day of week
                     if has_truck_schedule:
                         day_name = day_of_week_map[departure_date.weekday()]
@@ -2977,6 +2963,9 @@ class SlidingWindowModel(BaseOptimizationModel):
         # Extract in-transit flows (pipeline inventory tracking)
         # Convert to shipments_by_route format for UI compatibility (using delivery_date)
         shipments_by_route = {}
+        skipped_post_horizon = 0  # Counter for post-horizon shipments filtered out
+        last_date = max(model.dates)  # Planning horizon end
+
         if hasattr(model, 'in_transit'):
             for (origin, dest, prod, departure_date, state) in model.in_transit:
                 try:
@@ -2998,6 +2987,17 @@ class SlidingWindowModel(BaseOptimizationModel):
                         route = next((r for r in self.routes if r.origin_node_id == origin and r.destination_node_id == dest), None)
                         if route:
                             delivery_date = departure_date + timedelta(days=route.transit_days)
+
+                            # CRITICAL FIX (2025-11-05): Filter post-horizon shipments
+                            # Model has NO demand beyond last_date
+                            # Shipments delivering after horizon serve no purpose → don't extract
+                            # (Goods stay as end-inventory, penalized by waste cost)
+                            if delivery_date > last_date:
+                                # Don't extract as shipment - serves no known demand
+                                skipped_post_horizon += 1
+                                logger.debug(f"Skipping post-horizon: {origin}→{dest} {prod[:30]} delivers {delivery_date} > {last_date}")
+                                continue
+
                             # Aggregate by route (ignoring state for UI simplicity)
                             route_key = (origin, dest, prod, delivery_date)
                             shipments_by_route[route_key] = shipments_by_route.get(route_key, 0) + qty
@@ -3007,6 +3007,8 @@ class SlidingWindowModel(BaseOptimizationModel):
 
         solution['shipments_by_route_product_date'] = shipments_by_route
         logger.info(f"Extracted {len(shipments_by_route)} in-transit flows (converted to delivery dates)")
+        if skipped_post_horizon > 0:
+            logger.warning(f"Filtered out {skipped_post_horizon} post-horizon shipments (delivery > {last_date})")
 
         # Extract truck assignments (if truck pallet tracking enabled)
         truck_assignments = {}  # {(origin, dest, product, delivery_date): truck_id}
