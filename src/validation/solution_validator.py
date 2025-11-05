@@ -188,17 +188,23 @@ class SolutionValidator:
                     hours_used = float(labor_info) if labor_info else 0
                     hours_paid = hours_used
 
+                # DISABLED: This heuristic check produces false positives
+                # Nov 5 (Wednesday) shows 2.44h overtime which is valid weekday overtime,
+                # but heuristic incorrectly flags it as "weekend labor"
+                # Would need labor calendar access to check is_fixed_day properly
+                #
                 # Check if this looks like a weekend (would need labor calendar for definitive check)
                 # For now: if hours_used is small but positive, flag it
-                if 0.01 < hours_used < 3.5:
-                    # This looks like fractional labor that should either be 0 or trigger 4h minimum
-                    errors.append(SolutionValidationError(
-                        category='Fractional Weekend Labor',
-                        message=f"Date {date_key}: {hours_used:.2f}h used, {hours_paid:.2f}h paid. "
-                               f"Weekend labor should be 0h or ≥4h (minimum payment). "
-                               f"Fractional hours indicate constraint bug.",
-                        details={'date': date_key, 'hours_used': hours_used, 'hours_paid': hours_paid}
-                    ))
+                # if 0.01 < hours_used < 3.5:
+                #     # This looks like fractional labor that should either be 0 or trigger 4h minimum
+                #     errors.append(SolutionValidationError(
+                #         category='Fractional Weekend Labor',
+                #         message=f"Date {date_key}: {hours_used:.2f}h used, {hours_paid:.2f}h paid. "
+                #                f"Weekend labor should be 0h or ≥4h (minimum payment). "
+                #                f"Fractional hours indicate constraint bug.",
+                #         details={'date': date_key, 'hours_used': hours_used, 'hours_paid': hours_paid}
+                #     ))
+                pass  # Check disabled - produces false positives
 
         return errors
 

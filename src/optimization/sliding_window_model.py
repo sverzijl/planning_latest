@@ -2906,9 +2906,22 @@ class SlidingWindowModel(BaseOptimizationModel):
         if hasattr(model, 'labor_hours_used'):
             for (node_id, t) in model.labor_hours_used:
                 try:
-                    hours = value(model.labor_hours_used[node_id, t])
-                    if hours and hours > 0.01:
-                        labor_hours_by_date[t] = hours
+                    hours_used = value(model.labor_hours_used[node_id, t])
+                    if hours_used and hours_used > 0.01:
+                        # Extract paid hours (may differ from used due to 4h minimum)
+                        hours_paid = hours_used
+                        if hasattr(model, 'labor_hours_paid') and (node_id, t) in model.labor_hours_paid:
+                            hours_paid = value(model.labor_hours_paid[node_id, t])
+
+                        # Store as LaborHoursBreakdown with both used and paid
+                        from .result_schema import LaborHoursBreakdown
+                        labor_hours_by_date[t] = LaborHoursBreakdown(
+                            used=hours_used,
+                            paid=hours_paid,
+                            fixed=0.0,
+                            overtime=0.0,
+                            non_fixed=hours_paid
+                        )
 
                         # Calculate labor cost (match objective calculation)
                         labor_day = self.labor_calendar.get_labor_day(t)
@@ -2926,11 +2939,7 @@ class SlidingWindowModel(BaseOptimizationModel):
                             else:
                                 # Weekend: use paid hours (includes 4-hour minimum)
                                 non_fixed_rate = labor_day.non_fixed_rate if hasattr(labor_day, 'non_fixed_rate') else 1320.0
-                                if hasattr(model, 'labor_hours_paid') and (node_id, t) in model.labor_hours_paid:
-                                    paid_hours = value(model.labor_hours_paid[node_id, t])
-                                    labor_cost_by_date[t] = paid_hours * non_fixed_rate
-                                else:
-                                    labor_cost_by_date[t] = hours * non_fixed_rate
+                                labor_cost_by_date[t] = hours_paid * non_fixed_rate
                         else:
                             labor_cost_by_date[t] = 0.0
                 except:
@@ -2985,7 +2994,7 @@ class SlidingWindowModel(BaseOptimizationModel):
 
         # Calculate individual cost components for UI breakdown
         # Labor cost
-        total_labor_hours = sum(labor_hours_by_date.values())
+        total_labor_hours = sum(h.used if hasattr(h, 'used') else h for h in labor_hours_by_date.values())
         avg_rate = sum(labor_cost_by_date.values()) / total_labor_hours if total_labor_hours > 0 else 20.0
         solution['total_labor_cost'] = sum(labor_cost_by_date.values())
 
@@ -3194,8 +3203,11 @@ class SlidingWindowModel(BaseOptimizationModel):
         # 2. Convert labor hours (ALWAYS use LaborHoursBreakdown, never simple float)
         labor_hours_by_date = {}
         for date_key, hours_value in solution_dict.get('labor_hours_by_date', {}).items():
-            if isinstance(hours_value, dict):
-                # Already in breakdown format
+            if isinstance(hours_value, LaborHoursBreakdown):
+                # Already a LaborHoursBreakdown object
+                labor_hours_by_date[date_key] = hours_value
+            elif isinstance(hours_value, dict):
+                # Dictionary format - convert to breakdown
                 labor_hours_by_date[date_key] = LaborHoursBreakdown(**hours_value)
             else:
                 # Simple float - convert to breakdown (used hours = paid hours)
