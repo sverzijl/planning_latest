@@ -62,7 +62,8 @@ class SolutionValidator:
         # Group production by date
         production_by_date = {}
         for batch in self.solution.production_batches:
-            date_key = batch.production_date
+            # ProductionBatchResult uses 'date', not 'production_date'
+            date_key = batch.date
             production_by_date[date_key] = production_by_date.get(date_key, 0) + batch.quantity
 
         # Check labor hours

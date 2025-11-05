@@ -184,6 +184,10 @@ class SlidingWindowModel(BaseOptimizationModel):
             # Expand routes to include intermediate stop legs FIRST
             self.routes = self._expand_intermediate_stop_routes()
 
+            # CRITICAL: Add intermediate stops as proper nodes
+            # Without this, inventory variables aren't created for intermediate stops!
+            self._add_intermediate_stop_nodes()
+
             # FAIL-FAST VALIDATION: Check truck schedules AFTER expansion
             from src.validation.truck_schedule_validator import validate_truck_schedules
             is_valid, validation_issues = validate_truck_schedules(
@@ -455,6 +459,59 @@ class SlidingWindowModel(BaseOptimizationModel):
                 print(f"    + {route_str}")
 
         return extended_routes
+
+    def _add_intermediate_stop_nodes(self):
+        """Add intermediate stops as proper nodes in the model.
+
+        Intermediate stops (like Lineage) are referenced in routes but may not exist
+        in the nodes dict. This causes inventory variables to NOT be created for them,
+        leading to constraint errors.
+
+        This method scans all intermediate stops and adds them as frozen storage nodes.
+        """
+        from src.models.unified_node import UnifiedNode, NodeCapabilities, StorageMode
+
+        nodes_added = []
+
+        for truck in self.truck_schedules:
+            if not truck.intermediate_stops:
+                continue
+
+            for stop_id in truck.intermediate_stops:
+                if stop_id in self.nodes:
+                    continue  # Node already exists
+
+                # Create intermediate stop as frozen storage node
+                # (Lineage receives ambient goods and freezes them on arrival)
+                node = UnifiedNode(
+                    id=stop_id,
+                    name=f"{stop_id} (Intermediate Stop)",
+                    type='storage',  # Storage-only node
+                    capabilities=NodeCapabilities(
+                        can_store=True,
+                        can_produce=False,
+                        can_receive_demand=False,
+                        storage_mode=StorageMode.FROZEN,  # Frozen storage
+                        max_storage_pallets=None,  # Unlimited capacity
+                        production_rate_per_hour=None,
+                        daily_startup_hours=None,
+                        daily_shutdown_hours=None,
+                        default_changeover_hours=None,
+                    ),
+                    demand_location_ids=[],  # No demand
+                    products=list(self.products.keys())  # Can store all products
+                )
+
+                self.nodes[stop_id] = node
+                self.nodes_list.append(node)
+                nodes_added.append(stop_id)
+
+        if nodes_added:
+            print(f"\n  ✓ Added {len(nodes_added)} intermediate stop nodes:")
+            for node_id in nodes_added:
+                print(f"    + {node_id} (frozen storage)")
+        else:
+            print(f"  ℹ No intermediate stop nodes added")
 
     def _build_truck_route_day_mapping(self) -> Dict[Tuple[str, str], Set[str]]:
         """Build mapping of which routes can be used on which days.
@@ -2330,6 +2387,44 @@ class SlidingWindowModel(BaseOptimizationModel):
                 doc="Force total_starts = 0 when any_production = 0 (overhead optimization)"
             )
 
+            # AGGREGATE PRODUCTION ENFORCEMENT: Prevent overhead without production
+            # If any_production = 1, at least one product MUST be produced
+            # This prevents: any_production=1, all production[prod]=0 (phantom overhead)
+            def any_production_enforcement_rule(model, node_id, t):
+                """If any_production = 1, force sum(production) > 0.
+
+                Prevents solver from setting any_production=1 when all production=0,
+                which would incur overhead costs (startup/shutdown) without output.
+
+                MIP formulation (reverse of Big-M):
+                  sum(production) >= epsilon × any_production
+
+                If any_production = 0: sum >= 0 (can be 0)
+                If any_production = 1: sum >= epsilon (must produce something!)
+
+                This is more efficient than per-product constraints (29 vs 145).
+                """
+                node = self.nodes[node_id]
+                if not node.can_produce():
+                    return Constraint.Skip
+
+                # Sum of all production
+                total_prod = sum(
+                    model.production[node_id, prod, t]
+                    for prod in model.products
+                    if (node_id, prod, t) in model.production
+                )
+
+                # Small epsilon (1 unit minimum if producing)
+                epsilon = 1.0
+                return total_prod >= epsilon * model.any_production[node_id, t]
+
+            model.any_production_enforcement_con = Constraint(
+                [(node.id, t) for node in self.manufacturing_nodes for t in model.dates],
+                rule=any_production_enforcement_rule,
+                doc="Enforce production > 0 if any_production = 1 (prevents phantom overhead)"
+            )
+
             print(f"    Changeover aggregation linking constraints added (overhead optimization)")
 
         print(f"    Changeover detection constraints added")
@@ -2588,6 +2683,22 @@ class SlidingWindowModel(BaseOptimizationModel):
             waste_cost = waste_multiplier * prod_cost * (end_inventory + end_in_transit)
             print(f"  Waste cost: ${waste_multiplier * prod_cost:.2f}/unit × (end_inventory + end_in_transit)")
 
+        # BINARY INDICATOR PENALTY (MIP Expert Pattern #3: Fixed Cost)
+        # Tiny cost penalty on product_produced binaries prevents solver from
+        # setting them to 1 when production=0 (which would incur overhead costs)
+        # This is more efficient than epsilon forcing constraints!
+        binary_penalty = 0
+        if hasattr(model, 'product_produced'):
+            # Penalty must be tiny (< smallest real cost difference)
+            # But large enough to matter in solver's objective comparisons
+            epsilon_cost = 0.001  # $0.001 per binary (negligible vs real costs $1-$1000)
+            from pyomo.environ import quicksum
+            binary_penalty = epsilon_cost * quicksum(
+                model.product_produced[node_id, prod, t]
+                for (node_id, prod, t) in model.product_produced
+            )
+            print(f"  Binary indicator penalty: ${epsilon_cost:.4f} per product_produced binary")
+
         # TOTAL OBJECTIVE
         total_cost = (
             production_cost +  # CRITICAL: Direct manufacturing cost
@@ -2598,7 +2709,8 @@ class SlidingWindowModel(BaseOptimizationModel):
             disposal_cost +  # Expired initial inventory disposal
             changeover_cost +
             changeover_waste_cost +  # Yield loss from product switches
-            waste_cost
+            waste_cost +
+            binary_penalty  # Prevents phantom overhead (labor without production)
         )
 
         model.obj = Objective(
