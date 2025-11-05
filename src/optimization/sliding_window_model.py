@@ -796,7 +796,21 @@ class SlidingWindowModel(BaseOptimizationModel):
 
             for prod in model.products:
                 # Create in-transit variables ONLY for planning horizon departures
+                # CRITICAL FIX (2025-11-05): Also check delivery date is within horizon!
+                # Bug: Shipments departing on last day deliver AFTER horizon, serving no known demand
+                last_date = max(model.dates)
+
                 for departure_date in model.dates:
+                    # Calculate delivery date for this shipment
+                    delivery_date = departure_date + timedelta(days=route.transit_days)
+
+                    # CRITICAL: Only create shipment if it delivers WITHIN horizon
+                    # Shipments delivering after horizon serve NO known demand (demand only defined ≤ last_date)
+                    if delivery_date > last_date:
+                        # Skip - shipment would deliver after planning horizon ends
+                        skipped_no_truck_days += 2  # Count for diagnostic
+                        continue
+
                     # CRITICAL: Check if truck runs on this day of week
                     if has_truck_schedule:
                         day_name = day_of_week_map[departure_date.weekday()]
@@ -2750,28 +2764,58 @@ class SlidingWindowModel(BaseOptimizationModel):
         waste_cost = 0
         waste_multiplier = self.cost_structure.waste_cost_multiplier or 0
 
+        # CRITICAL DIAGNOSTIC (2025-11-05): Debug why end inventory is high despite waste cost
+        print(f"  DEBUG WASTE COST:")
+        print(f"    cost_structure.waste_cost_multiplier = {self.cost_structure.waste_cost_multiplier}")
+        print(f"    After 'or 0' = {waste_multiplier}")
+        print(f"    Type: {type(waste_multiplier)}")
+        print(f"    Condition (waste_multiplier > 0): {waste_multiplier > 0}")
+        print(f"    hasattr(model, 'inventory'): {hasattr(model, 'inventory')}")
+
         if waste_multiplier > 0 and hasattr(model, 'inventory'):
+            print(f"    ✅ ENTERED waste cost block")
+
             # Calculate end-of-horizon inventory (at locations)
             last_date = max(model.dates)
+            print(f"    Last date: {last_date}")
+
+            # Count how many inventory vars at last date
+            num_end_vars = sum(1 for (n,p,s,t) in model.inventory if t == last_date)
+            print(f"    Inventory variables at last date: {num_end_vars}")
+
             end_inventory = sum(
                 model.inventory[node_id, prod, state, last_date]
                 for (node_id, prod, state, t) in model.inventory
                 if t == last_date
             )
+            print(f"    end_inventory expression created (Pyomo sum)")
 
             # Calculate end-of-horizon in-transit (goods departing on last day)
             # These goods are in the pipeline and will deliver after planning horizon ends
             end_in_transit = 0
             if hasattr(model, 'in_transit'):
+                num_in_transit_end = sum(1 for (o,d,p,t,s) in model.in_transit if t == last_date)
+                print(f"    In-transit variables departing on last date: {num_in_transit_end}")
+
                 end_in_transit = sum(
                     model.in_transit[origin, dest, prod, last_date, state]
                     for (origin, dest, prod, departure_date, state) in model.in_transit
                     if departure_date == last_date
                 )
+                print(f"    end_in_transit expression created (Pyomo sum)")
 
             prod_cost = self.cost_structure.production_cost_per_unit or 1.3
             waste_cost = waste_multiplier * prod_cost * (end_inventory + end_in_transit)
+
             print(f"  Waste cost: ${waste_multiplier * prod_cost:.2f}/unit × (end_inventory + end_in_transit)")
+            print(f"    Coefficient: ${waste_multiplier * prod_cost:.2f}/unit")
+            print(f"    Expression type: {type(waste_cost)}")
+            print(f"    If end_inventory=32,751, waste would be ${waste_multiplier * prod_cost * 32751:.2f}")
+            print(f"    ✅ WASTE COST EXPRESSION CREATED - WILL BE IN OBJECTIVE")
+        else:
+            print(f"    ❌ SKIPPED waste cost block!")
+            print(f"       waste_multiplier > 0: {waste_multiplier > 0}")
+            print(f"       hasattr inventory: {hasattr(model, 'inventory')}")
 
         # BINARY INDICATOR PENALTY (MIP Expert Pattern #3: Fixed Cost)
         # Tiny cost penalty on product_produced binaries prevents solver from
