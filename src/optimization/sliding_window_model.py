@@ -1919,54 +1919,22 @@ class SlidingWindowModel(BaseOptimizationModel):
 
         print(f"  Demand balance constraints: {len(demand_keys)}")
 
-        # DEMAND CONSUMPTION UPPER BOUNDS (MIP Best Practice)
-        # CRITICAL FIX (2025-11-05): State-specific limits prevent over-consumption
-        # Each consumption variable bounded by inventory in its source state
-        def demand_consumption_ambient_limit_rule(model, node_id, prod, t):
-            """Consumption from ambient cannot exceed ambient inventory."""
-            if (node_id, prod, t) not in self.demand:
-                return Constraint.Skip
+        # NOTE (2025-11-05): Upper bound constraints REMOVED
+        # CRITICAL DISCOVERY: consumption <= inventory[t] is REDUNDANT
+        #
+        # Material balance already enforces:
+        #   inventory[t] = inventory[t-1] + production - consumption
+        #
+        # Adding explicit "consumption <= inventory[t]" creates circular dependency:
+        #   consumption <= inventory = ... + production - consumption
+        #   → Forces: production >= 2×consumption (overproduction!)
+        #
+        # The material balance + non-negativity (inventory >= 0) is SUFFICIENT.
+        # Over-consumption is impossible: can't consume from empty inventory.
+        #
+        # MIP Principle: Don't add redundant constraints - they can create forcing relationships!
 
-            node = self.nodes[node_id]
-            if not node.has_demand_capability():
-                return Constraint.Skip
-
-            # Ambient consumption limited by ambient inventory
-            if (node_id, prod, 'ambient', t) in model.inventory:
-                return model.demand_consumed_from_ambient[node_id, prod, t] <= model.inventory[node_id, prod, 'ambient', t]
-            else:
-                # No ambient inventory at this node - consumption must be 0
-                return model.demand_consumed_from_ambient[node_id, prod, t] == 0
-
-        def demand_consumption_thawed_limit_rule(model, node_id, prod, t):
-            """Consumption from thawed cannot exceed thawed inventory."""
-            if (node_id, prod, t) not in self.demand:
-                return Constraint.Skip
-
-            node = self.nodes[node_id]
-            if not node.has_demand_capability():
-                return Constraint.Skip
-
-            # Thawed consumption limited by thawed inventory
-            if (node_id, prod, 'thawed', t) in model.inventory:
-                return model.demand_consumed_from_thawed[node_id, prod, t] <= model.inventory[node_id, prod, 'thawed', t]
-            else:
-                # No thawed inventory at this node - consumption must be 0
-                return model.demand_consumed_from_thawed[node_id, prod, t] == 0
-
-        model.demand_consumed_ambient_limit_con = Constraint(
-            demand_keys,
-            rule=demand_consumption_ambient_limit_rule,
-            doc="Consumption from ambient <= ambient inventory"
-        )
-
-        model.demand_consumed_thawed_limit_con = Constraint(
-            demand_keys,
-            rule=demand_consumption_thawed_limit_rule,
-            doc="Consumption from thawed <= thawed inventory"
-        )
-
-        print(f"  Demand consumption limit constraints added: ambient and thawed (prevents over-consumption)")
+        print(f"  Demand consumption naturally bounded by material balance (no explicit limits needed)")
 
     def _add_pallet_constraints(self, model: ConcreteModel):
         """Add integer pallet ceiling constraints."""
