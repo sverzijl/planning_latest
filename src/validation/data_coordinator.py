@@ -155,9 +155,11 @@ class DataCoordinator:
             # Extract unique product IDs from forecast and create Product objects
             product_ids = sorted(set(entry.product_id for entry in forecast.entries))
 
-            # Try to load products from Products sheet if available, otherwise create minimal products
+            # Try to load products from Products sheet (in network file, not forecast!)
+            # CRITICAL FIX (2025-11-06): Products sheet is in network_file
             try:
-                products_dict = forecast_parser.parse_products()
+                network_products_parser = ExcelParser(str(self.network_file), self.alias_resolver)
+                products_dict = network_products_parser.parse_products()
                 products_from_forecast = list(products_dict.values())
 
                 # Ensure all forecast products are in products list
@@ -287,9 +289,14 @@ class DataCoordinator:
 
             planning_end_date = planning_start_date + timedelta(weeks=planning_weeks)
 
-            # 5. Convert to validated schema
+            # 5. Convert to validated schema (include units_per_mix for mix-based production)
             product_ids = [
-                ProductID(id=p.id, sku=p.sku, name=p.name)
+                ProductID(
+                    id=p.id,
+                    sku=p.sku,
+                    name=p.name,
+                    units_per_mix=getattr(p, 'units_per_mix', None)
+                )
                 for p in products_from_forecast
             ]
 

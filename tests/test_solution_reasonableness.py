@@ -95,8 +95,16 @@ def build_and_solve_model(horizon_days):
     solution = model_builder.extract_solution(model)
 
     # Get demand and init_inv for this horizon
-    total_demand_original = sum(model_builder.demand_original.values())
-    total_init_inv_original = sum(model_builder.initial_inventory_original.values())
+    # Handle both scaled and unscaled versions
+    if hasattr(model_builder, 'demand_original'):
+        total_demand_original = sum(model_builder.demand_original.values())
+    else:
+        total_demand_original = sum(model_builder.demand.values())  # Unscaled version
+
+    if hasattr(model_builder, 'initial_inventory_original'):
+        total_init_inv_original = sum(model_builder.initial_inventory_original.values())
+    else:
+        total_init_inv_original = sum(model_builder.initial_inventory.values())  # Unscaled version
 
     return model_builder, solution, result, total_demand_original, total_init_inv_original
 
