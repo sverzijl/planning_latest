@@ -113,25 +113,11 @@ class SlidingWindowModel(BaseOptimizationModel):
     THAWED_SHELF_LIFE = 14
     MINIMUM_ACCEPTABLE_SHELF_LIFE_DAYS = 7  # Breadroom policy
 
-    # Scaling configuration (2025-11-05)
-    FLOW_SCALE_FACTOR = 1000  # All flows in thousands of units
-    """Scaling factor for flow variables (production, inventory, shipments).
-
-    Variables are in THOUSANDS of units to improve coefficient scaling.
-    This reduces matrix coefficient range from [5e-05, 2e+04] (400M ratio)
-    to [0.32, 1500] (~4,688 ratio), improving numerical stability by 85,000×.
-
-    Expected performance improvement: 20-40% faster solves.
-
-    CRITICAL: Must multiply by FLOW_SCALE_FACTOR when extracting solution.
-    See docs/COEFFICIENT_SCALING_ARCHITECTURE.md for details.
-    """
-
-    # Packaging constants (scaled for thousands of units)
-    UNITS_PER_CASE = 10 / FLOW_SCALE_FACTOR        # 0.010 thousands/case
-    CASES_PER_PALLET = 32                          # Unchanged (integer count)
-    UNITS_PER_PALLET = 320 / FLOW_SCALE_FACTOR     # 0.320 thousands/pallet
-    PALLETS_PER_TRUCK = 44                         # Unchanged (integer count)
+    # Packaging constants
+    UNITS_PER_CASE = 10
+    CASES_PER_PALLET = 32
+    UNITS_PER_PALLET = 320
+    PALLETS_PER_TRUCK = 44
 
     def __init__(
         self,
@@ -181,17 +167,12 @@ class SlidingWindowModel(BaseOptimizationModel):
         self.truck_schedules = truck_schedules or []
 
         # Convert forecast to demand dict (FILTER to planning horizon only!)
-        # SCALED TO THOUSANDS for coefficient scaling (2025-11-05)
-        self.demand_original = {}  # Store original for diagnostics
-        self.demand = {}  # Scaled to thousands
+        self.demand = {}
         for entry in forecast.entries:
             # Only include demand within planning horizon
             if start_date <= entry.forecast_date <= end_date:
                 key = (entry.location_id, entry.product_id, entry.forecast_date)
-                qty_original = entry.quantity
-                qty_scaled = qty_original / self.FLOW_SCALE_FACTOR  # Convert to thousands
-                self.demand_original[key] = self.demand_original.get(key, 0) + qty_original
-                self.demand[key] = self.demand.get(key, 0) + qty_scaled
+                self.demand[key] = self.demand.get(key, 0) + entry.quantity
 
         self.forecast = forecast
 
@@ -211,39 +192,10 @@ class SlidingWindowModel(BaseOptimizationModel):
         self.use_truck_pallet_tracking = use_truck_pallet_tracking
 
         # Preprocess initial inventory to standard format
-        # SCALED TO THOUSANDS for coefficient scaling (2025-11-05)
-        initial_inv_original = self._preprocess_initial_inventory(
+        self.initial_inventory = self._preprocess_initial_inventory(
             initial_inventory, inventory_snapshot_date
         )
-        # Store both original and scaled versions
-        self.initial_inventory_original = initial_inv_original
-        self.initial_inventory = {
-            key: qty / self.FLOW_SCALE_FACTOR  # Convert to thousands
-            for key, qty in initial_inv_original.items()
-        }
         self.inventory_snapshot_date = inventory_snapshot_date  # Store for shelf life calculations
-
-        # VALIDATION: Verify scaling is correct (2025-11-05)
-        if self.demand:
-            max_demand_scaled = max(self.demand.values())
-            min_demand_scaled = min(v for v in self.demand.values() if v > 0) if any(v > 0 for v in self.demand.values()) else 0
-            if not (0.001 < max_demand_scaled < 100):
-                raise ValueError(
-                    f"Scaled demand outside expected range [0.001, 100] thousands:\n"
-                    f"  Max scaled demand: {max_demand_scaled:.3f} thousands ({max_demand_scaled * self.FLOW_SCALE_FACTOR:.0f} units)\n"
-                    f"  This suggests incorrect scaling. Check FLOW_SCALE_FACTOR={self.FLOW_SCALE_FACTOR}"
-                )
-            print(f"  ✓ Demand scaling validated: [{min_demand_scaled:.3f}, {max_demand_scaled:.3f}] thousands")
-
-        if self.initial_inventory:
-            max_inv_scaled = max(self.initial_inventory.values())
-            if not (0.001 < max_inv_scaled < 500):
-                raise ValueError(
-                    f"Scaled inventory outside expected range [0.001, 500] thousands:\n"
-                    f"  Max scaled inventory: {max_inv_scaled:.3f} thousands ({max_inv_scaled * self.FLOW_SCALE_FACTOR:.0f} units)\n"
-                    f"  This suggests incorrect scaling. Check FLOW_SCALE_FACTOR={self.FLOW_SCALE_FACTOR}"
-                )
-            print(f"  ✓ Initial inventory scaling validated: max {max_inv_scaled:.3f} thousands")
 
         # CRITICAL FIX: Expand intermediate stops and build truck-day mapping
         # This fixes two bugs:
@@ -721,8 +673,8 @@ class SlidingWindowModel(BaseOptimizationModel):
         """Add decision variables to model."""
         print(f"\nAdding variables...")
 
-        # PRODUCTION VARIABLES (SCALED TO THOUSANDS)
-        # production[node, product, t] - continuous quantity in THOUSANDS of units
+        # PRODUCTION VARIABLES (same as cohort model)
+        # production[node, product, t] - continuous quantity
         production_index = [
             (node.id, prod, t)
             for node in self.manufacturing_nodes
@@ -732,8 +684,7 @@ class SlidingWindowModel(BaseOptimizationModel):
         model.production = Var(
             production_index,
             within=NonNegativeReals,
-            bounds=(0, 25),  # Max ~25k units/day ÷ 1000 = 25 thousands
-            doc="Production quantity in THOUSANDS of units (scaled by FLOW_SCALE_FACTOR)"
+            doc="Production quantity by node, product, date"
         )
         print(f"  Production variables: {len(production_index)}")
 
@@ -776,8 +727,7 @@ class SlidingWindowModel(BaseOptimizationModel):
         model.inventory = Var(
             inventory_index,
             within=NonNegativeReals,
-            bounds=(0, 100),  # Max ~100k inventory ÷ 1000 = 100 thousands
-            doc="End-of-day inventory in THOUSANDS of units (scaled by FLOW_SCALE_FACTOR)"
+            doc="End-of-day inventory by node, product, state, date"
         )
         print(f"  Inventory variables: {len(inventory_index)}")
 
@@ -817,14 +767,12 @@ class SlidingWindowModel(BaseOptimizationModel):
         model.thaw = Var(
             thaw_index,
             within=NonNegativeReals,
-            bounds=(0, 25),  # Max ~25k thaw/day ÷ 1000 = 25 thousands
-            doc="Thawing flow in THOUSANDS of units: frozen → thawed (scaled by FLOW_SCALE_FACTOR)"
+            doc="Thawing flow: frozen → thawed"
         )
         model.freeze = Var(
             freeze_index,
             within=NonNegativeReals,
-            bounds=(0, 25),  # Max ~25k freeze/day ÷ 1000 = 25 thousands
-            doc="Freezing flow in THOUSANDS of units: ambient → frozen (scaled by FLOW_SCALE_FACTOR)"
+            doc="Freezing flow: ambient → frozen"
         )
         print(f"  State transition variables: {len(thaw_index)} thaw + {len(freeze_index)} freeze")
 
@@ -891,8 +839,7 @@ class SlidingWindowModel(BaseOptimizationModel):
         model.in_transit = Var(
             in_transit_index,
             within=NonNegativeReals,
-            bounds=(0, 20),  # Max ~20k per route ÷ 1000 = 20 thousands
-            doc="In-transit inventory in THOUSANDS of units by route, product, DEPARTURE date, state (scaled by FLOW_SCALE_FACTOR)"
+            doc="In-transit inventory by route, product, DEPARTURE date, state"
         )
         print(f"  In-transit variables: {len(in_transit_index)} (indexed by DEPARTURE date)")
         if skipped_no_truck_days > 0:
@@ -970,15 +917,13 @@ class SlidingWindowModel(BaseOptimizationModel):
         model.demand_consumed_from_ambient = Var(
             demand_keys,
             within=NonNegativeReals,
-            bounds=(0, 10),  # Max ~10k demand/day ÷ 1000 = 10 thousands
-            doc="Demand consumed from ambient inventory in THOUSANDS of units (scaled by FLOW_SCALE_FACTOR)"
+            doc="Demand consumed from ambient inventory"
         )
 
         model.demand_consumed_from_thawed = Var(
             demand_keys,
             within=NonNegativeReals,
-            bounds=(0, 10),  # Max ~10k demand/day ÷ 1000 = 10 thousands
-            doc="Demand consumed from thawed inventory in THOUSANDS of units (scaled by FLOW_SCALE_FACTOR)"
+            doc="Demand consumed from thawed inventory"
         )
 
         print(f"  Demand consumed variables: {len(demand_keys)} × 2 states = {len(demand_keys) * 2}")
@@ -988,8 +933,7 @@ class SlidingWindowModel(BaseOptimizationModel):
             model.shortage = Var(
                 demand_keys,
                 within=NonNegativeReals,
-                bounds=(0, 10),  # Max ~10k shortage/day ÷ 1000 = 10 thousands
-                doc="Unmet demand in THOUSANDS of units with penalty (scaled by FLOW_SCALE_FACTOR)"
+                doc="Unmet demand with penalty"
             )
             print(f"  Shortage variables: {len(demand_keys)}")
 
@@ -1034,8 +978,7 @@ class SlidingWindowModel(BaseOptimizationModel):
                 model.disposal = Var(
                     disposal_index,
                     within=NonNegativeReals,
-                    bounds=(0, 100),  # Max ~100k disposal ÷ 1000 = 100 thousands
-                    doc="Disposal of expired initial inventory in THOUSANDS of units (only after expiration date, scaled by FLOW_SCALE_FACTOR)"
+                    doc="Disposal of expired initial inventory (only after expiration date)"
                 )
                 print(f"  Disposal variables: {len(disposal_index)} (only for expired inventory)")
                 if disposal_details and len(disposal_details) <= 10:
@@ -2148,20 +2091,15 @@ class SlidingWindowModel(BaseOptimizationModel):
         # MIX-BASED PRODUCTION: production = mix_count × units_per_mix
         if hasattr(model, 'mix_count'):
             def mix_production_rule(model, node_id, prod, t):
-                """Link production quantity to integer mix count.
-
-                SCALED: production is in thousands, so must scale units_per_mix down.
-                Example: 415 units/mix ÷ 1000 = 0.415 thousands/mix
-                """
+                """Link production quantity to integer mix count."""
                 if (node_id, prod, t) not in model.mix_count:
                     return Constraint.Skip
 
                 product = self.products[prod]
-                units_per_mix_original = product.units_per_mix if hasattr(product, 'units_per_mix') else 1
-                units_per_mix_scaled = units_per_mix_original / self.FLOW_SCALE_FACTOR  # Convert to thousands
+                units_per_mix = product.units_per_mix if hasattr(product, 'units_per_mix') else 1
 
                 if (node_id, prod, t) in model.production:
-                    return model.production[node_id, prod, t] == model.mix_count[node_id, prod, t] * units_per_mix_scaled
+                    return model.production[node_id, prod, t] == model.mix_count[node_id, prod, t] * units_per_mix
                 else:
                     return Constraint.Skip
 
@@ -2196,14 +2134,13 @@ class SlidingWindowModel(BaseOptimizationModel):
             if not production_rate or production_rate <= 0:
                 return Constraint.Skip
 
-            # Total production (SCALED: production is in thousands, must convert to units)
-            total_production_thousands = sum(
+            # Total production
+            total_production = sum(
                 model.production[node_id, prod, t]
                 for prod in model.products
                 if (node_id, prod, t) in model.production
             )
-            total_production_units = total_production_thousands * self.FLOW_SCALE_FACTOR  # Convert thousands → units
-            production_time = total_production_units / production_rate  # production_rate is in units/hour
+            production_time = total_production / production_rate
 
             # Calculate overhead time (startup + shutdown + changeover)
             # OPTIMIZED: Use pre-aggregated variables instead of inline sums
@@ -2411,13 +2348,11 @@ class SlidingWindowModel(BaseOptimizationModel):
             # Big-M: production <= M * product_produced
             # If product_produced = 0, forces production = 0
             # If product_produced = 1, allows production up to M
-            # SCALED: production is in thousands, so M must be scaled too
             node = self.nodes[node_id]
             production_rate = node.capabilities.production_rate_per_hour or 1400
-            max_daily_production_units = production_rate * 14  # Max hours per day (in units)
-            max_daily_production_thousands = max_daily_production_units / self.FLOW_SCALE_FACTOR  # Convert to thousands
+            max_daily_production = production_rate * 14  # Max hours per day
 
-            return model.production[node_id, prod, t] <= max_daily_production_thousands * model.product_produced[node_id, prod, t]
+            return model.production[node_id, prod, t] <= max_daily_production * model.product_produced[node_id, prod, t]
 
         model.product_binary_linking_con = Constraint(
             [(node.id, prod, t) for node in self.manufacturing_nodes
@@ -2444,13 +2379,11 @@ class SlidingWindowModel(BaseOptimizationModel):
 
             node = self.nodes[node_id]
             production_rate = node.capabilities.production_rate_per_hour or 1400
-            max_daily_production_units = production_rate * 14  # Max hours per day (in units)
-            max_daily_production_thousands = max_daily_production_units / self.FLOW_SCALE_FACTOR  # Convert to thousands
+            max_daily_production = production_rate * 14  # Max hours per day
 
             # Force: product_produced >= production / M
             # If production > 0, forces product_produced = 1
-            # SCALED: production is in thousands, so M must be scaled too
-            return model.product_produced[node_id, prod, t] >= model.production[node_id, prod, t] / max_daily_production_thousands
+            return model.product_produced[node_id, prod, t] >= model.production[node_id, prod, t] / max_daily_production
 
         model.product_binary_reverse_linking_con = Constraint(
             [(node.id, prod, t) for node in self.manufacturing_nodes
@@ -2650,17 +2583,15 @@ class SlidingWindowModel(BaseOptimizationModel):
         print(f"\nBuilding objective...")
 
         # PRODUCTION COST (direct manufacturing cost)
-        # SCALED: production is in thousands, so multiply cost by FLOW_SCALE_FACTOR
         production_cost = 0
         if hasattr(model, 'production'):
             prod_cost_per_unit = self.cost_structure.production_cost_per_unit or 1.30
-            prod_cost_per_thousand = prod_cost_per_unit * self.FLOW_SCALE_FACTOR  # e.g., $1.30 × 1000 = $1300/thousand
             from pyomo.environ import quicksum
-            production_cost = prod_cost_per_thousand * quicksum(
+            production_cost = prod_cost_per_unit * quicksum(
                 model.production[node_id, prod, t]
                 for (node_id, prod, t) in model.production
             )
-            print(f"  Production cost: ${prod_cost_per_unit:.2f}/unit (${prod_cost_per_thousand:.0f}/thousand)")
+            print(f"  Production cost: ${prod_cost_per_unit:.2f}/unit")
 
         # HOLDING COST (via integer pallets - drives turnover/freshness)
         holding_cost = 0
@@ -2715,36 +2646,32 @@ class SlidingWindowModel(BaseOptimizationModel):
                 print(f"  Ambient pallet daily cost: ${ambient_daily_cost:.4f}/pallet/day")
 
         # SHORTAGE COST
-        # SCALED: shortage is in thousands, so multiply penalty by FLOW_SCALE_FACTOR
         shortage_cost = 0
         if self.allow_shortages and hasattr(model, 'shortage'):
-            penalty_per_unit = self.cost_structure.shortage_penalty_per_unit
-            penalty_per_thousand = penalty_per_unit * self.FLOW_SCALE_FACTOR  # e.g., $10,000 × 1000 = $10M/thousand
+            penalty = self.cost_structure.shortage_penalty_per_unit
             shortage_cost = quicksum(
-                penalty_per_thousand * model.shortage[node_id, prod, t]
+                penalty * model.shortage[node_id, prod, t]
                 for (node_id, prod, t) in model.shortage
             )
-            print(f"  Shortage penalty: ${penalty_per_unit:.2f}/unit (${penalty_per_thousand:.0f}/thousand)")
+            print(f"  Shortage penalty: ${penalty:.2f}/unit")
 
         # DISPOSAL COST (for expired initial inventory)
         # MIP Technique: Penalty ensures disposal only when inventory truly expires
         # CRITICAL REQUIREMENT: disposal_penalty > shortage_penalty
         # Otherwise model will dispose everything + take shortages instead of using inventory!
-        # SCALED: disposal is in thousands, so multiply penalty by FLOW_SCALE_FACTOR
         disposal_cost = 0
         if hasattr(model, 'disposal'):
             # Set disposal penalty HIGHER than shortage penalty to prevent pathological solution
-            shortage_penalty_per_unit = self.cost_structure.shortage_penalty_per_unit if self.allow_shortages else 1000.0
-            disposal_penalty_per_unit = shortage_penalty_per_unit * 1.5  # 50% higher than shortage
-            disposal_penalty_per_thousand = disposal_penalty_per_unit * self.FLOW_SCALE_FACTOR
+            shortage_penalty = self.cost_structure.shortage_penalty_per_unit if self.allow_shortages else 1000.0
+            disposal_penalty = shortage_penalty * 1.5  # 50% higher than shortage
 
             # Rationale: Disposing good inventory is worse than having a shortage
             # We only want disposal when inventory truly expires and can't be used
             disposal_cost = quicksum(
-                disposal_penalty_per_thousand * model.disposal[node_id, prod, state, t]
+                disposal_penalty * model.disposal[node_id, prod, state, t]
                 for (node_id, prod, state, t) in model.disposal
             )
-            print(f"  Disposal penalty: ${disposal_penalty_per_unit:.2f}/unit (${disposal_penalty_per_thousand:.0f}/thousand) > shortage ${shortage_penalty_per_unit:.2f}/unit")
+            print(f"  Disposal penalty: ${disposal_penalty:.2f}/unit (> shortage ${shortage_penalty:.2f}/unit)")
 
         # LABOR COST (piecewise: fixed hours FREE, overtime/weekend charged)
         labor_cost = 0
@@ -2773,17 +2700,15 @@ class SlidingWindowModel(BaseOptimizationModel):
             print(f"  Labor cost: Weekday overtime ($660/h) + Weekend ($1320/h with 4h minimum), fixed hours FREE")
 
         # TRANSPORT COST (per-route costs)
-        # SCALED: in_transit is in thousands, so multiply cost by FLOW_SCALE_FACTOR
         transport_cost = 0
         if hasattr(model, 'in_transit'):
             for (origin, dest, prod, departure_date, state) in model.in_transit:
                 # Find route cost
                 route = next((r for r in self.routes if r.origin_node_id == origin and r.destination_node_id == dest), None)
                 if route and hasattr(route, 'cost_per_unit') and route.cost_per_unit:
-                    cost_per_thousand = route.cost_per_unit * self.FLOW_SCALE_FACTOR  # e.g., $0.50/unit × 1000 = $500/thousand
-                    transport_cost += cost_per_thousand * model.in_transit[origin, dest, prod, departure_date, state]
+                    transport_cost += route.cost_per_unit * model.in_transit[origin, dest, prod, departure_date, state]
             # Note: Can't check if transport_cost > 0 (it's a Pyomo expression)
-            print(f"  Transport cost: route costs scaled to thousands")
+            print(f"  Transport cost: route costs included")
 
         # CHANGEOVER COST (per product start) + YIELD LOSS
         changeover_cost = 0
@@ -2908,19 +2833,16 @@ class SlidingWindowModel(BaseOptimizationModel):
         print(f"  Staleness: IMPLICIT via holding costs (inventory costs money)")
 
     def extract_solution(self, model: ConcreteModel) -> 'OptimizationSolution':
-        """Extract solution from solved model and UNSCALE all flow variables.
-
-        CRITICAL: All flow variables (production, inventory, shipments) are stored in
-        THOUSANDS of units internally. This method converts them back to UNITS.
+        """Extract solution from solved model.
 
         Returns:
-            OptimizationSolution: Pydantic-validated solution with flows in ORIGINAL UNITS
+            OptimizationSolution: Pydantic-validated solution with aggregate flows
         """
         from pyomo.core.base import value
 
         solution = {}
 
-        # Extract production (UNSCALE: thousands → units)
+        # Extract production
         production_by_date_product = {}
         if hasattr(model, 'production'):
             for (node_id, prod, t) in model.production:
@@ -2928,24 +2850,20 @@ class SlidingWindowModel(BaseOptimizationModel):
                 try:
                     # Try getting value directly
                     if hasattr(var, 'value') and var.value is not None:
-                        qty_thousands = var.value
+                        qty = var.value
                     else:
-                        qty_thousands = value(var)  # Use Pyomo value() function
+                        qty = value(var)  # Use Pyomo value() function
 
-                    # UNSCALE: Convert thousands → units
-                    qty_units = qty_thousands * self.FLOW_SCALE_FACTOR
-
-                    if qty_units and abs(qty_units) > 0.01:
-                        production_by_date_product[(node_id, prod, t)] = qty_units
+                    if qty and abs(qty) > 0.01:
+                        production_by_date_product[(node_id, prod, t)] = qty
                 except (ValueError, AttributeError, TypeError):
                     # Variable has no value or is uninitialized - try returning 0
                     try:
-                        qty_thousands = value(var)
-                        if qty_thousands is None:
-                            qty_thousands = 0
-                        qty_units = qty_thousands * self.FLOW_SCALE_FACTOR
-                        if abs(qty_units) > 0.01:
-                            production_by_date_product[(node_id, prod, t)] = qty_units
+                        qty = value(var)
+                        if qty is None:
+                            qty = 0
+                        if abs(qty) > 0.01:
+                            production_by_date_product[(node_id, prod, t)] = qty
                     except:
                         pass  # Give up on this variable
 
@@ -2994,40 +2912,37 @@ class SlidingWindowModel(BaseOptimizationModel):
         solution['production_batches'] = production_batches
         logger.info(f"Created {len(production_batches)} production batch entries for Pydantic solution")
 
-        # Extract inventory by state (UNSCALE: thousands → units)
+        # Extract inventory by state
         inventory_by_state = {}
         if hasattr(model, 'inventory'):
             for (node_id, prod, state, t) in model.inventory:
                 try:
-                    qty_thousands = value(model.inventory[node_id, prod, state, t])
-                    qty_units = qty_thousands * self.FLOW_SCALE_FACTOR
-                    if qty_units and qty_units > 0.01:
-                        inventory_by_state[(node_id, prod, state, t)] = qty_units
+                    qty = value(model.inventory[node_id, prod, state, t])
+                    if qty and qty > 0.01:
+                        inventory_by_state[(node_id, prod, state, t)] = qty
                 except:
                     pass
 
         solution['inventory'] = inventory_by_state
 
-        # Extract state transitions (UNSCALE: thousands → units)
+        # Extract state transitions
         thaw_flows = {}
         freeze_flows = {}
         if hasattr(model, 'thaw'):
             for (node_id, prod, t) in model.thaw:
                 try:
-                    qty_thousands = value(model.thaw[node_id, prod, t])
-                    qty_units = qty_thousands * self.FLOW_SCALE_FACTOR
-                    if qty_units and qty_units > 0.01:
-                        thaw_flows[(node_id, prod, t)] = qty_units
+                    qty = value(model.thaw[node_id, prod, t])
+                    if qty and qty > 0.01:
+                        thaw_flows[(node_id, prod, t)] = qty
                 except:
                     pass
 
         if hasattr(model, 'freeze'):
             for (node_id, prod, t) in model.freeze:
                 try:
-                    qty_thousands = value(model.freeze[node_id, prod, t])
-                    qty_units = qty_thousands * self.FLOW_SCALE_FACTOR
-                    if qty_units and qty_units > 0.01:
-                        freeze_flows[(node_id, prod, t)] = qty_units
+                    qty = value(model.freeze[node_id, prod, t])
+                    if qty and qty > 0.01:
+                        freeze_flows[(node_id, prod, t)] = qty
                 except:
                     pass
 
@@ -3050,15 +2965,13 @@ class SlidingWindowModel(BaseOptimizationModel):
                     if hasattr(var, 'stale') and var.stale:
                         continue  # Skip - solver didn't assign this variable
 
-                    # Safe value extraction (UNSCALE: thousands → units)
+                    # Safe value extraction
                     if hasattr(var, 'value') and var.value is not None:
-                        qty_thousands = var.value
+                        qty = var.value
                     else:
                         continue  # No value, skip
 
-                    qty_units = qty_thousands * self.FLOW_SCALE_FACTOR
-
-                    if qty_units and qty_units > 0.01:
+                    if qty and qty > 0.01:
                         # Calculate delivery date for UI compatibility
                         route = next((r for r in self.routes if r.origin_node_id == origin and r.destination_node_id == dest), None)
                         if route:
@@ -3076,7 +2989,7 @@ class SlidingWindowModel(BaseOptimizationModel):
 
                             # Aggregate by route (ignoring state for UI simplicity)
                             route_key = (origin, dest, prod, delivery_date)
-                            shipments_by_route[route_key] = shipments_by_route.get(route_key, 0) + qty_units
+                            shipments_by_route[route_key] = shipments_by_route.get(route_key, 0) + qty
                 except (ValueError, AttributeError, TypeError):
                     # Uninitialized variable - not used in solution, skip
                     pass
@@ -3161,42 +3074,38 @@ class SlidingWindowModel(BaseOptimizationModel):
         solution['labor_cost_by_date'] = labor_cost_by_date
         logger.info(f"Extracted labor hours for {len(labor_hours_by_date)} dates")
 
-        # Extract shortages (UNSCALE: thousands → units)
+        # Extract shortages
         total_shortage = 0
         shortages_by_location = {}
         if hasattr(model, 'shortage'):
             for (node_id, prod, t) in model.shortage:
                 try:
                     var = model.shortage[node_id, prod, t]
-                    qty_thousands = value(var)  # Don't check .stale
-                    qty_units = qty_thousands * self.FLOW_SCALE_FACTOR
-                    if qty_units and qty_units > 0.01:
-                        shortages_by_location[(node_id, prod, t)] = qty_units
-                        total_shortage += qty_units
+                    qty = value(var)  # Don't check .stale
+                    if qty and qty > 0.01:
+                        shortages_by_location[(node_id, prod, t)] = qty
+                        total_shortage += qty
                 except (ValueError, AttributeError):
                     pass
 
         solution['shortages'] = shortages_by_location
         solution['total_shortage_units'] = total_shortage
 
-        # Extract demand consumed (UNSCALE: thousands → units)
+        # Extract demand consumed
         # CRITICAL FIX (2025-11-05): Aggregate consumption from BOTH states
         demand_consumed_by_location = {}
         if hasattr(model, 'demand_consumed_from_ambient') and hasattr(model, 'demand_consumed_from_thawed'):
             for (node_id, prod, t) in model.demand_consumed_from_ambient:
                 try:
-                    # Get consumption from both states (in thousands)
-                    consumed_ambient_k = value(model.demand_consumed_from_ambient[node_id, prod, t])
-                    consumed_thawed_k = value(model.demand_consumed_from_thawed[node_id, prod, t])
+                    # Get consumption from both states
+                    consumed_ambient = value(model.demand_consumed_from_ambient[node_id, prod, t])
+                    consumed_thawed = value(model.demand_consumed_from_thawed[node_id, prod, t])
 
-                    # Total consumption (in thousands)
-                    total_consumed_k = consumed_ambient_k + consumed_thawed_k
+                    # Total consumption for UI display
+                    total_consumed = consumed_ambient + consumed_thawed
 
-                    # UNSCALE: Convert thousands → units
-                    total_consumed_units = total_consumed_k * self.FLOW_SCALE_FACTOR
-
-                    if total_consumed_units > 0.01:
-                        demand_consumed_by_location[(node_id, prod, t)] = total_consumed_units
+                    if total_consumed > 0.01:
+                        demand_consumed_by_location[(node_id, prod, t)] = total_consumed
                 except (ValueError, AttributeError):
                     pass
         elif hasattr(model, 'demand_consumed'):
@@ -3204,18 +3113,17 @@ class SlidingWindowModel(BaseOptimizationModel):
             for (node_id, prod, t) in model.demand_consumed:
                 try:
                     var = model.demand_consumed[node_id, prod, t]
-                    qty_thousands = value(var)
-                    qty_units = qty_thousands * self.FLOW_SCALE_FACTOR
-                    if qty_units and qty_units > 0.01:
-                        demand_consumed_by_location[(node_id, prod, t)] = qty_units
+                    qty = value(var)
+                    if qty and qty > 0.01:
+                        demand_consumed_by_location[(node_id, prod, t)] = qty
                 except (ValueError, AttributeError):
                     pass
 
         solution['demand_consumed'] = demand_consumed_by_location
         logger.info(f"Extracted demand consumed for {len(demand_consumed_by_location)} demand entries")
 
-        # Calculate fill rate (use original demand for correct calculation)
-        total_demand = sum(self.demand_original.values()) if hasattr(self, 'demand_original') else sum(v * self.FLOW_SCALE_FACTOR for v in self.demand.values())
+        # Calculate fill rate
+        total_demand = sum(self.demand.values())
         solution['fill_rate'] = (1 - total_shortage / total_demand) if total_demand > 0 else 1.0
 
         # Extract costs (from objective if available)
@@ -3378,21 +3286,6 @@ class SlidingWindowModel(BaseOptimizationModel):
                 arrival_state = self._determine_arrival_state(route, dest_node)
                 route_key = (route.origin_node_id, route.destination_node_id)
                 self.route_arrival_state[route_key] = arrival_state
-
-        # VALIDATION: Verify unscaling worked correctly (2025-11-05)
-        total_production_units = solution.get('total_production', 0)
-        if total_production_units < 100:
-            logger.warning(
-                f"Total production suspiciously low: {total_production_units:.0f} units. "
-                f"This may indicate unscaling error. Check FLOW_SCALE_FACTOR={self.FLOW_SCALE_FACTOR}"
-            )
-        elif total_production_units > 10_000_000:
-            logger.warning(
-                f"Total production suspiciously high: {total_production_units:.0f} units. "
-                f"This may indicate double-scaling error. Check FLOW_SCALE_FACTOR={self.FLOW_SCALE_FACTOR}"
-            )
-        else:
-            logger.info(f"✓ Unscaling validation passed: total production = {total_production_units:.0f} units")
 
         return self._dict_to_optimization_solution(solution)
 
@@ -3684,102 +3577,6 @@ class SlidingWindowModel(BaseOptimizationModel):
             f"{len(solution.shipments)} shipments, "
             f"fill_rate={solution.fill_rate:.1%}"
         )
-
-    def diagnose_scaling(self, model: ConcreteModel) -> Dict[str, Any]:
-        """Diagnose coefficient scaling quality of the optimization model.
-
-        Analyzes the matrix coefficient ranges to assess numerical conditioning.
-        Well-scaled models have coefficient ratios < 1e6.
-
-        Args:
-            model: Pyomo ConcreteModel to analyze
-
-        Returns:
-            Dict containing:
-                - matrix_min: Smallest non-zero matrix coefficient
-                - matrix_max: Largest matrix coefficient
-                - ratio: max / min coefficient ratio
-                - status: "EXCELLENT" (<1e4), "GOOD" (<1e6), or "POOR" (>=1e6)
-                - target_ratio: Target ratio for good scaling (1e6)
-                - warnings: List of warnings if scaling is poor
-
-        Example:
-            >>> diagnostics = model_builder.diagnose_scaling(model)
-            >>> print(f"Scaling: {diagnostics['status']} (ratio: {diagnostics['ratio']:.2e})")
-            Scaling: GOOD (ratio: 4.69e+03)
-        """
-        from pyomo.environ import Constraint
-        from pyomo.repn import generate_standard_repn
-
-        matrix_min, matrix_max = float('inf'), 0
-        constraint_count = 0
-        problem_constraints = []
-
-        for con in model.component_data_objects(Constraint, active=True):
-            constraint_count += 1
-            try:
-                repn = generate_standard_repn(con.body)
-                if repn.linear_coefs:
-                    coefs = [abs(c) for c in repn.linear_coefs if c != 0]
-                    if coefs:
-                        con_min = min(coefs)
-                        con_max = max(coefs)
-                        matrix_min = min(matrix_min, con_min)
-                        matrix_max = max(matrix_max, con_max)
-
-                        # Track constraints with very wide ranges
-                        con_ratio = con_max / con_min if con_min > 0 else float('inf')
-                        if con_ratio > 1e6:
-                            problem_constraints.append({
-                                'name': str(con),
-                                'min': con_min,
-                                'max': con_max,
-                                'ratio': con_ratio
-                            })
-            except:
-                # Some constraints may not be representable (skip them)
-                continue
-
-        # Handle edge cases
-        if matrix_min == float('inf') or matrix_max == 0:
-            return {
-                'matrix_min': None,
-                'matrix_max': None,
-                'ratio': None,
-                'status': 'UNKNOWN',
-                'target_ratio': 1e6,
-                'warnings': ['No coefficients found'],
-                'constraint_count': constraint_count,
-                'problem_constraints': []
-            }
-
-        ratio = matrix_max / matrix_min if matrix_min > 0 else float('inf')
-
-        # Determine status
-        if ratio < 1e4:
-            status = "EXCELLENT"
-        elif ratio < 1e6:
-            status = "GOOD"
-        else:
-            status = "POOR"
-
-        # Generate warnings
-        warnings = []
-        if ratio >= 1e6:
-            warnings.append(f"Coefficient range ratio ({ratio:.2e}) exceeds target (1e6)")
-            warnings.append("This may cause slow LP convergence and numerical instability")
-            warnings.append(f"Found {len(problem_constraints)} constraints with ratio > 1e6")
-
-        return {
-            'matrix_min': matrix_min,
-            'matrix_max': matrix_max,
-            'ratio': ratio,
-            'status': status,
-            'target_ratio': 1e6,
-            'warnings': warnings,
-            'constraint_count': constraint_count,
-            'problem_constraints': problem_constraints[:10]  # First 10 problem constraints
-        }
 
     def apply_fefo_allocation(self, method: str = 'greedy'):
         """Apply FEFO batch allocator to convert aggregate flows to batch detail.

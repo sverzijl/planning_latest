@@ -3,12 +3,11 @@
 **IMPORTANT MAINTENANCE REQUIREMENT:**
 This documentation must be updated whenever changes are made to `src/optimization/unified_node_model.py`. Keep this document synchronized with the actual implementation to serve as the authoritative reference for model behavior.
 
-**Last Updated:** 2025-11-05
-**Model Version:** SlidingWindowModel (Phase 3 - Primary Optimization Approach with Coefficient Scaling)
-**Location:** `src/optimization/sliding_window_model.py`
+**Last Updated:** 2025-10-23
+**Model Version:** UnifiedNodeModel (Phase 3 - Primary Optimization Approach)
+**Location:** `src/optimization/unified_node_model.py`
 
 **Changelog:**
-- 2025-11-05: **CRITICAL - Coefficient Scaling:** All flow variables scaled to thousands (FLOW_SCALE_FACTOR=1000) for numerical stability. 85,000× improvement in matrix conditioning. See `COEFFICIENT_SCALING_ARCHITECTURE.md`
 - 2025-10-23: Added mix-based production variables (mix_count, production expression)
 
 ---
@@ -40,54 +39,7 @@ The objective is to **minimize total cost** (production + labor + transport + st
 
 ---
 
-## 2. COEFFICIENT SCALING (CRITICAL)
-
-**Implementation Date:** 2025-11-05
-**Status:** Active in all SlidingWindowModel instances
-
-### 2.1 Overview
-
-All flow variables (production, inventory, shipments) are **internally stored in THOUSANDS of units** to fix critical numerical instability:
-
-- **Before:** Matrix coefficient range [5e-05, 2e+04] = 400 million ratio → **POOR numerical conditioning**
-- **After:** Matrix coefficient range [0.32, 1500] = ~4,688 ratio → **GOOD numerical conditioning**
-- **Improvement:** 85,000× better conditioning, 20-40% faster solves
-
-### 2.2 Scaling Factor
-
-```python
-FLOW_SCALE_FACTOR = 1000  # All flows in thousands of units
-```
-
-**All flow variables are divided by 1000 on creation, multiplied by 1000 on extraction.**
-
-### 2.3 Variable Interpretation
-
-When you see variables in this document:
-- **Internal representation:** `production[n,p,t] = 19.6` means 19.6 thousands = **19,600 units**
-- **Extracted solution:** Automatically converted back to units
-- **UI display:** Always sees original units (unscaling is automatic)
-
-### 2.4 Constraint Coefficients
-
-Coefficients adjusted to work with scaled variables:
-- **Pallet ceiling:** `pallet_count × 0.320 >= inventory` (was: `pallet_count × 320`)
-- **Mix production:** `production = mix_count × 0.415` (was: `mix_count × 415`)
-- **Production capacity:** `(production × 1000) / rate <= hours` (unscale before dividing)
-
-### 2.5 Cost Coefficients
-
-Flow-based costs scaled up to compensate:
-- **Production:** `$1.30/unit → $1,300/thousand` (multiply by 1000)
-- **Transport:** `$0.50/unit → $500/thousand` (multiply by 1000)
-- **Shortage:** `$10k/unit → $10M/thousand` (multiply by 1000)
-- **Labor/Pallet costs:** Unchanged (not flow-based)
-
-**See:** `docs/COEFFICIENT_SCALING_ARCHITECTURE.md` for complete details
-
----
-
-## 3. DECISION VARIABLES
+## 2. DECISION VARIABLES
 
 ### 2.1 Production Variables
 

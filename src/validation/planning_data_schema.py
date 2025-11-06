@@ -30,7 +30,6 @@ class ProductID(BaseModel):
     id: str = Field(..., min_length=1, max_length=200, description="Product SKU or name")
     sku: Optional[str] = Field(None, description="Alternative SKU code")
     name: str = Field(..., min_length=1, description="Product display name")
-    units_per_mix: Optional[int] = Field(None, gt=0, description="Units produced per mix/batch (required for mix-based production)")
 
     @field_validator('id', 'name')
     @classmethod
