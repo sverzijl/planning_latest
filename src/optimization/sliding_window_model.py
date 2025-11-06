@@ -2855,14 +2855,12 @@ class SlidingWindowModel(BaseOptimizationModel):
                 print(f"    end_in_transit expression created (Pyomo sum)")
 
             prod_cost = self.cost_structure.production_cost_per_unit or 1.3
-            # SCALED: end_inventory and end_in_transit are in thousands, must multiply by FLOW_SCALE_FACTOR
-            waste_cost_per_thousand = waste_multiplier * prod_cost * self.FLOW_SCALE_FACTOR
-            waste_cost = waste_cost_per_thousand * (end_inventory + end_in_transit)
+            waste_cost = waste_multiplier * prod_cost * (end_inventory + end_in_transit)
 
-            print(f"  Waste cost: ${waste_multiplier * prod_cost:.2f}/unit (${waste_cost_per_thousand:.0f}/thousand) × (end_inventory + end_in_transit)")
-            print(f"    Coefficient: ${waste_cost_per_thousand:.0f}/thousand")
+            print(f"  Waste cost: ${waste_multiplier * prod_cost:.2f}/unit × (end_inventory + end_in_transit)")
+            print(f"    Coefficient: ${waste_multiplier * prod_cost:.2f}/unit")
             print(f"    Expression type: {type(waste_cost)}")
-            print(f"    If end_inventory=32.751 thousands, waste would be ${waste_cost_per_thousand * 32.751:.2f}")
+            print(f"    If end_inventory=32,751, waste would be ${waste_multiplier * prod_cost * 32751:.2f}")
             print(f"    ✅ WASTE COST EXPRESSION CREATED - WILL BE IN OBJECTIVE")
         else:
             print(f"    ❌ SKIPPED waste cost block!")
