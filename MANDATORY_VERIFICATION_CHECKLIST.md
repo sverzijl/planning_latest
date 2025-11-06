@@ -126,18 +126,34 @@ Example:
 
 ---
 
-## 📋 Checklist for Model Changes
+## 📋 Checklist for Optimization Model Changes
 
-**BEFORE claiming "model works", "optimization complete", etc.:**
+**BEFORE claiming "model works", "optimization complete", "scaling implemented", etc.:**
 
-### **Integration Test:**
+### **Step 1: Solution Reasonableness Tests (MANDATORY)**
+```bash
+pytest tests/test_solution_reasonableness.py -v
+```
+
+**Required Output:** All tests PASS
+
+**These tests verify:**
+- Production meets demand (accounting for initial inventory)
+- Fill rate > 95% (no excessive shortages)
+- Production spread across sufficient days (not concentrated)
+- Conservation of flow (can't consume more than available)
+- Cost components have realistic magnitudes
+
+**If ANY test fails:** The solution is economically nonsensical, indicating a formulation bug.
+
+### **Step 2: Integration Test**
 ```bash
 pytest tests/test_integration_ui_workflow.py::test_ui_workflow_4_weeks_sliding_window -v
 ```
 
 **Required:** `PASSED`
 
-### **Unit Tests:**
+### **Step 3: Unit Tests**
 ```bash
 pytest tests/test_fefo_batch_allocator.py -v
 pytest tests/test_pallet_entry_costs.py -v
@@ -145,7 +161,42 @@ pytest tests/test_pallet_entry_costs.py -v
 
 **Required:** All pass
 
-### **Then and only then:** Claim success with test evidence
+### **Step 4: Manual Solution Inspection (REQUIRED for Major Changes)**
+
+**After solving, verify metrics make sense:**
+```python
+# Check production quantity
+expected_production ≈ total_demand - initial_inventory
+actual_production should be within 80-120% of expected
+
+# Check shortage
+shortage should be < 5% of demand (unless capacity constrained)
+
+# Check production days
+For 4-week horizon: should produce on 15-25 days (not just 2-5 days!)
+
+# Check objective value
+For 4-week: should be $400k-$2M (not $50k or $10M)
+```
+
+**Red Flags (Indicate Formulation Bugs):**
+- Fill rate > 95% but production < 20% of demand → Phantom supply (double-counting)
+- Massive shortages despite low shortage cost → Penalty not in objective
+- Production only on 2-5 days in 4-week → Constraints blocking production
+- Objective suspiciously low → Cost scaling error
+
+### **Step 5: Then and Only Then: Claim Success with Evidence**
+
+**Required Format:**
+```
+✅ [Feature] complete - ALL TESTS PASS
+
+Verification Evidence:
+  pytest tests/test_solution_reasonableness.py: 6 passed ✅
+  4-week production: 307,421 units (expected: 306k)
+  Fill rate: 99.2%
+  Objective: $583,492
+```
 
 ---
 
