@@ -1910,6 +1910,13 @@ class SlidingWindowModel(BaseOptimizationModel):
         """
         print(f"\n  Adding demand satisfaction...")
 
+        # Build date lookup for previous day (needed for consumption limit fix)
+        date_list = list(model.dates)
+        date_to_prev = {}
+        for i, d in enumerate(date_list):
+            if i > 0:
+                date_to_prev[d] = date_list[i-1]
+
         demand_keys = list(self.demand.keys())
 
         # DEMAND BALANCE: consumed + shortage = total demand
@@ -1968,7 +1975,20 @@ class SlidingWindowModel(BaseOptimizationModel):
         # The previous commit message claiming "circular dependency" was incorrect.
         # There is no circular dependency - these are coupling constraints (correct MIP pattern).
         def demand_consumption_ambient_limit_rule(model, node_id, prod, t):
-            """Consumption from ambient cannot exceed ambient inventory."""
+            """Consumption from ambient cannot exceed available supply.
+
+            FIX (2025-11-08): Bound consumption against INFLOWS, not inventory[t]!
+
+            The previous formulation created a CIRCULAR DEPENDENCY:
+                consumption[t] <= inventory[t]
+                inventory[t] = prev_inv + inflows - consumption[t] - outflows
+
+            This limited consumption to (prev_inv + inflows - outflows) / 2
+            causing the disposal bug where only 50% of init_inv could be consumed.
+
+            CORRECT formulation: Bound against available supply BEFORE consumption:
+                consumption[t] <= prev_inv + production + arrivals + thaw - shipments - freeze - disposal
+            """
             if (node_id, prod, t) not in self.demand:
                 return Constraint.Skip
 
@@ -1976,15 +1996,63 @@ class SlidingWindowModel(BaseOptimizationModel):
             if not node.has_demand_capability():
                 return Constraint.Skip
 
-            # Ambient consumption limited by ambient inventory
-            if (node_id, prod, 'ambient', t) in model.inventory:
-                return model.demand_consumed_from_ambient[node_id, prod, t] <= model.inventory[node_id, prod, 'ambient', t]
-            else:
+            if (node_id, prod, 'ambient', t) not in model.inventory:
                 # No ambient inventory at this node - consumption must be 0
                 return model.demand_consumed_from_ambient[node_id, prod, t] == 0
 
+            # Calculate available supply (BEFORE consumption is subtracted)
+            # This is: prev_inv + inflows - outflows (excluding consumption)
+
+            # Previous inventory
+            prev_date = date_to_prev.get(t)
+            if prev_date and (node_id, prod, 'ambient', prev_date) in model.inventory:
+                available = model.inventory[node_id, prod, 'ambient', prev_date]
+            else:
+                # Day 1: use initial inventory
+                available = self.initial_inventory.get((node_id, prod, 'ambient'), 0)
+
+            # Add production inflow
+            if node.can_produce() and (node_id, prod, t) in model.production:
+                if node.get_production_state() == 'ambient':
+                    available += model.production[node_id, prod, t]
+
+            # Add thaw inflow
+            if (node_id, prod, t) in model.thaw:
+                available += model.thaw[node_id, prod, t]
+
+            # Add arrivals
+            for route in self.routes_to_node[node_id]:
+                arrival_state = self._determine_arrival_state(route, node)
+                if arrival_state == 'ambient':
+                    departure_date = t - timedelta(days=route.transit_days)
+                    if departure_date in model.dates:
+                        key = (route.origin_node_id, node_id, prod, departure_date, 'ambient')
+                        if key in model.in_transit:
+                            available += model.in_transit[key]
+
+            # Subtract departures (shipments)
+            for route in self.routes_from_node[node_id]:
+                if route.transport_mode != TransportMode.FROZEN:
+                    key = (node_id, route.destination_node_id, prod, t, 'ambient')
+                    if key in model.in_transit:
+                        available -= model.in_transit[key]
+
+            # Subtract freeze outflow
+            if (node_id, prod, t) in model.freeze:
+                available -= model.freeze[node_id, prod, t]
+
+            # Subtract disposal (only exists for expired inventory)
+            if hasattr(model, 'disposal') and (node_id, prod, 'ambient', t) in model.disposal:
+                available -= model.disposal[node_id, prod, 'ambient', t]
+
+            # Bound consumption by available supply
+            return model.demand_consumed_from_ambient[node_id, prod, t] <= available
+
         def demand_consumption_thawed_limit_rule(model, node_id, prod, t):
-            """Consumption from thawed cannot exceed thawed inventory."""
+            """Consumption from thawed cannot exceed available supply.
+
+            FIX (2025-11-08): Same circular dependency fix as ambient.
+            """
             if (node_id, prod, t) not in self.demand:
                 return Constraint.Skip
 
@@ -1992,12 +2060,40 @@ class SlidingWindowModel(BaseOptimizationModel):
             if not node.has_demand_capability():
                 return Constraint.Skip
 
-            # Thawed consumption limited by thawed inventory
-            if (node_id, prod, 'thawed', t) in model.inventory:
-                return model.demand_consumed_from_thawed[node_id, prod, t] <= model.inventory[node_id, prod, 'thawed', t]
-            else:
+            if (node_id, prod, 'thawed', t) not in model.inventory:
                 # No thawed inventory at this node - consumption must be 0
                 return model.demand_consumed_from_thawed[node_id, prod, t] == 0
+
+            # Calculate available supply (BEFORE consumption is subtracted)
+            prev_date = date_to_prev.get(t)
+            if prev_date and (node_id, prod, 'thawed', prev_date) in model.inventory:
+                available = model.inventory[node_id, prod, 'thawed', prev_date]
+            else:
+                # Day 1: use initial inventory
+                available = self.initial_inventory.get((node_id, prod, 'thawed'), 0)
+
+            # Add thaw inflow
+            if (node_id, prod, t) in model.thaw:
+                available += model.thaw[node_id, prod, t]
+
+            # Add arrivals (frozen goods arriving at ambient-only nodes become thawed)
+            for route in self.routes_to_node[node_id]:
+                arrival_state = self._determine_arrival_state(route, node)
+                if arrival_state == 'thawed':
+                    departure_date = t - timedelta(days=route.transit_days)
+                    if departure_date in model.dates:
+                        # Check both frozen and thawed in-transit
+                        for state in ['frozen', 'thawed']:
+                            key = (route.origin_node_id, node_id, prod, departure_date, state)
+                            if key in model.in_transit:
+                                available += model.in_transit[key]
+
+            # Subtract disposal (only exists for expired inventory)
+            if hasattr(model, 'disposal') and (node_id, prod, 'thawed', t) in model.disposal:
+                available -= model.disposal[node_id, prod, 'thawed', t]
+
+            # Bound consumption by available supply
+            return model.demand_consumed_from_thawed[node_id, prod, t] <= available
 
         model.demand_consumed_ambient_limit_con = Constraint(
             demand_keys,
