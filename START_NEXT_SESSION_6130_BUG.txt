@@ -1,0 +1,62 @@
+OPTIMIZATION MODEL BUG: 6130 Ambient Inventory Not Consumed
+
+CONTEXT:
+- Three bugs fixed this session ($326k improvement) ✅
+- One remaining bug: 6130 ambient inventory not consumed
+- Model takes 100% shortages instead of using free inventory
+- Economically irrational = formulation bug
+
+THE BUG (Reproduced):
+Planning with Oct 16 inventory snapshot + Oct 17 start:
+- Initial inventory: 937 units ambient at 6130
+- Demand on Day 1: 615 units
+- Model behavior: 100% shortage, 0 consumption
+- Cost: $6,150 in unnecessary shortages
+
+Works correctly with Nov 8/Nov 8 dates, fails with Oct 16/17.
+
+EVIDENCE GATHERED:
+✅ Forecast has demand (615 units at 6130 on Oct 17)
+✅ SAP IBP parser works correctly
+✅ Alias resolution works (168847 → HELGAS GFREE MIXED GRAIN)
+✅ demand_consumed_from_ambient variables exist for 6130
+✅ 6130 has no outbound routes (is leaf node)
+❌ Consumption = 0, Shortage = 615 (irrational!)
+
+FIXES ALREADY APPLIED:
+1. Original circular dependency: consumption <= inventory ✅ FIXED (commit 1614047)
+2. Disposal in consumption limit: available -= disposal ✅ FIXED (commit ce1579f)
+
+YOUR TASK:
+1. Read complete handover:
+   cat HANDOFF_6130_CONSUMPTION_BUG.md
+
+2. Run reproduction:
+   python minimal_test_6130_consumption.py
+
+3. Use systematic-debugging (REQUIRED):
+   - Create 10-line Pyomo test if needed
+   - Prove root cause mathematically
+   - NO FIXES before root cause proven
+
+4. Check if there's ANOTHER circular dependency I missed in my fix
+
+5. Apply minimal fix
+
+SUCCESS CRITERIA:
+- Run minimal_test_6130_consumption.py
+- Consumption from ambient > 0 (not 615 all shortage)
+- Integration test passes
+- Commit fix
+
+TIME ESTIMATE: 1-2 hours
+
+KEY INSIGHT:
+Bug is date-specific (works Nov 8/8, fails Oct 16/17).
+Suggests age calculation or disposal variable creation issue.
+
+DIAGNOSTIC ALREADY CREATED:
+- minimal_test_6130_consumption.py (reproduces bug)
+- Multiple analysis scripts in repo root
+
+If stuck after 1 hour, use optimization-solver agent to analyze constraints.
