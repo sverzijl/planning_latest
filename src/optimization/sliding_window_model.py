@@ -710,12 +710,17 @@ class SlidingWindowModel(BaseOptimizationModel):
                         # Thawed inventory ONLY for nodes that can receive frozen goods and thaw them
                         # Typically: nodes that receive from frozen routes (like 6130 from Lineage)
                         # Don't create for pure ambient nodes like manufacturing
-                        # SIMPLIFIED: Only create if node has incoming frozen routes OR has thaw capability
+                        # Don't create for frozen-only nodes like Lineage (they can't thaw!)
                         has_frozen_inbound = any(
                             r.destination_node_id == node_id and r.transport_mode == TransportMode.FROZEN
                             for r in self.routes
                         )
-                        can_thaw = node.supports_frozen_storage()  # Can hold frozen AND ambient
+                        # FIX (2025-11-08): Match thaw flow logic (line 753)
+                        # Frozen-only nodes (Lineage) should NOT have thawed inventory
+                        # Must be able to hold frozen AND use ambient/thawed
+                        can_thaw = node.supports_frozen_storage() and (
+                            node.supports_ambient_storage() or node.has_demand_capability()
+                        )
 
                         if has_frozen_inbound or can_thaw:
                             inventory_index.append((node_id, prod, 'thawed', t))
@@ -1281,12 +1286,17 @@ class SlidingWindowModel(BaseOptimizationModel):
                     O_ambient += model.demand_consumed_from_ambient[node_id, prod, tau]
 
             # Skip if no activity to avoid trivial True constraint
-            # Check if expressions are non-zero (handle Pyomo expressions)
+            # Check if both are constants (not Pyomo expressions)
             try:
-                if Q_ambient == 0 and O_ambient == 0:
-                    return Constraint.Skip
+                # If both are numeric constants
+                if isinstance(Q_ambient, (int, float)) and isinstance(O_ambient, (int, float)):
+                    if Q_ambient == 0 and O_ambient == 0:
+                        return Constraint.Skip
+                    # If both constants and constraint holds, skip to avoid "True" error
+                    if O_ambient <= Q_ambient:
+                        return Constraint.Feasible
             except:
-                pass  # Pyomo expressions can't be compared to 0 easily
+                pass  # Pyomo expressions - let them through
 
             # DIAGNOSTIC: Log day 2 constraint for nodes with initial inventory
             if self.initial_inventory.get((node_id, prod, 'ambient'), 0) > 0:
@@ -1388,6 +1398,16 @@ class SlidingWindowModel(BaseOptimizationModel):
                 except:
                     pass
 
+            # Skip if no activity (avoids trivial True constraint)
+            try:
+                if isinstance(Q_frozen, (int, float)) and isinstance(O_frozen, (int, float)):
+                    if Q_frozen == 0 and O_frozen == 0:
+                        return Constraint.Skip
+                    if O_frozen <= Q_frozen:
+                        return Constraint.Feasible
+            except:
+                pass
+
             # CRITICAL FIX (2025-11-03): Correct sliding window formulation
             # Changed from: inventory[t] <= Q - O (causes infeasibility)
             # Changed to: O <= Q (standard perishables formulation)
@@ -1451,6 +1471,16 @@ class SlidingWindowModel(BaseOptimizationModel):
             for tau in window_dates:
                 if node.has_demand_capability() and (node_id, prod, tau) in model.demand_consumed_from_thawed:
                     O_thawed += model.demand_consumed_from_thawed[node_id, prod, tau]
+
+            # Skip if no activity (avoids trivial True constraint)
+            try:
+                if isinstance(Q_thawed, (int, float)) and isinstance(O_thawed, (int, float)):
+                    if Q_thawed == 0 and O_thawed == 0:
+                        return Constraint.Skip
+                    if O_thawed <= Q_thawed:
+                        return Constraint.Feasible
+            except:
+                pass
 
             # CRITICAL FIX (2025-11-03): Correct sliding window formulation
             # Changed from: inventory[t] <= Q - O (causes infeasibility)
