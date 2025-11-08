@@ -2071,9 +2071,12 @@ class SlidingWindowModel(BaseOptimizationModel):
             if (node_id, prod, t) in model.freeze:
                 available -= model.freeze[node_id, prod, t]
 
-            # Subtract disposal (only exists for expired inventory)
-            if hasattr(model, 'disposal') and (node_id, prod, 'ambient', t) in model.disposal:
-                available -= model.disposal[node_id, prod, 'ambient', t]
+            # DON'T subtract disposal! (would create another circular dependency)
+            # disposal[t] depends on inventory[t], which depends on consumption[t]
+            # If we bound consumption by (prev_inv - disposal), we get:
+            #   consumption <= prev_inv - disposal
+            # But disposal is high when consumption is low, creating circular dependency
+            # The state balance equation handles disposal separately.
 
             # Bound consumption by available supply
             return model.demand_consumed_from_ambient[node_id, prod, t] <= available
@@ -2118,9 +2121,8 @@ class SlidingWindowModel(BaseOptimizationModel):
                             if key in model.in_transit:
                                 available += model.in_transit[key]
 
-            # Subtract disposal (only exists for expired inventory)
-            if hasattr(model, 'disposal') and (node_id, prod, 'thawed', t) in model.disposal:
-                available -= model.disposal[node_id, prod, 'thawed', t]
+            # DON'T subtract disposal! (creates circular dependency - same as ambient)
+            # State balance handles disposal separately
 
             # Bound consumption by available supply
             return model.demand_consumed_from_thawed[node_id, prod, t] <= available
