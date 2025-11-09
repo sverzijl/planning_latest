@@ -3,10 +3,10 @@
 This module provides Pyomo-based mathematical optimization models for
 integrated production scheduling and distribution planning.
 
-The primary model is UnifiedNodeModel, which uses a clean node-based architecture
-with no virtual locations and generalized truck constraints. It solves
-the full planning horizon with proper weekend enforcement and state transitions.
-Validated to solve 4-week horizons in < 30 seconds with modern MIP solvers like CBC.
+The primary model is SlidingWindowModel, which uses state-based aggregate flows
+with sliding window shelf life constraints. It provides 60-80× speedup over
+cohort-tracking approaches while maintaining exact shelf life enforcement.
+Validated to solve 4-week horizons in 5-7 seconds with APPSI HiGHS solver.
 """
 
 from .solver_config import (
@@ -20,11 +20,8 @@ from .base_model import (
     BaseOptimizationModel,
     OptimizationResult,
 )
-from .unified_node_model import (
-    UnifiedNodeModel,
-)
-from .legacy_to_unified_converter import (
-    LegacyToUnifiedConverter,
+from .sliding_window_model import (
+    SlidingWindowModel,
 )
 
 __all__ = [
@@ -37,8 +34,6 @@ __all__ = [
     # Base model
     "BaseOptimizationModel",
     "OptimizationResult",
-    # Unified node model (primary model)
-    "UnifiedNodeModel",
-    # Data conversion utility
-    "LegacyToUnifiedConverter",
+    # Sliding window model (production model)
+    "SlidingWindowModel",
 ]

@@ -27,8 +27,7 @@ def test_core_optimization_imports():
             get_solver,
             BaseOptimizationModel,
             OptimizationResult,
-            UnifiedNodeModel,
-            LegacyToUnifiedConverter,
+            SlidingWindowModel,
         )
         assert True, "Core optimization imports successful"
     except ImportError as e:
@@ -80,13 +79,13 @@ def test_solver_config_completeness():
 
 
 def test_verified_model_importable():
-    """Validate VerifiedSlidingWindowModel can be imported (if it exists)."""
-    try:
-        from src.optimization.verified_sliding_window_model import VerifiedSlidingWindowModel
-        assert True
-    except ImportError:
-        # OK if doesn't exist yet
-        pytest.skip("VerifiedSlidingWindowModel not yet implemented")
+    """Validate VerifiedSlidingWindowModel can be imported (if it exists).
+
+    NOTE: As of 2025-11-09, VerifiedSlidingWindowModel has been archived.
+    This test is kept for compatibility but will skip.
+    """
+    # VerifiedSlidingWindowModel archived to archive/optimization_models_deprecated_2025_11/
+    pytest.skip("VerifiedSlidingWindowModel archived (2025-11-09)")
 
 
 if __name__ == "__main__":
@@ -106,8 +105,12 @@ if __name__ == "__main__":
         test_solver_config_completeness()
         print("✓ Solver config complete")
 
-        test_verified_model_importable()
-        print("✓ Verified model importable")
+        try:
+            test_verified_model_importable()
+            print("✓ Verified model importable")
+        except pytest.skip.Exception:
+            # Skip is OK for optional models
+            pass
 
         print("\n✅ ALL IMPORTS VALID!")
 
