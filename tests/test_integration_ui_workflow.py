@@ -320,7 +320,7 @@ def test_ui_workflow_4_weeks_with_initial_inventory(parsed_data):
     model_build_time = time.time() - model_start
 
     # Model statistics
-    horizon_days = len(model.production_dates)
+    horizon_days = len(model.dates)
     horizon_weeks = horizon_days / 7.0
 
     print(f"✓ Model built in {model_build_time:.2f}s")
@@ -730,7 +730,7 @@ def test_ui_workflow_4_weeks_with_highs(parsed_data):
     print(f"✓ Model built in {model_build_time:.2f}s")
     print(f"  Nodes: {len(model.nodes)}")
     print(f"  Routes: {len(model.routes)}")
-    print(f"  Planning horizon: {len(model.production_dates)} days")
+    print(f"  Planning horizon: {len(model.dates)} days")
 
     # Solve with HiGHS
     solve_start = time.time()
@@ -852,7 +852,7 @@ def test_ui_workflow_without_initial_inventory(parsed_data):
     print(f"✓ Model built in {model_build_time:.2f}s")
     print(f"  Nodes: {len(model.nodes)}")
     print(f"  Routes: {len(model.routes)}")
-    print(f"  Planning horizon: {len(model.production_dates)} days")
+    print(f"  Planning horizon: {len(model.dates)} days")
 
     # Solve
     solve_start = time.time()
@@ -968,7 +968,7 @@ def test_ui_workflow_with_warmstart(parsed_data):
     print(f"✓ Model built in {model_build_time:.2f}s")
     print(f"  Nodes: {len(model.nodes)}")
     print(f"  Routes: {len(model.routes)}")
-    print(f"  Planning horizon: {len(model.production_dates)} days")
+    print(f"  Planning horizon: {len(model.dates)} days")
 
     # Solve WITH warmstart
     print("\nSolving with warmstart...")
