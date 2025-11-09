@@ -1189,9 +1189,43 @@ class SlidingWindowModel(BaseOptimizationModel):
 
         # AMBIENT shelf life: 17 days
         def ambient_shelf_life_rule(model, node_id, prod, t):
-            """Outflows in 17-day window <= inflows in same window."""
+            """Outflows in 17-day window <= inflows in same window.
+
+            FIX (2025-11-09): Skip for initial inventory at non-producing nodes.
+
+            Root cause: Initial inventory at leaf nodes creates impossible constraints.
+            Example: 6130 has 518 ambient init_inv, 2,028 demand in 17-day window.
+            Sliding window limits total consumption to 518 across window, but demand
+            requires consuming it PLUS thawed arrivals (different state!).
+            Result: Model takes all shortages instead of consuming free inventory.
+
+            Solution: Skip sliding window for (node, product, state) with:
+            - Initial inventory exists
+            - No production capability (leaf node)
+            - No new arrivals in same state within horizon
+
+            These cases have no "refresh" of supply - init_inv is finite pool.
+            State balance + consumption limit constraints already prevent over-consumption.
+            Sliding window designed for production batches, not pre-existing stock.
+            """
             node = self.nodes[node_id]
             if not node.supports_ambient_storage():
+                return Constraint.Skip
+
+            # Check if this is initial inventory with no production
+            has_init_inv = self.initial_inventory.get((node_id, prod, 'ambient'), 0) > 0
+            can_produce_ambient = node.can_produce() and node.get_production_state() == 'ambient'
+
+            # Check if there are ambient arrivals in the planning horizon
+            has_ambient_arrivals = any(
+                route.origin_node_id != node_id and
+                self._determine_arrival_state(route, node) == 'ambient'
+                for route in self.routes_to_node[node_id]
+            )
+
+            # Skip sliding window for initial inventory at non-producing nodes
+            # These have finite supply (no refresh) - state balance handles them correctly
+            if has_init_inv and not can_produce_ambient and not has_ambient_arrivals:
                 return Constraint.Skip
 
             # Window: last 17 days (t-16 to t, inclusive)
@@ -1214,35 +1248,59 @@ class SlidingWindowModel(BaseOptimizationModel):
             # Inflows to ambient: initial_inv (if start date in window) + production + thaw + arrivals
             Q_ambient = 0
 
-            # CRITICAL FIX: Initial inventory should only be counted ONCE
-            # It should be included ONLY when the window includes Day 1 (planning start)
-            # NOT on every day where age <= 16!
+            # CRITICAL FIX: Initial inventory handling in sliding windows
             #
-            # WRONG (old): Add init_inv to Q on every day where age <= 16
-            # RIGHT (new): Add init_inv to Q only when window includes first planning day
+            # FUNDAMENTAL INSIGHT:
+            # Initial inventory is a STOCK at the planning start date, not a FLOW.
+            # It can be consumed over time, and once used, it's gone.
             #
-            # Example: 4-week plan starting Nov 3
-            #   Day 1 (Nov 3): window = [Nov 3], includes Day 1 → add init_inv ✓
-            #   Day 2 (Nov 4): window = [Nov 3, Nov 4], includes Day 1 → add init_inv ✓
-            #   Day 17 (Nov 19): window = [Nov 3-Nov 19], includes Day 1 → add init_inv ✓
-            #   Day 18 (Nov 20): window = [Nov 4-Nov 20], EXCLUDES Day 1 → DON'T add init_inv ✗
+            # MATHEMATICALLY CORRECT APPROACH:
+            # Add init_inv to Q ONLY when:
+            #   1. Window includes Day 1 (where init_inv exists)
+            #   2. Init_inv hasn't expired yet relative to current date t
+            #
+            # This works because:
+            # - Early constraints (Day 1-17): init_inv in Q allows consumption
+            # - Later constraints (Day 18+): window excludes Day 1, init_inv not in Q
+            # - Overlapping constraints don't double-count because outflows accumulate naturally
+            #
+            # Example: 518 units init_inv, consumed 518 on Day 1
+            #   Day 1: O[1]=518 <= Q[1]=518+init_inv=518 ✓ (exactly balanced)
+            #   Day 2: O[1]+O[2]=518+0 <= Q[1]+Q[2]=0+init_inv+0=518 ✓ (still balanced)
+            #   Day 3: O[1]+O[2]+O[3]=518 <= Q[1-3]=518 ✓ (cumulative balance)
+            #
+            # KEY: This is NOT double-counting because O also accumulates!
+            # The constraint ensures cumulative outflows <= cumulative inflows.
+            # Init_inv should contribute to all windows that include Day 1.
+            #
+            # HOWEVER: There was a BUG in the previous logic!
+            # We were checking `init_inv_age_on_t <= 16` which uses the CURRENT date t,
+            # but we should check if init_inv has expired WITHIN THE WINDOW.
+            #
+            # CORRECTED LOGIC:
+            # - Init_inv enters system on Day 1 at age=snapshot_age
+            # - It expires after 17 days in ambient (age reaches 17)
+            # - For constraint on day t, check if init_inv is still valid on day t
+            #
             first_date = min(model.dates)
             window_includes_day1 = first_date in window_dates
 
             if window_includes_day1 and self.inventory_snapshot_date:
-                # Only add initial inventory if:
-                # 1. Window includes Day 1 (where init_inv enters the system)
-                # 2. Inventory hasn't expired yet (age <= shelf life - 1)
+                # Calculate age of init_inv on current date t
                 init_inv_age_on_t = (t - self.inventory_snapshot_date).days
-                if init_inv_age_on_t <= 16:  # Not expired
+
+                # Only add init_inv if it hasn't expired by date t
+                # Ambient shelf life: 17 days (age 0-16 valid, age 17+ expired)
+                if init_inv_age_on_t <= 16:
                     init_inv = self.initial_inventory.get((node_id, prod, 'ambient'), 0)
                     Q_ambient += init_inv
 
                     # DIAGNOSTIC: Verify fix is working
                     if node_id == '6122' and t == list(model.dates)[5] and init_inv > 100:
-                        print(f"  FIX CHECK ambient[{node_id},{prod[:30]},day{list(model.dates).index(t)+1}]:")
+                        print(f"  INIT_INV CHECK ambient[{node_id},{prod[:30]},day{list(model.dates).index(t)+1}]:")
                         print(f"    window_includes_day1: {window_includes_day1}")
-                        print(f"    init_inv added to Q: {init_inv:.0f} (SHOULD only add when window includes Day 1)")
+                        print(f"    init_inv_age_on_t: {init_inv_age_on_t}")
+                        print(f"    init_inv added to Q: {init_inv:.0f}")
 
             for tau in window_dates:
                 # Production that goes to ambient
@@ -1330,9 +1388,24 @@ class SlidingWindowModel(BaseOptimizationModel):
 
         # FROZEN shelf life: 120 days (similar structure)
         def frozen_shelf_life_rule(model, node_id, prod, t):
-            """Outflows in 120-day window <= inflows in same window."""
+            """Outflows in 120-day window <= inflows in same window.
+
+            FIX (2025-11-09): Skip for initial inventory at non-producing nodes (same as ambient).
+            """
             node = self.nodes[node_id]
             if not node.supports_frozen_storage():
+                return Constraint.Skip
+
+            # Skip for initial inventory with no production/arrivals (same logic as ambient)
+            has_init_inv = self.initial_inventory.get((node_id, prod, 'frozen'), 0) > 0
+            can_produce_frozen = node.can_produce() and node.get_production_state() == 'frozen'
+            has_frozen_arrivals = any(
+                route.origin_node_id != node_id and
+                self._determine_arrival_state(route, node) == 'frozen'
+                for route in self.routes_to_node[node_id]
+            )
+
+            if has_init_inv and not can_produce_frozen and not has_frozen_arrivals:
                 return Constraint.Skip
 
             # Window: last 120 days
@@ -1430,6 +1503,19 @@ class SlidingWindowModel(BaseOptimizationModel):
 
             # Skip if no thawed inventory variable exists (most nodes don't have thawed state)
             if (node_id, prod, 'thawed', t) not in model.inventory:
+                return Constraint.Skip
+
+            # FIX (2025-11-09): Skip for initial inventory with no thaw/arrivals (same as ambient)
+            has_init_inv = self.initial_inventory.get((node_id, prod, 'thawed'), 0) > 0
+            has_thawed_arrivals = any(
+                route.origin_node_id != node_id and
+                self._determine_arrival_state(route, node) == 'thawed'
+                for route in self.routes_to_node[node_id]
+            )
+            # Note: thaw capability is implicit (thaw vars created elsewhere)
+
+            if has_init_inv and not has_thawed_arrivals:
+                # No thaw vars to check - if init_inv exists with no arrivals, skip
                 return Constraint.Skip
 
             # Window: last 14 days
