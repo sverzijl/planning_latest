@@ -1,0 +1,24 @@
+================================================================================
+COPY THIS TO START NEXT SESSION:
+================================================================================
+
+I have an optimization model with an underproduction bug. A previous session spent 10+ hours investigating with 5 failed fix attempts. I need fresh systematic debugging.
+
+Please read the handover documentation:
+
+cat SESSION_HANDOVER_UNDERPRODUCTION_BUG.md
+
+Then follow the approach in:
+
+cat NEXT_SESSION_PROMPT.md
+
+Key points:
+- Use systematic-debugging skill (mandatory)
+- Use mip-modeling-expert and pyomo skills
+- Gather evidence BEFORE proposing fixes
+- Don't repeat the 5 failed attempts documented in the handover
+
+The test suite in tests/test_solution_reasonableness.py catches the bug.
+Your goal is to make those tests pass.
+
+================================================================================

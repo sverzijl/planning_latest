@@ -110,7 +110,11 @@ class SapIbpParser:
         if len(df) < 5:
             raise ValueError(f"Sheet '{sheet_name}' has insufficient rows. Expected at least 5 rows (metadata + headers + data).")
 
-        # Extract headers from row 4 (0-indexed)
+        # Extract headers from row 4 (0-indexed = Excel Row 5)
+        # Actual structure:
+        #   iloc[0-3] (Excel rows 1-4): Metadata/empty
+        #   iloc[4] (Excel row 5): Headers (Product Desc, Product ID, Location ID, dates...)
+        #   iloc[5+] (Excel rows 6+): Data rows
         headers = df.iloc[4].tolist()
 
         # Validate required columns exist
@@ -136,7 +140,7 @@ class SapIbpParser:
         if date_start_col is None:
             raise ValueError(f"Sheet '{sheet_name}' has no date columns in DD.MM.YYYY format.")
 
-        # Extract data rows (row 5 onwards)
+        # Extract data rows (row 5 onwards = Excel row 6+)
         data_df = df.iloc[5:].copy()
 
         # Set headers

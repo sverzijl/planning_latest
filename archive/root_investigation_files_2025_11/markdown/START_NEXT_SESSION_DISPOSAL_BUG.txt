@@ -1,0 +1,58 @@
+I have an optimization model with a disposal bug that needs fixing (optional optimization).
+
+CONTEXT:
+- Phantom supply bug already FIXED (consumption bounds restored) ✅
+- End inventory bug already FIXED (waste_multiplier = 100) ✅
+- Model is PRODUCTION-READY ✅
+- This session: Optimize further by fixing disposal bug
+
+THE BUG:
+When constraining end inventory low (end_inv <= 2000) with waste_mult=10:
+- Model disposes 7,434 units of initial inventory ($111k cost at $15/unit)
+- Meanwhile takes shortages at $10/unit
+- Economically irrational!
+
+IMPACT:
+- Current workaround (waste_mult=100): Objective $1,205k
+- If disposal bug fixed (waste_mult=10): Objective ~$941k
+- Potential savings: $264k (22% improvement)
+
+EVIDENCE GATHERED (Previous 12-Hour Session):
+1. Disposal cost is $111k of the $105k "mystery cost"
+2. All disposed units are validly expired (age >= 17 days)
+3. Disposal happens at nodes that HAD initial inventory
+4. Natural solution: 0 disposal (consumes init_inv before expiration)
+5. Constrained solution: 7,434 disposal (init_inv expires unused)
+
+ROOT CAUSE HYPOTHESIS:
+end_inv constraint somehow prevents consuming 7,434 units of initial inventory,
+causing them to sit unused, expire, and be disposed.
+
+YOUR TASK:
+1. Read complete handover:
+   cat HANDOVER_DISPOSAL_BUG_INVESTIGATION.md
+
+2. Use systematic-debugging skill (REQUIRED - no fixes before root cause!)
+
+3. Identify WHY end_inv constraint blocks init_inv consumption
+
+4. Apply minimal fix
+
+5. Verify: disposal = 0, end_inv < 2000, objective ~$941k
+
+INVESTIGATION SCRIPTS READY:
+- detailed_objective_comparison.py (shows disposal is the $111k)
+- compare_production_timing.py (production schedule comparison)
+- phase1_trace_init_inv_fate.py (daily inventory trace)
+
+TIME ESTIMATE: 2-3 hours
+
+SUCCESS CRITERIA:
+- Disposal: 0 units (not 7,434)
+- End inventory: <2,000 units
+- Objective: ~$941k (not $1,052k)
+- Can use waste_mult=10 or 20 (not 100)
+- All tests pass
+
+If this takes >3 hours, accept current solution (waste_mult=100) and ship it.
+The model works correctly now - this is just optimization.
