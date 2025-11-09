@@ -1,0 +1,44 @@
+=== CODEBASE CLEANUP BASELINE METRICS ===
+Date: 2025-11-09
+Branch: comprehensive-cleanup-2025-11
+
+BEFORE CLEANUP:
+--------------
+
+Source Code:
+  Total lines: 37,604
+  Optimization module: 17,558 lines (47% of source!)
+  
+Test Code:
+  Test files: 102
+  Total lines: 40,555
+  
+Root Directory:
+  Markdown files: 186 (!!)
+  Python files: 153 (!!)
+  
+Archive:
+  Current size: 43M
+  
+Git Status:
+  Modified: data/examples/Network_Config.xlsx, src/parsers/sap_ibp_parser.py
+  Deleted (staged for cleanup): 45+ investigation files
+  Untracked: 186 markdown + 153 python files
+  
+Test Suite Status:
+  Running baseline... (in progress)
+  Known issue: test_warmstart_generator.py import error
+
+CLEANUP TARGETS:
+---------------
+1. Archive deprecated optimization models (~8,000 lines)
+2. Consolidate tests (102 → ~65 files, save ~10,000 lines)
+3. Clean root directory (339 files → ~5 files)
+4. Update documentation (consolidate ~50 docs)
+5. Remove UnifiedNodeModel references throughout codebase
+
+Expected Savings:
+  - Code: ~8,000 lines removed from src/
+  - Tests: ~15,000 lines consolidated
+  - Root files: ~330+ files archived/deleted
+  - Documentation: ~40-50 files consolidated
