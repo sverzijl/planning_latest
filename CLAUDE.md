@@ -169,39 +169,35 @@ Start with a basic model and gradually increase complexity. Begin with a simple 
 - Heuristic rule-based planning approach (no longer used)
 - Code removed in unified-model-only cleanup (2025-10-16)
 
-**Phase 3: Optimization** ✅ **COMPLETE - TWO APPROACHES AVAILABLE**
+**Phase 3: Optimization** ✅ **COMPLETE - PRODUCTION READY**
 
-*Status: SlidingWindowModel (PRIMARY) and UnifiedNodeModel (reference)*
+*Status: SlidingWindowModel (PRIMARY - ONLY MODEL)*
 
-**SlidingWindowModel** ⭐ **RECOMMENDED - 60-220× FASTER**
+**SlidingWindowModel** ⭐ **PRIMARY - ONLY MODEL**
 
 *File: `src/optimization/sliding_window_model.py`*
 
 - ✅ **Architecture**: State-based aggregate flows with sliding window shelf life constraints
 - ✅ **Decision variables**: production, inventory by state (ambient/frozen/thawed), shipments, state transitions
 - ✅ **Shelf life enforcement**: Implicit via sliding windows (17d ambient, 120d frozen, 14d thawed)
-- ✅ **Performance**: 4-week solve in 5-7s (vs 400s cohort = **60-80× speedup**)
-- ✅ **Model size**: ~11k variables (vs 500k cohort = **46× reduction**)
+- ✅ **Performance**: 4-week solve in 5-7s (baseline established)
+- ✅ **Model size**: ~11k variables for 4-week horizon
 - ✅ **All constraints**: Integer pallets, production capacity, state transitions, truck scheduling
 - ✅ **Solver**: APPSI HiGHS (high-performance modern interface)
 - ✅ **Testing**: Integration test passes, 100% fill rate validated
 
-**UnifiedNodeModel** (Reference/Legacy)
-
-*File: `src/optimization/unified_node_model.py`*
-
-- ✅ **Architecture**: Age-cohort tracking with 6-tuple (node, product, prod_date, state_entry_date, curr_date, state)
-- ✅ **Decision variables**: inventory_cohort (explicit age tracking), production_batch
-- ✅ **Shelf life enforcement**: Explicit age-in-state calculations with state_entry_date
-- ✅ **Performance**: 4-week solve in 300-500s (cohort overhead)
-- ⚠️ **Status**: Reference implementation (superseded by SlidingWindowModel for production use)
+**Historical Note:**
+- Previously used UnifiedNodeModel with explicit age-cohort tracking (archived 2025-11-09)
+- UnifiedNodeModel archived to `archive/optimization_models_deprecated_2025_11/` for reference
+- SlidingWindowModel provides 60-220× speedup via implicit shelf life constraints
+- Achieved 46× reduction in problem size while maintaining exact shelf life enforcement
 
 **Phase 3 Deliverables:**
-- **SlidingWindowModel**: Production-ready, 60-220× speedup, 100% fill rate, complete feature parity
-- **Performance**: 4-week horizon in 5-7s (SlidingWindowModel) vs 300-500s (UnifiedNodeModel)
-- Interactive planning now feasible (near-realtime response)
+- **SlidingWindowModel**: Production-ready with near-realtime solve performance
+- **Performance**: 4-week horizon in 5-7s enables interactive planning
 - Integer pallet tracking for accurate costs (storage + trucks)
 - Complete state transition support (freeze/thaw for WA route)
+- Full feature parity with previous approaches
 
 **Phase 4: Advanced Features (Planned)**
 - Pallet-level truck loading constraints (currently unit-based for tractability)
@@ -234,7 +230,7 @@ planning_latest/
 │   │                    #              ManufacturingSite, TruckSchedule, LaborCalendar)
 │   ├── parsers/         # Excel input parsing (forecast, locations, routes,
 │   │                    #                      labor, trucks, costs, inventory)
-│   ├── optimization/    # UnifiedNodeModel (primary optimization model)
+│   ├── optimization/    # SlidingWindowModel (primary optimization model)
 │   ├── network/         # Network/graph operations (route visualization)
 │   ├── analysis/        # Daily snapshots, flow analysis, labeling reports
 │   ├── costs/           # Cost calculation utilities
@@ -250,14 +246,15 @@ planning_latest/
 ├── tests/
 │   ├── test_integration_ui_workflow.py  # CRITICAL regression gate
 │   ├── test_baseline_*.py               # Baseline validation tests
-│   ├── test_unified_*.py                # UnifiedNodeModel tests
+│   ├── test_sliding_window_*.py         # SlidingWindowModel tests
 │   ├── test_models.py                   # Core data model tests
 │   ├── test_parsers.py                  # Excel parsing tests
 │   ├── test_daily_snapshot*.py          # Daily snapshot tests
 │   └── ...
 ├── archive/
-│   ├── debug_scripts/   # 268 archived troubleshooting scripts
-│   └── examples/        # 2 archived example scripts (deprecated model references)
+│   ├── debug_scripts/                          # 268 archived troubleshooting scripts
+│   ├── examples/                               # 2 archived example scripts
+│   └── optimization_models_deprecated_2025_11/ # Archived UnifiedNodeModel (2025-11-09)
 ├── docs/
 │   └── features/        # Feature-specific documentation
 ├── data/
@@ -338,7 +335,7 @@ pytest tests/test_ui_integration_complete.py -v
 
 ## Key Design Decisions
 
-1. **Sliding window shelf life constraints:** (2025-10-27) Replace explicit age-cohort tracking with implicit sliding window formulation; 60-220× speedup, 46× fewer variables while maintaining exact shelf life enforcement. See `src/optimization/sliding_window_model.py`
+1. **Sliding window shelf life constraints:** (2025-10-27) THE fundamental approach for shelf life enforcement in the optimization model. Uses implicit sliding window formulation instead of explicit age-cohort tracking; delivers 60-220× speedup and 46× fewer variables while maintaining exact shelf life enforcement. Previously used UnifiedNodeModel with explicit age tracking (archived 2025-11-09). See `src/optimization/sliding_window_model.py`
 2. **State-based aggregate flows:** Optimize SKU-level flows (how much to produce/ship) rather than individual batches; enables dramatic problem size reduction
 3. **Integrated production-distribution optimization:** Couple production scheduling with distribution to capture interdependencies and cost trade-offs
 4. **State machine for shelf life:** Track product state (frozen/ambient/thawed) with automatic transitions via freeze/thaw flows
@@ -366,7 +363,8 @@ pytest tests/test_ui_integration_complete.py -v
 **Detailed Documentation:**
 - Warmstart investigation: `docs/lessons_learned/warmstart_investigation_2025_10.md`
 - Changeover formulations: `docs/optimization/changeover_formulations.md`
-- Model specification: `docs/UNIFIED_NODE_MODEL_SPECIFICATION.md`
+- Model specification: `docs/SLIDING_WINDOW_MODEL_SPECIFICATION.md`
+- Archived model reference: `docs/UNIFIED_NODE_MODEL_SPECIFICATION.md` (historical)
 
 ## Model-UI Interface Contract
 
@@ -380,7 +378,6 @@ pytest tests/test_ui_integration_complete.py -v
 2. **Return** `OptimizationSolution` (Pydantic-validated) from `extract_solution()`
 3. **Set correct flags:**
    - SlidingWindowModel: `model_type="sliding_window"`, `has_aggregate_inventory=True`
-   - UnifiedNodeModel: `model_type="unified_node"`, `use_batch_tracking=True`
 4. **Populate all required fields** (see specification for complete list)
 5. **Pass integration test** (`tests/test_ui_integration_complete.py`) ⚠️ **MANDATORY**
 
@@ -426,9 +423,9 @@ venv/bin/python -m pytest tests/test_integration_ui_workflow.py -v
 ```
 
 **Test validates:**
-- UI workflow compatibility (4-week horizon, 1% MIP gap, batch tracking)
+- UI workflow compatibility (4-week horizon, 1% MIP gap, SlidingWindowModel)
 - Real data files (GFree Forecast.xlsm, Network_Config.xlsx)
-- Performance (solve time < 400s for 4-week; baseline ~300s with pallet+mix constraints)
+- Performance (solve time < 10s for 4-week; baseline ~5-7s with pallet+mix constraints)
 - Solution quality (fill rate ≥ 85%, optimal/feasible status)
 
 **Run before:**
@@ -440,7 +437,7 @@ This test serves as a **regression gate** for optimization changes.
 
 ### Documentation Maintenance (REQUIRED)
 
-**All changes to the optimization model MUST be synchronized with `docs/UNIFIED_NODE_MODEL_SPECIFICATION.md`**
+**All changes to the optimization model MUST be synchronized with `docs/SLIDING_WINDOW_MODEL_SPECIFICATION.md`**
 
 Update documentation when modifying:
 - Decision variables, constraints, or objective function
@@ -448,7 +445,7 @@ Update documentation when modifying:
 - Model behavior or feature implementations
 
 **Update process:**
-1. Edit relevant sections in UNIFIED_NODE_MODEL_SPECIFICATION.md
+1. Edit relevant sections in SLIDING_WINDOW_MODEL_SPECIFICATION.md
 2. Update "Last Updated" timestamp and changelog
 3. Verify mathematical formulations and code references
 
