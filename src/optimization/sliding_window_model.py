@@ -51,6 +51,7 @@ from ..models.unified_truck_schedule import UnifiedTruckSchedule
 from ..models.labor_calendar import LaborCalendar
 from ..models.forecast import Forecast
 from .base_model import BaseOptimizationModel, OptimizationResult
+from . import constants
 
 
 class SlidingWindowModel(BaseOptimizationModel):
@@ -107,17 +108,17 @@ class SlidingWindowModel(BaseOptimizationModel):
     Verified Acyclic: 2025-11-05 (see docs/CONSTRAINT_STRUCTURE_AND_ACYCLICITY.md)
     """
 
-    # Shelf life constants (days)
-    AMBIENT_SHELF_LIFE = 17
-    FROZEN_SHELF_LIFE = 120
-    THAWED_SHELF_LIFE = 14
-    MINIMUM_ACCEPTABLE_SHELF_LIFE_DAYS = 7  # Breadroom policy
+    # Shelf life constants (days) - imported from constants module
+    AMBIENT_SHELF_LIFE = constants.AMBIENT_SHELF_LIFE_DAYS
+    FROZEN_SHELF_LIFE = constants.FROZEN_SHELF_LIFE_DAYS
+    THAWED_SHELF_LIFE = constants.THAWED_SHELF_LIFE_DAYS
+    MINIMUM_ACCEPTABLE_SHELF_LIFE_DAYS = constants.MINIMUM_ACCEPTABLE_SHELF_LIFE_DAYS
 
-    # Packaging constants
-    UNITS_PER_CASE = 10
-    CASES_PER_PALLET = 32
-    UNITS_PER_PALLET = 320
-    PALLETS_PER_TRUCK = 44
+    # Packaging constants - imported from constants module
+    UNITS_PER_CASE = constants.UNITS_PER_CASE
+    CASES_PER_PALLET = constants.CASES_PER_PALLET
+    UNITS_PER_PALLET = constants.UNITS_PER_PALLET
+    PALLETS_PER_TRUCK = constants.PALLETS_PER_TRUCK
 
     def __init__(
         self,
