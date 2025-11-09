@@ -1,8 +1,8 @@
-"""Integration test matching UI workflow with real data files - UNIFIED NODE MODEL.
+"""Integration test matching UI workflow with real data files - SLIDING WINDOW MODEL.
 
 ⚠️  CRITICAL REGRESSION TEST - REQUIRED VALIDATION GATE ⚠️
 
-This test validates the UnifiedNodeModel (unified_node_model.py) with real production data.
+This test validates the SlidingWindowModel (sliding_window_model.py) with real production data.
 It MUST pass before committing any changes to optimization model or solver code.
 It serves as the primary regression test ensuring UI workflow compatibility and performance.
 
@@ -21,16 +21,16 @@ TEST CONFIGURATION:
 Settings match UI Planning Tab defaults:
 - Allow Demand Shortages: True (soft constraints for flexibility)
 - Enforce Shelf Life Constraints: True (filters routes > 10 days transit)
-- Enable Batch Tracking: True (age-cohort inventory tracking)
+- Model: SlidingWindowModel (state-based aggregate flows with sliding window shelf life)
 - MIP Gap Tolerance: 1% (acceptable optimality gap)
 - Planning Horizon: 4 weeks from inventory snapshot date
 - Inventory snapshot date: 2025-10-13 (or earliest forecast date if no inventory)
-- Solver: CBC (open source, cross-platform)
+- Solver: APPSI HiGHS (high-performance modern interface)
 - Time Limit: 120 seconds
 
 PERFORMANCE REQUIREMENTS:
 ------------------------
-- ✓ Solve time: < 400 seconds (baseline: ~300s, mix-based expected: 280-350s)
+- ✓ Solve time: < 30 seconds (baseline: ~5-7s, expected: 5-10s)
 - ✓ Solution status: OPTIMAL or FEASIBLE
 - ✓ Fill rate: ≥ 85% demand satisfaction
 - ✓ MIP gap: < 1%
@@ -43,7 +43,7 @@ Run this test before committing changes to:
 - Solver parameters or performance optimizations
 - Decision variables or constraint logic
 - Route enumeration or network algorithms
-- Batch tracking or age-cohort inventory code
+- State-based aggregate flow optimization code
 
 HOW TO RUN:
 ----------
@@ -70,8 +70,7 @@ from datetime import date, timedelta
 import time
 
 from src.parsers.multi_file_parser import MultiFileParser
-from src.optimization.unified_node_model import UnifiedNodeModel
-from src.optimization.legacy_to_unified_converter import LegacyToUnifiedConverter
+from src.optimization.sliding_window_model import SlidingWindowModel
 from src.optimization.result_schema import OptimizationSolution
 from tests.conftest import create_test_products
 
@@ -193,7 +192,9 @@ def parsed_data(data_files):
     from src.models.truck_schedule import TruckScheduleCollection
     truck_schedules = TruckScheduleCollection(schedules=truck_schedules_list)
 
-    # Convert legacy data structures to unified format
+    # For SlidingWindowModel, we need nodes and routes in the unified format
+    # Use the parser's internal conversion methods
+    from src.optimization.legacy_to_unified_converter import LegacyToUnifiedConverter
     converter = LegacyToUnifiedConverter()
     nodes = converter.convert_nodes(manufacturing_site, locations, forecast)
     unified_routes = converter.convert_routes(routes)
@@ -271,14 +272,14 @@ def test_ui_workflow_4_weeks_with_initial_inventory(parsed_data):
 
     print(f"\nPlanning horizon: {planning_start_date} to {planning_end_date} (4 weeks)")
 
-    # UI SETTINGS (matching Planning Tab - Unified Model)
+    # UI SETTINGS (matching Planning Tab - Sliding Window Model)
     settings = {
         'allow_shortages': True,              # ✓ Allow Demand Shortages
         'enforce_shelf_life': True,           # ✓ Enforce Shelf Life Constraints
-        'use_batch_tracking': True,           # ✓ Enable Batch Tracking
+        'use_pallet_tracking': True,          # Integer pallet variables for accurate holding costs
         'mip_gap': 0.01,                      # 1% MIP Gap Tolerance
         'time_limit_seconds': 120,            # 2 minutes
-        'solver_name': 'appsi_highs',         # APPSI HiGHS (2.23x faster than CBC with pallet tracking)
+        'solver_name': 'appsi_highs',         # APPSI HiGHS (high-performance modern interface)
         'start_date': planning_start_date,    # Planning horizon start
         'end_date': planning_end_date,        # Planning horizon end (4 weeks)
     }
@@ -300,7 +301,7 @@ def test_ui_workflow_4_weeks_with_initial_inventory(parsed_data):
     product_ids = sorted(set(entry.product_id for entry in forecast.entries))
     products = create_test_products(product_ids)
 
-    model = UnifiedNodeModel(
+    model = SlidingWindowModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
@@ -312,9 +313,8 @@ def test_ui_workflow_4_weeks_with_initial_inventory(parsed_data):
         truck_schedules=unified_truck_schedules,
         initial_inventory=initial_inventory.to_optimization_dict() if initial_inventory else None,
         inventory_snapshot_date=inventory_snapshot_date,
-        use_batch_tracking=settings['use_batch_tracking'],
         allow_shortages=settings['allow_shortages'],
-        enforce_shelf_life=settings['enforce_shelf_life'],
+        use_pallet_tracking=settings['use_pallet_tracking'],
     )
 
     model_build_time = time.time() - model_start
@@ -328,7 +328,7 @@ def test_ui_workflow_4_weeks_with_initial_inventory(parsed_data):
     print(f"  Routes: {len(model.routes)}")
     print(f"  Planning horizon: {horizon_days} days ({horizon_weeks:.1f} weeks)")
     print(f"  Date range: {model.start_date} to {model.end_date}")
-    print(f"  Batch tracking: {'ENABLED' if settings['use_batch_tracking'] else 'DISABLED'}")
+    print(f"  Model type: SlidingWindowModel (state-based aggregate flows)")
 
     # Validate planning horizon
     assert model.start_date == planning_start_date, \
@@ -345,9 +345,9 @@ def test_ui_workflow_4_weeks_with_initial_inventory(parsed_data):
 
     result = model.solve(
         solver_name=settings['solver_name'],
-        time_limit_seconds=180,  # 180s for pallet-based holding costs
+        time_limit_seconds=settings['time_limit_seconds'],
         mip_gap=settings['mip_gap'],
-        use_aggressive_heuristics=True,  # Enable CBC performance features
+        use_aggressive_heuristics=True,  # Enable performance features
         tee=False,  # Don't show solver output in test
     )
 
@@ -474,29 +474,23 @@ def test_ui_workflow_4_weeks_with_initial_inventory(parsed_data):
         print("INITIAL INVENTORY VALIDATION")
         print("="*80)
 
-        # Check cohort inventory includes initial inventory dates
-        # SIMPLIFIED: Use Pydantic attribute (cohort_inventory for UnifiedNodeModel)
-        cohort_inv = solution.cohort_inventory
-        if cohort_inv:
-            # Extract production dates from cohort keys (need to parse string keys)
-            prod_dates_in_cohorts = set()
-            for key_str in cohort_inv.keys():
-                # Keys are now strings like "(node, prod, prod_date, state_entry, curr_date, state)"
-                # Use eval or parse manually - for now, check if inventory_snapshot_date string appears
-                if str(inventory_snapshot_date) in key_str:
-                    prod_dates_in_cohorts.add(inventory_snapshot_date)
+        # For SlidingWindowModel, check aggregate inventory (not cohort)
+        aggregate_inv = solution.aggregate_inventory
+        if aggregate_inv:
+            # Check if first day has inventory
+            first_day_inventory = 0.0
+            for key, qty in aggregate_inv.items():
+                # Parse key: "(node, prod, date, state)"
+                if str(planning_start_date) in str(key):
+                    first_day_inventory += qty
 
-            # Check if inventory snapshot date appears as production date (initial inventory)
-            has_initial_inventory_cohorts = inventory_snapshot_date in prod_dates_in_cohorts
+            print(f"Inventory on first day ({planning_start_date}): {first_day_inventory:,.0f} units")
 
-            print(f"Inventory snapshot date in cohorts: {has_initial_inventory_cohorts}")
-            print(f"Production dates found: {len(prod_dates_in_cohorts)}")
-
-            # ASSERT: Initial inventory cohorts should exist
-            assert has_initial_inventory_cohorts, \
-                "Initial inventory cohorts not found in solution"
+            # ASSERT: Should have inventory on first day if initial inventory provided
+            assert first_day_inventory > 0, \
+                "Initial inventory should appear on first day of planning horizon"
         else:
-            print("⚠ Cohort inventory not available in solution (batch tracking may be disabled)")
+            print("⚠ Aggregate inventory not available in solution")
 
     # Performance summary
     print("\n" + "="*80)
@@ -505,7 +499,7 @@ def test_ui_workflow_4_weeks_with_initial_inventory(parsed_data):
     print(f"Model build time: {model_build_time:.2f}s")
     print(f"Solve time: {solve_time:.2f}s")
     print(f"Total time: {model_build_time + solve_time:.2f}s")
-    print(f"Status: {'✓ PASSED' if solve_time < 150 else '✗ SLOW'}")
+    print(f"Status: {'✓ PASSED' if solve_time < 30 else '✗ SLOW'}")
 
     # Deferred assertions (run after all diagnostics)
     deferred_assertions = []
@@ -513,15 +507,10 @@ def test_ui_workflow_4_weeks_with_initial_inventory(parsed_data):
     if not (result.is_optimal() or result.is_feasible()):
         deferred_assertions.append(f"Solution not optimal/feasible: {result.termination_condition}")
 
-    # Performance threshold: 400s (accounts for pallet-based + mix-based constraints)
-    # Note: Pallet-based holding costs add ~18,675 integer variables
-    # Note: Mix-based production replaces continuous production vars with integer mix_count vars
-    # Combined baseline: ~300s, expected with mix-based: 280-350s (±10-15%)
-    # This ensures "partial pallets occupy full pallet space" rule for storage costs
-    # AND enforces discrete batch production in integer multiples of mix sizes
-    # Note: Truck loading uses unit-based capacity (not pallet-level) for tractability
-    if solve_time >= 400:
-        deferred_assertions.append(f"⚠ Solve time {solve_time:.2f}s exceeds 400s threshold (performance regression)")
+    # Performance threshold: 30s (SlidingWindowModel baseline: 5-7s, expected: 5-10s)
+    # Note: 60-220× faster than UnifiedNodeModel (300-500s)
+    if solve_time >= 30:
+        deferred_assertions.append(f"⚠ Solve time {solve_time:.2f}s exceeds 30s threshold (performance regression)")
 
     # Baseline fill rate: 87.5%, after bugfix: 91.7% - use 85% threshold
     if fill_rate < 85.0:
@@ -538,21 +527,25 @@ def test_ui_workflow_4_weeks_with_initial_inventory(parsed_data):
     print("FIRST & FINAL DAY INVENTORY CHECK")
     print("="*80)
 
-    # Get cohort inventory for final date
-    # SIMPLIFIED: Check Pydantic attribute instead of dict key
-    if solution.cohort_inventory:
-        cohort_inv = solution.cohort_inventory
+    # Get aggregate inventory for final date
+    if solution.aggregate_inventory:
+        aggregate_inv = solution.aggregate_inventory
 
         # Calculate total inventory on FIRST day (model.start_date)
         first_day_inventory = 0.0
         first_day_by_location = {}
 
-        for (loc, prod, prod_date, curr_date, state), qty in cohort_inv.items():
-            if curr_date == model.start_date and qty > 0.01:
+        for key_str, qty in aggregate_inv.items():
+            # Parse key: "(node, prod, date, state)"
+            if str(model.start_date) in key_str and qty > 0.01:
                 first_day_inventory += qty
-                if loc not in first_day_by_location:
-                    first_day_by_location[loc] = 0.0
-                first_day_by_location[loc] += qty
+                # Extract location from key string (rough parsing)
+                parts = key_str.strip('()').split(',')
+                if len(parts) >= 1:
+                    loc = parts[0].strip().strip("'")
+                    if loc not in first_day_by_location:
+                        first_day_by_location[loc] = 0.0
+                    first_day_by_location[loc] += qty
 
         print(f"FIRST day ({model.start_date}) inventory: {first_day_inventory:,.0f} units")
         if first_day_by_location:
@@ -565,12 +558,15 @@ def test_ui_workflow_4_weeks_with_initial_inventory(parsed_data):
         final_day_inventory = 0.0
         final_day_by_location = {}
 
-        for (loc, prod, prod_date, curr_date, state), qty in cohort_inv.items():
-            if curr_date == model.end_date and qty > 0.01:
+        for key_str, qty in aggregate_inv.items():
+            if str(model.end_date) in key_str and qty > 0.01:
                 final_day_inventory += qty
-                if loc not in final_day_by_location:
-                    final_day_by_location[loc] = 0.0
-                final_day_by_location[loc] += qty
+                parts = key_str.strip('()').split(',')
+                if len(parts) >= 1:
+                    loc = parts[0].strip().strip("'")
+                    if loc not in final_day_by_location:
+                        final_day_by_location[loc] = 0.0
+                    final_day_by_location[loc] += qty
 
         print(f"Final planning date: {model.end_date}")
         print(f"Total inventory on final day: {final_day_inventory:,.0f} units")
@@ -602,7 +598,7 @@ def test_ui_workflow_4_weeks_with_initial_inventory(parsed_data):
         )
 
         print(f"\nDemand after planning horizon ({model.end_date}): {demand_after_horizon:,.0f} units")
-        print(f"Model's knowledge of future demand: NONE (only sees {len(model.demand)} demand entries within horizon)")
+        print(f"Model's knowledge of future demand: NONE (only sees demand entries within horizon)")
 
         # Calculate actual material balance
         demand_in_horizon = sum(
@@ -619,42 +615,24 @@ def test_ui_workflow_4_weeks_with_initial_inventory(parsed_data):
         print(f"  Shipments after horizon: {total_in_transit_beyond:,.0f} units")
         print(f"  Total outflow (satisfied + final inv): {(demand_in_horizon - total_shortage_units) + final_day_inventory:,.0f} units")
 
-        # Check actual demand consumption from cohort tracking
+        # Check actual demand consumption (if available)
         cohort_demand_consumption = getattr(solution, 'cohort_demand_consumption', {})
-        actual_consumption_from_cohorts = sum(cohort_demand_consumption.values())
+        actual_consumption_from_cohorts = sum(cohort_demand_consumption.values()) if cohort_demand_consumption else 0.0
 
-        print(f"\n  Demand satisfaction validation:")
-        print(f"    Method 1 (Forecast - Shortage): {demand_in_horizon - total_shortage_units:,.0f} units")
-        print(f"    Method 2 (Cohort Consumption): {actual_consumption_from_cohorts:,.0f} units")
-
-        # Recalculate material balance with actual cohort consumption
-        total_outflow_cohort = actual_consumption_from_cohorts + final_day_inventory + total_in_transit_beyond
-        balance_diff_cohort = total_production - total_outflow_cohort
-
-        print(f"\n  Material balance (using cohort consumption):")
-        print(f"    Production: {total_production:,.0f}")
-        print(f"    Consumption + Final Inv: {total_outflow_cohort:,.0f}")
-        print(f"    Balance: {balance_diff_cohort:+,.0f} units")
+        if actual_consumption_from_cohorts > 0:
+            print(f"\n  Demand satisfaction validation:")
+            print(f"    Method 1 (Forecast - Shortage): {demand_in_horizon - total_shortage_units:,.0f} units")
+            print(f"    Method 2 (Cohort Consumption): {actual_consumption_from_cohorts:,.0f} units")
 
         # Check if production equals outflow
         total_outflow = (demand_in_horizon - total_shortage_units) + final_day_inventory + total_in_transit_beyond
         balance_diff = total_production - total_outflow
 
         if abs(balance_diff) > 100:  # Threshold for reporting imbalance
-            print(f"\n⚠ MATERIAL BALANCE ISSUE (Method 1 - Forecast-based):")
+            print(f"\n⚠ MATERIAL BALANCE ISSUE:")
             print(f"  Production: {total_production:,.0f}")
             print(f"  Total outflow: {total_outflow:,.0f}")
             print(f"  Difference: {balance_diff:,.0f} units")
-
-            if abs(balance_diff_cohort) < 100:
-                print(f"\n✓ BUT Material balance OK when using cohort consumption!")
-                print(f"  Issue is in how 'satisfied demand' is calculated from forecast-shortage")
-                print(f"  Actual consumption (from cohorts): {actual_consumption_from_cohorts:,.0f}")
-                print(f"  Calculated (forecast - shortage): {demand_in_horizon - total_shortage_units:,.0f}")
-                print(f"  Difference: {(demand_in_horizon - total_shortage_units) - actual_consumption_from_cohorts:,.0f} units (accounting error)")
-            else:
-                print(f"\n❌ Material balance ALSO wrong with cohort method!")
-                print(f"  This indicates a real flow conservation bug in the model")
 
         if final_day_inventory > 0.01:
             if total_in_transit_beyond > 0:
@@ -665,7 +643,7 @@ def test_ui_workflow_4_weeks_with_initial_inventory(parsed_data):
             else:
                 print(f"\n⚠ Final day inventory ({final_day_inventory:,.0f} units) appears to be excess")
     else:
-        print("⚠ Cohort inventory not available - cannot check final day inventory")
+        print("⚠ Aggregate inventory not available - cannot check final day inventory")
 
     print("\n" + "="*80)
     print("TEST PASSED ✓")
@@ -682,19 +660,19 @@ def test_ui_workflow_4_weeks_with_initial_inventory(parsed_data):
 
 
 def test_ui_workflow_4_weeks_with_highs(parsed_data):
-    """Test 4-week optimization with HiGHS solver (2.35x faster than CBC).
+    """Test 4-week optimization with HiGHS solver (60-220× faster than UnifiedNodeModel).
 
     This test validates:
     1. HiGHS solver integration and compatibility
-    2. Performance improvement over CBC (96s vs 226s expected)
+    2. Performance improvement with SlidingWindowModel (5-10s expected)
     3. Solution quality maintained with HiGHS
-    4. Binary variable handling with HiGHS (no warmstart)
+    4. State-based aggregate flow optimization
 
     Context:
-    - HiGHS solves 4-week in ~96s (vs CBC ~226s with binary variables)
-    - Binary product_produced variables work well with HiGHS
-    - Warmstart has no effect on HiGHS (not supported)
-    - Expected speedup: 2.35x over CBC
+    - SlidingWindowModel solves 4-week in ~5-7s (vs UnifiedNodeModel ~300-500s)
+    - State-based aggregate flows instead of age-cohort tracking
+    - Sliding window shelf life constraints
+    - Expected speedup: 60-220× over UnifiedNodeModel
     """
 
     # Extract parsed data
@@ -722,7 +700,7 @@ def test_ui_workflow_4_weeks_with_highs(parsed_data):
     print("TEST: 4-WEEK HORIZON WITH HIGHS SOLVER")
     print("="*80)
     print(f"Planning horizon: {planning_start_date} to {planning_end_date} (4 weeks)")
-    print(f"Solver: HiGHS (expected 2.35x speedup over CBC)")
+    print(f"Solver: HiGHS with SlidingWindowModel (expected 60-220× speedup over UnifiedNodeModel)")
 
     # Create model
     model_start = time.time()
@@ -731,7 +709,7 @@ def test_ui_workflow_4_weeks_with_highs(parsed_data):
     product_ids = sorted(set(entry.product_id for entry in forecast.entries))
     products = create_test_products(product_ids)
 
-    model = UnifiedNodeModel(
+    model = SlidingWindowModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
@@ -743,9 +721,8 @@ def test_ui_workflow_4_weeks_with_highs(parsed_data):
         truck_schedules=unified_truck_schedules,
         initial_inventory=initial_inventory.to_optimization_dict() if initial_inventory else None,
         inventory_snapshot_date=inventory_snapshot_date,
-        use_batch_tracking=True,
         allow_shortages=True,
-        enforce_shelf_life=True,
+        use_pallet_tracking=True,
     )
 
     model_build_time = time.time() - model_start
@@ -760,10 +737,9 @@ def test_ui_workflow_4_weeks_with_highs(parsed_data):
 
     result = model.solve(
         solver_name='highs',  # Use HiGHS solver
-        time_limit_seconds=400,  # Mix-based production + pallet tracking (Task 10: updated from 240s)
+        time_limit_seconds=120,
         mip_gap=0.01,
         use_aggressive_heuristics=True,  # Enable HiGHS performance features
-        use_warmstart=False,  # No benefit for HiGHS (not supported)
         tee=False,
     )
 
@@ -771,7 +747,7 @@ def test_ui_workflow_4_weeks_with_highs(parsed_data):
 
     print(f"\n✓ HIGHS SOLVE COMPLETE:")
     print(f"   Status: {result.termination_condition}")
-    print(f"   Solve time: {solve_time:.1f}s (expected <400s with mix-based + pallet tracking)")
+    print(f"   Solve time: {solve_time:.1f}s (expected <30s with SlidingWindowModel)")
     print(f"   Objective: ${result.objective_value:,.2f}")
     print(f"   MIP gap: {result.gap * 100:.2f}%" if result.gap else "   MIP gap: N/A")
 
@@ -779,12 +755,9 @@ def test_ui_workflow_4_weeks_with_highs(parsed_data):
     assert result.is_optimal() or result.is_feasible(), \
         f"Expected optimal/feasible, got {result.termination_condition}"
 
-    # NEW (Phase A state_entry_date): Adjusted for 6-tuple cohort overhead
-    # Previous baseline: 300-350s (5-tuple cohorts)
-    # New baseline: 400-450s (6-tuple cohorts with state_entry_date)
-    # Performance regression: ~20% (acceptable for added dimension)
-    assert solve_time < 500, \
-        f"HiGHS took {solve_time:.1f}s (expected <500s; state_entry_date tracking adds overhead)"
+    # SlidingWindowModel should be much faster
+    assert solve_time < 30, \
+        f"HiGHS took {solve_time:.1f}s (expected <30s with SlidingWindowModel)"
 
     # Validate solution quality
     solution = model.get_solution()
@@ -858,7 +831,7 @@ def test_ui_workflow_without_initial_inventory(parsed_data):
     product_ids = sorted(set(entry.product_id for entry in forecast.entries))
     products = create_test_products(product_ids)
 
-    model = UnifiedNodeModel(
+    model = SlidingWindowModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
@@ -870,9 +843,8 @@ def test_ui_workflow_without_initial_inventory(parsed_data):
         truck_schedules=unified_truck_schedules,
         initial_inventory=None,  # NO INITIAL INVENTORY
         inventory_snapshot_date=None,
-        use_batch_tracking=True,
         allow_shortages=True,
-        enforce_shelf_life=True,
+        use_pallet_tracking=True,
     )
 
     model_build_time = time.time() - model_start
@@ -889,7 +861,6 @@ def test_ui_workflow_without_initial_inventory(parsed_data):
         solver_name='appsi_highs',
         time_limit_seconds=120,
         mip_gap=0.01,
-        use_warmstart=False,
         tee=False,
     )
 
@@ -899,10 +870,8 @@ def test_ui_workflow_without_initial_inventory(parsed_data):
     print(f"  Status: {result.termination_condition}")
     print(f"  Objective: ${result.objective_value:,.2f}")
 
-    # ASSERT: Should complete within timeout (pallet tracking adds ~2k integer vars)
-    # With pallet tracking: expect 30-120s depending on problem size
-    # Without pallet tracking: expect <30s
-    assert solve_time < 150, f"Solve time {solve_time:.2f}s exceeds 150s threshold"
+    # ASSERT: Should complete within timeout (SlidingWindowModel is fast)
+    assert solve_time < 30, f"Solve time {solve_time:.2f}s exceeds 30s threshold"
     assert result.is_optimal() or result.is_feasible()
 
     # Extract solution
@@ -978,7 +947,7 @@ def test_ui_workflow_with_warmstart(parsed_data):
     product_ids = sorted(set(entry.product_id for entry in forecast.entries))
     products = create_test_products(product_ids)
 
-    model = UnifiedNodeModel(
+    model = SlidingWindowModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
@@ -990,9 +959,8 @@ def test_ui_workflow_with_warmstart(parsed_data):
         truck_schedules=unified_truck_schedules,
         initial_inventory=initial_inventory.to_optimization_dict() if initial_inventory else None,
         inventory_snapshot_date=inventory_snapshot_date,
-        use_batch_tracking=True,
         allow_shortages=True,
-        enforce_shelf_life=True,
+        use_pallet_tracking=True,
     )
 
     model_build_time = time.time() - model_start
@@ -1009,7 +977,7 @@ def test_ui_workflow_with_warmstart(parsed_data):
     result = model.solve(
         solver_name='appsi_highs',  # APPSI HiGHS supports warmstart!
         use_warmstart=True,          # ENABLE WARMSTART
-        time_limit_seconds=120,      # Reduced from 180s (APPSI is faster)
+        time_limit_seconds=120,
         mip_gap=0.01,
         tee=False,
     )
@@ -1027,8 +995,8 @@ def test_ui_workflow_with_warmstart(parsed_data):
         f"Expected optimal/feasible, got {result.termination_condition}"
 
     # Performance assertion: Should complete in reasonable time
-    assert solve_time < 180, \
-        f"Warmstart solve took {solve_time:.1f}s (timeout at 180s)"
+    assert solve_time < 30, \
+        f"Warmstart solve took {solve_time:.1f}s (expected <30s with SlidingWindowModel)"
 
     # Solution quality
     solution = model.get_solution()
