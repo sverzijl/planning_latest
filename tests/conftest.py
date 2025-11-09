@@ -120,7 +120,7 @@ def mock_solver_config():
 
 def create_test_products(product_ids: list[str]) -> dict[str, Product]:
     """
-    Create test Product objects with units_per_mix for UnifiedNodeModel tests.
+    Create test Product objects with units_per_mix for SlidingWindowModel tests.
 
     This helper function simplifies test setup by creating Product objects
     with realistic units_per_mix values (415 units/mix is the standard size).
@@ -133,7 +133,7 @@ def create_test_products(product_ids: list[str]) -> dict[str, Product]:
 
     Example:
         products = create_test_products(["P1", "P2"])
-        model = UnifiedNodeModel(..., products=products)
+        model = SlidingWindowModel(..., products=products)
     """
     products = {}
     for prod_id in product_ids:

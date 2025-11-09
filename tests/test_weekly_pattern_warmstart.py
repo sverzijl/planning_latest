@@ -77,7 +77,7 @@ def test_weekly_pattern_warmstart_6week():
         start_date=start_date,
         end_date=end_date,
         truck_schedules=unified_truck_schedules,
-        use_batch_tracking=True,
+        use_pallet_tracking=True,
         allow_shortages=True,
         enforce_shelf_life=True,
         solver_name='appsi_highs',

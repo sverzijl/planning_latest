@@ -21,7 +21,7 @@ from datetime import date, timedelta
 import time
 
 from src.parsers.multi_file_parser import MultiFileParser
-from src.optimization.unified_node_model import UnifiedNodeModel
+from src.optimization.sliding_window_model import SlidingWindowModel
 from tests.conftest import create_test_products
 from src.optimization.legacy_to_unified_converter import LegacyToUnifiedConverter
 
@@ -131,7 +131,7 @@ def test_solution_extraction_with_zero_holding_costs(minimal_data):
     product_ids = sorted(set(entry.product_id for entry in forecast.entries))
     products = create_test_products(product_ids)
 
-    model = UnifiedNodeModel(
+    model = SlidingWindowModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
@@ -143,7 +143,7 @@ def test_solution_extraction_with_zero_holding_costs(minimal_data):
         truck_schedules=unified_truck_schedules,
         initial_inventory=None,
         inventory_snapshot_date=None,
-        use_batch_tracking=True,
+        use_pallet_tracking=True,
         allow_shortages=True,
         enforce_shelf_life=True,
     )
@@ -242,7 +242,7 @@ def test_timeout_with_partial_solution(minimal_data):
     product_ids = sorted(set(entry.product_id for entry in forecast.entries))
     products = create_test_products(product_ids)
 
-    model = UnifiedNodeModel(
+    model = SlidingWindowModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
@@ -254,7 +254,7 @@ def test_timeout_with_partial_solution(minimal_data):
         truck_schedules=unified_truck_schedules,
         initial_inventory=None,
         inventory_snapshot_date=None,
-        use_batch_tracking=True,
+        use_pallet_tracking=True,
         allow_shortages=True,
         enforce_shelf_life=True,
     )
@@ -349,7 +349,7 @@ def test_objective_extraction_priority(minimal_data):
     product_ids = sorted(set(entry.product_id for entry in forecast.entries))
     products = create_test_products(product_ids)
 
-    model = UnifiedNodeModel(
+    model = SlidingWindowModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
@@ -361,7 +361,7 @@ def test_objective_extraction_priority(minimal_data):
         truck_schedules=unified_truck_schedules,
         initial_inventory=None,
         inventory_snapshot_date=None,
-        use_batch_tracking=True,
+        use_pallet_tracking=True,
         allow_shortages=True,
         enforce_shelf_life=True,
     )

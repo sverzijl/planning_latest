@@ -19,7 +19,7 @@ from pathlib import Path
 from pyomo.environ import value
 
 from src.parsers.multi_file_parser import MultiFileParser
-from src.optimization.unified_node_model import UnifiedNodeModel
+from src.optimization.sliding_window_model import SlidingWindowModel
 from tests.conftest import create_test_products
 from src.optimization.legacy_to_unified_converter import LegacyToUnifiedConverter
 from src.models.location import LocationType
@@ -58,7 +58,7 @@ def test_overtime_preference_oct16_4weeks():
 
     print(f"\nScenario: {start_date} to {end_date} (28 days)")
 
-    model_wrapper = UnifiedNodeModel(
+    model_wrapper = SlidingWindowModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
@@ -70,7 +70,7 @@ def test_overtime_preference_oct16_4weeks():
         truck_schedules=unified_trucks,
         initial_inventory=initial_inventory.to_optimization_dict() if initial_inventory else None,
         inventory_snapshot_date=inventory_snapshot_date,
-        use_batch_tracking=True,
+        use_pallet_tracking=True,
         allow_shortages=True,
         enforce_shelf_life=True,
         force_all_skus_daily=False,

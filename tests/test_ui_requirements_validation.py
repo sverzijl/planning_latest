@@ -66,7 +66,7 @@ def create_minimal_solution():
         total_production=1000.0,
         total_shortage_units=0.0,
         has_aggregate_inventory=True,
-        use_batch_tracking=False,
+        use_pallet_tracking=False,
         production_by_date_product={
             ("6122", "TEST_PRODUCT", date.today()): 1000.0
         },

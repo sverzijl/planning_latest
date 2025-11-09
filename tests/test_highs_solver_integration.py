@@ -42,7 +42,7 @@ from datetime import date, timedelta
 import time
 
 from src.parsers.multi_file_parser import MultiFileParser
-from src.optimization.unified_node_model import UnifiedNodeModel
+from src.optimization.sliding_window_model import SlidingWindowModel
 from tests.conftest import create_test_products
 from src.optimization.legacy_to_unified_converter import LegacyToUnifiedConverter
 from src.optimization.solver_config import SolverConfig
@@ -173,7 +173,7 @@ def test_highs_1_week_binary_variables(parsed_data):
     product_ids = sorted(set(entry.product_id for entry in forecast.entries))
     products = create_test_products(product_ids)
 
-    model = UnifiedNodeModel(
+    model = SlidingWindowModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
@@ -185,7 +185,7 @@ def test_highs_1_week_binary_variables(parsed_data):
         truck_schedules=unified_truck_schedules,
         initial_inventory=initial_inventory.to_optimization_dict() if initial_inventory else None,
         inventory_snapshot_date=inventory_snapshot_date,
-        use_batch_tracking=True,
+        use_pallet_tracking=True,
         allow_shortages=True,
         enforce_shelf_life=True,
     )
@@ -243,7 +243,7 @@ def test_highs_2_week_binary_variables(parsed_data):
     product_ids = sorted(set(entry.product_id for entry in forecast.entries))
     products = create_test_products(product_ids)
 
-    model = UnifiedNodeModel(
+    model = SlidingWindowModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
@@ -255,7 +255,7 @@ def test_highs_2_week_binary_variables(parsed_data):
         truck_schedules=unified_truck_schedules,
         initial_inventory=initial_inventory.to_optimization_dict() if initial_inventory else None,
         inventory_snapshot_date=inventory_snapshot_date,
-        use_batch_tracking=True,
+        use_pallet_tracking=True,
         allow_shortages=True,
         enforce_shelf_life=True,
     )
@@ -314,7 +314,7 @@ def test_highs_4_week_binary_variables(parsed_data):
     product_ids = sorted(set(entry.product_id for entry in forecast.entries))
     products = create_test_products(product_ids)
 
-    model = UnifiedNodeModel(
+    model = SlidingWindowModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
@@ -326,7 +326,7 @@ def test_highs_4_week_binary_variables(parsed_data):
         truck_schedules=unified_truck_schedules,
         initial_inventory=initial_inventory.to_optimization_dict() if initial_inventory else None,
         inventory_snapshot_date=inventory_snapshot_date,
-        use_batch_tracking=True,
+        use_pallet_tracking=True,
         allow_shortages=True,
         enforce_shelf_life=True,
     )
@@ -404,7 +404,7 @@ def test_highs_vs_cbc_performance(parsed_data):
 
     # Create model (will be built twice)
     def create_model():
-        return UnifiedNodeModel(
+        return SlidingWindowModel(
             nodes=nodes,
             routes=unified_routes,
             forecast=forecast,
@@ -416,7 +416,7 @@ def test_highs_vs_cbc_performance(parsed_data):
             truck_schedules=unified_truck_schedules,
             initial_inventory=initial_inventory.to_optimization_dict() if initial_inventory else None,
             inventory_snapshot_date=inventory_snapshot_date,
-            use_batch_tracking=True,
+            use_pallet_tracking=True,
             allow_shortages=True,
             enforce_shelf_life=True,
         )
@@ -530,7 +530,7 @@ def test_highs_sku_reduction(parsed_data):
     product_ids = sorted(set(entry.product_id for entry in forecast.entries))
     products = create_test_products(product_ids)
 
-    model = UnifiedNodeModel(
+    model = SlidingWindowModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=sku_forecast,
@@ -540,7 +540,7 @@ def test_highs_sku_reduction(parsed_data):
         start_date=planning_start,
         end_date=planning_end,
         truck_schedules=None,  # Disable truck constraints
-        use_batch_tracking=True,
+        use_pallet_tracking=True,
         allow_shortages=False,
         enforce_shelf_life=True,
     )
@@ -613,7 +613,7 @@ def test_highs_warmstart_no_effect(parsed_data):
     print("="*80)
 
     def create_model():
-        return UnifiedNodeModel(
+        return SlidingWindowModel(
             nodes=nodes,
             routes=unified_routes,
             forecast=forecast,
@@ -625,7 +625,7 @@ def test_highs_warmstart_no_effect(parsed_data):
             truck_schedules=unified_truck_schedules,
             initial_inventory=initial_inventory.to_optimization_dict() if initial_inventory else None,
             inventory_snapshot_date=inventory_snapshot_date,
-            use_batch_tracking=True,
+            use_pallet_tracking=True,
             allow_shortages=True,
             enforce_shelf_life=True,
         )
@@ -711,7 +711,7 @@ def test_highs_solution_quality(parsed_data):
     product_ids = sorted(set(entry.product_id for entry in forecast.entries))
     products = create_test_products(product_ids)
 
-    model = UnifiedNodeModel(
+    model = SlidingWindowModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
@@ -723,7 +723,7 @@ def test_highs_solution_quality(parsed_data):
         truck_schedules=unified_truck_schedules,
         initial_inventory=initial_inventory.to_optimization_dict() if initial_inventory else None,
         inventory_snapshot_date=inventory_snapshot_date,
-        use_batch_tracking=True,
+        use_pallet_tracking=True,
         allow_shortages=True,
         enforce_shelf_life=True,
     )

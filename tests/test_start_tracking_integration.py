@@ -14,7 +14,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from src.parsers.multi_file_parser import MultiFileParser
-from src.optimization.unified_node_model import UnifiedNodeModel
+from src.optimization.sliding_window_model import SlidingWindowModel
 from tests.conftest import create_test_products
 from src.optimization.legacy_to_unified_converter import LegacyToUnifiedConverter
 from pyomo.environ import value
@@ -54,7 +54,7 @@ class TestStartTrackingIntegration:
     def test_start_tracking_variables_exist(self, test_data):
         """Verify product_start variables are created."""
 
-        model_wrapper = UnifiedNodeModel(
+        model_wrapper = SlidingWindowModel(
             nodes=test_data['nodes'],
             routes=test_data['routes'],
             forecast=test_data['forecast'],
@@ -64,7 +64,7 @@ class TestStartTrackingIntegration:
             start_date=date(2025, 10, 7),
             end_date=date(2025, 10, 13),
             truck_schedules=test_data['trucks'],
-            use_batch_tracking=True,
+            use_pallet_tracking=True,
             force_all_skus_daily=False,  # Enable binary SKU selection
         )
 
@@ -79,7 +79,7 @@ class TestStartTrackingIntegration:
     def test_old_variables_removed(self, test_data):
         """Verify old num_products_produced variables are removed."""
 
-        model_wrapper = UnifiedNodeModel(
+        model_wrapper = SlidingWindowModel(
             nodes=test_data['nodes'],
             routes=test_data['routes'],
             forecast=test_data['forecast'],
@@ -89,7 +89,7 @@ class TestStartTrackingIntegration:
             start_date=date(2025, 10, 7),
             end_date=date(2025, 10, 13),
             truck_schedules=test_data['trucks'],
-            use_batch_tracking=True,
+            use_pallet_tracking=True,
             force_all_skus_daily=False,
         )
 
@@ -106,7 +106,7 @@ class TestStartTrackingIntegration:
     def test_new_constraints_exist(self, test_data):
         """Verify start detection and simplified linking constraints exist."""
 
-        model_wrapper = UnifiedNodeModel(
+        model_wrapper = SlidingWindowModel(
             nodes=test_data['nodes'],
             routes=test_data['routes'],
             forecast=test_data['forecast'],
@@ -116,7 +116,7 @@ class TestStartTrackingIntegration:
             start_date=date(2025, 10, 7),
             end_date=date(2025, 10, 13),
             truck_schedules=test_data['trucks'],
-            use_batch_tracking=True,
+            use_pallet_tracking=True,
             force_all_skus_daily=False,
         )
 
@@ -135,7 +135,7 @@ class TestStartTrackingIntegration:
     def test_start_tracking_solve_1week(self, test_data):
         """Verify model solves successfully with start tracking."""
 
-        model_wrapper = UnifiedNodeModel(
+        model_wrapper = SlidingWindowModel(
             nodes=test_data['nodes'],
             routes=test_data['routes'],
             forecast=test_data['forecast'],
@@ -145,7 +145,7 @@ class TestStartTrackingIntegration:
             start_date=date(2025, 10, 7),
             end_date=date(2025, 10, 13),
             truck_schedules=test_data['trucks'],
-            use_batch_tracking=True,
+            use_pallet_tracking=True,
             force_all_skus_daily=False,
         )
 
@@ -169,7 +169,7 @@ class TestStartTrackingIntegration:
     def test_changeover_statistics_extraction(self, test_data):
         """Verify changeover statistics are extracted correctly."""
 
-        model_wrapper = UnifiedNodeModel(
+        model_wrapper = SlidingWindowModel(
             nodes=test_data['nodes'],
             routes=test_data['routes'],
             forecast=test_data['forecast'],
@@ -179,7 +179,7 @@ class TestStartTrackingIntegration:
             start_date=date(2025, 10, 7),
             end_date=date(2025, 10, 13),
             truck_schedules=test_data['trucks'],
-            use_batch_tracking=True,
+            use_pallet_tracking=True,
             force_all_skus_daily=False,
         )
 
@@ -217,7 +217,7 @@ class TestStartTrackingIntegration:
     def test_start_detection_logic(self, test_data):
         """Verify start detection correctly identifies 0→1 transitions."""
 
-        model_wrapper = UnifiedNodeModel(
+        model_wrapper = SlidingWindowModel(
             nodes=test_data['nodes'],
             routes=test_data['routes'],
             forecast=test_data['forecast'],
@@ -227,7 +227,7 @@ class TestStartTrackingIntegration:
             start_date=date(2025, 10, 7),
             end_date=date(2025, 10, 13),
             truck_schedules=test_data['trucks'],
-            use_batch_tracking=True,
+            use_pallet_tracking=True,
             force_all_skus_daily=False,
         )
 
@@ -264,7 +264,7 @@ class TestStartTrackingIntegration:
     def test_cost_improvement_vs_baseline(self, test_data):
         """Verify start tracking provides cost improvement or matches baseline."""
 
-        model_wrapper = UnifiedNodeModel(
+        model_wrapper = SlidingWindowModel(
             nodes=test_data['nodes'],
             routes=test_data['routes'],
             forecast=test_data['forecast'],
@@ -274,7 +274,7 @@ class TestStartTrackingIntegration:
             start_date=date(2025, 10, 7),
             end_date=date(2025, 10, 27),  # 4-week horizon (baseline reference)
             truck_schedules=test_data['trucks'],
-            use_batch_tracking=True,
+            use_pallet_tracking=True,
             force_all_skus_daily=False,
         )
 

@@ -38,7 +38,7 @@ from datetime import date, timedelta
 import time
 
 from src.parsers.multi_file_parser import MultiFileParser
-from src.optimization.unified_node_model import UnifiedNodeModel
+from src.optimization.sliding_window_model import SlidingWindowModel
 from tests.conftest import create_test_products
 from src.optimization.legacy_to_unified_converter import LegacyToUnifiedConverter
 from src.optimization.solver_config import SolverConfig
@@ -157,7 +157,7 @@ def test_solver_performance_1_week(parsed_data):
     print(f"Planning horizon: {planning_start_date} to {planning_end_date} (7 days)")
 
     def create_model():
-        return UnifiedNodeModel(
+        return SlidingWindowModel(
             nodes=nodes,
             routes=unified_routes,
             forecast=forecast,
@@ -169,7 +169,7 @@ def test_solver_performance_1_week(parsed_data):
             truck_schedules=unified_truck_schedules,
             initial_inventory=initial_inventory.to_optimization_dict() if initial_inventory else None,
             inventory_snapshot_date=inventory_snapshot_date,
-            use_batch_tracking=True,
+            use_pallet_tracking=True,
             allow_shortages=True,
             enforce_shelf_life=True,
         )
@@ -256,7 +256,7 @@ def test_solver_performance_2_week(parsed_data):
     print(f"Planning horizon: {planning_start_date} to {planning_end_date} (14 days)")
 
     def create_model():
-        return UnifiedNodeModel(
+        return SlidingWindowModel(
             nodes=nodes,
             routes=unified_routes,
             forecast=forecast,
@@ -268,7 +268,7 @@ def test_solver_performance_2_week(parsed_data):
             truck_schedules=unified_truck_schedules,
             initial_inventory=initial_inventory.to_optimization_dict() if initial_inventory else None,
             inventory_snapshot_date=inventory_snapshot_date,
-            use_batch_tracking=True,
+            use_pallet_tracking=True,
             allow_shortages=True,
             enforce_shelf_life=True,
         )
@@ -357,7 +357,7 @@ def test_solver_performance_4_week(parsed_data):
     print(f"Expected: CBC ~226s, HiGHS ~96s (2.35x speedup)")
 
     def create_model():
-        return UnifiedNodeModel(
+        return SlidingWindowModel(
             nodes=nodes,
             routes=unified_routes,
             forecast=forecast,
@@ -369,7 +369,7 @@ def test_solver_performance_4_week(parsed_data):
             truck_schedules=unified_truck_schedules,
             initial_inventory=initial_inventory.to_optimization_dict() if initial_inventory else None,
             inventory_snapshot_date=inventory_snapshot_date,
-            use_batch_tracking=True,
+            use_pallet_tracking=True,
             allow_shortages=True,
             enforce_shelf_life=True,
         )

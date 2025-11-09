@@ -10,7 +10,7 @@ from datetime import timedelta
 from src.parsers.multi_file_parser import MultiFileParser
 from src.models.manufacturing import ManufacturingSite
 from src.optimization.legacy_to_unified_converter import LegacyToUnifiedConverter
-from src.optimization.unified_node_model import UnifiedNodeModel
+from src.optimization.sliding_window_model import SlidingWindowModel
 from tests.conftest import create_test_products
 
 
@@ -66,7 +66,7 @@ def test_labor_cost_only_no_storage():
     product_ids = sorted(set(entry.product_id for entry in forecast.entries))
     products = create_test_products(product_ids)
 
-    model = UnifiedNodeModel(
+    model = SlidingWindowModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
@@ -76,7 +76,7 @@ def test_labor_cost_only_no_storage():
         start_date=start_date,
         end_date=end_date,
         truck_schedules=[],  # NO TRUCK CONSTRAINTS
-        use_batch_tracking=True,
+        use_pallet_tracking=True,
         allow_shortages=True,
         enforce_shelf_life=False,  # NO SHELF LIFE CONSTRAINTS
     )

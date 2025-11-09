@@ -17,7 +17,7 @@ from pathlib import Path
 from src.optimization.base_model import BaseOptimizationModel
 from src.optimization.result_schema import OptimizationSolution
 from src.optimization.sliding_window_model import SlidingWindowModel
-from src.optimization.unified_node_model import UnifiedNodeModel
+from src.optimization.sliding_window_model import SlidingWindowModel
 from src.parsers.multi_file_parser import MultiFileParser
 from tests.conftest import create_test_products
 

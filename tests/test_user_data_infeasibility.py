@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from src.parsers.multi_file_parser import MultiFileParser
-from src.optimization.unified_node_model import UnifiedNodeModel
+from src.optimization.sliding_window_model import SlidingWindowModel
 from tests.conftest import create_test_products
 from src.optimization.legacy_to_unified_converter import LegacyToUnifiedConverter
 
@@ -147,7 +147,7 @@ def test_user_data_infeasibility_diagnosis():
         product_ids = sorted(set(entry.product_id for entry in forecast.entries))
         products = create_test_products(product_ids)
 
-        model = UnifiedNodeModel(
+        model = SlidingWindowModel(
             nodes=converted_data['nodes'],
             routes=converted_data['routes'],
             forecast=converted_data['forecast'],
@@ -159,7 +159,7 @@ def test_user_data_infeasibility_diagnosis():
             truck_schedules=converted_data['truck_schedules'],
             initial_inventory=converted_data['initial_inventory'],
             inventory_snapshot_date=converted_data.get('inventory_snapshot_date'),
-            use_batch_tracking=True,  # User's setting
+            use_pallet_tracking=True,  # User's setting
             allow_shortages=True,  # User's setting
             enforce_shelf_life=True,
         )
@@ -179,7 +179,7 @@ def test_user_data_infeasibility_diagnosis():
     print("Settings:")
     print("  - allow_shortages: True")
     print("  - enforce_shelf_life: True")
-    print("  - use_batch_tracking: True")
+    print("  - use_pallet_tracking: True")
     print("  - MIP gap: 1%")
     print("  - Time limit: 300 seconds")
     

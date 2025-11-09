@@ -11,7 +11,7 @@ from src.parsers.multi_file_parser import MultiFileParser
 from src.models.manufacturing import ManufacturingSite
 from src.models.forecast import Forecast, ForecastEntry
 from src.optimization.legacy_to_unified_converter import LegacyToUnifiedConverter
-from src.optimization.unified_node_model import UnifiedNodeModel
+from src.optimization.sliding_window_model import SlidingWindowModel
 from tests.conftest import create_test_products
 
 
@@ -109,7 +109,7 @@ def test_monday_demand_forces_overtime():
     print()
 
     # Build model
-    model_obj = UnifiedNodeModel(
+    model_obj = SlidingWindowModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
@@ -119,7 +119,7 @@ def test_monday_demand_forces_overtime():
         start_date=monday,
         end_date=monday + timedelta(days=6),
         truck_schedules=[],  # No trucks
-        use_batch_tracking=True,
+        use_pallet_tracking=True,
         allow_shortages=True,  # Allow to see what happens
         enforce_shelf_life=False,
     )

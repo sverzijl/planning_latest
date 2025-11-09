@@ -14,7 +14,7 @@ from src.models.unified_route import UnifiedRoute, TransportMode
 from src.models.forecast import Forecast, ForecastEntry
 from src.models.labor_calendar import LaborCalendar, LaborDay
 from src.models.cost_structure import CostStructure
-from src.optimization.unified_node_model import UnifiedNodeModel
+from src.optimization.sliding_window_model import SlidingWindowModel
 from tests.conftest import create_test_products
 
 
@@ -230,7 +230,7 @@ def test_multi_day_overhead_consistency():
     """
     setup = create_multi_day_overhead_test_setup()
 
-    model_obj = UnifiedNodeModel(
+    model_obj = SlidingWindowModel(
         nodes=setup['nodes'],
         routes=setup['routes'],
         forecast=setup['forecast'],
@@ -239,7 +239,7 @@ def test_multi_day_overhead_consistency():
         cost_structure=setup['cost_structure'],
         start_date=setup['start_date'],
         end_date=setup['end_date'],
-        use_batch_tracking=True,
+        use_pallet_tracking=True,
         allow_shortages=False,
     )
 
@@ -365,7 +365,7 @@ def test_multi_day_overhead_with_storage():
         cost_per_unit=0.1,
     )
 
-    model_obj = UnifiedNodeModel(
+    model_obj = SlidingWindowModel(
         nodes=setup['nodes'],
         routes=setup['routes'],
         forecast=setup['forecast'],
@@ -374,7 +374,7 @@ def test_multi_day_overhead_with_storage():
         cost_structure=setup['cost_structure'],
         start_date=setup['start_date'],
         end_date=setup['end_date'],
-        use_batch_tracking=True,
+        use_pallet_tracking=True,
         allow_shortages=False,
     )
 

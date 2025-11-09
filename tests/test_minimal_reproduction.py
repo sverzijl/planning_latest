@@ -11,7 +11,7 @@ from src.models.unified_route import UnifiedRoute, TransportMode
 from src.models.forecast import Forecast, ForecastEntry
 from src.models.labor_calendar import LaborCalendar, LaborDay
 from src.models.cost_structure import CostStructure
-from src.optimization.unified_node_model import UnifiedNodeModel
+from src.optimization.sliding_window_model import SlidingWindowModel
 from tests.conftest import create_test_products
 
 
@@ -110,7 +110,7 @@ def test_minimal_case_single_breadroom_single_day_demand():
     product_ids = sorted(set(entry.product_id for entry in forecast.entries))
     products = create_test_products(product_ids)
 
-    model = UnifiedNodeModel(
+    model = SlidingWindowModel(
         nodes=[manufacturing, breadroom],
         routes=[route],
         forecast=forecast,
@@ -121,7 +121,7 @@ def test_minimal_case_single_breadroom_single_day_demand():
         end_date=day_7,
         truck_schedules=None,  # NO truck constraints (simplest)
         initial_inventory=None,
-        use_batch_tracking=True,
+        use_pallet_tracking=True,
         allow_shortages=True,
         enforce_shelf_life=True,
     )
@@ -145,7 +145,7 @@ def test_minimal_case_single_breadroom_single_day_demand():
     solution = model.get_solution()
 
     # Get end-of-horizon inventory
-    cohort_inv = solution.get('cohort_inventory', {})
+    cohort_inv = solution.get('inventory_state', {})
     end_inventory = sum(qty for (n, p, pd, cd, s), qty in cohort_inv.items() if cd == day_7 and qty > 0.01)
 
     # Get total production
@@ -258,13 +258,13 @@ def test_minimal_with_multi_day_demand():
     product_ids = sorted(set(entry.product_id for entry in forecast.entries))
     products = create_test_products(product_ids)
 
-    model = UnifiedNodeModel(
+    model = SlidingWindowModel(
         nodes=[manufacturing, breadroom], routes=[route],
         forecast=forecast, labor_calendar=labor_calendar,
         cost_structure=cost_structure,
         start_date=day_1, end_date=day_7,
         truck_schedules=None, initial_inventory=None,
-        use_batch_tracking=True, allow_shortages=True, enforce_shelf_life=True,
+        use_pallet_tracking=True, allow_shortages=True, enforce_shelf_life=True,
     )
 
     print("\n" + "="*80)
@@ -275,7 +275,7 @@ def test_minimal_with_multi_day_demand():
     result = model.solve(solver_name='cbc', time_limit_seconds=60, mip_gap=0.01, tee=False)
     solution = model.get_solution()
 
-    cohort_inv = solution.get('cohort_inventory', {})
+    cohort_inv = solution.get('inventory_state', {})
     end_inventory = sum(qty for (n, p, pd, cd, s), qty in cohort_inv.items() if cd == day_7)
     total_production = sum(solution.get('production_by_date_product', {}).values())
 

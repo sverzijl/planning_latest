@@ -13,7 +13,7 @@ from src.models.unified_route import UnifiedRoute, TransportMode
 from src.models.forecast import Forecast, ForecastEntry
 from src.models.labor_calendar import LaborCalendar, LaborDay
 from src.models.cost_structure import CostStructure
-from src.optimization.unified_node_model import UnifiedNodeModel
+from src.optimization.sliding_window_model import SlidingWindowModel
 from tests.conftest import create_test_products
 
 
@@ -122,7 +122,7 @@ class TestInventoryHoldingCosts:
         product_ids = sorted(set(entry.product_id for entry in forecast.entries))
         products = create_test_products(product_ids)
 
-        model = UnifiedNodeModel(
+        model = SlidingWindowModel(
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
@@ -131,7 +131,7 @@ class TestInventoryHoldingCosts:
             cost_structure=cost_structure_with_holding,
             start_date=date(2025, 10, 1),
             end_date=date(2025, 10, 7),
-            use_batch_tracking=True,
+            use_pallet_tracking=True,
             allow_shortages=False,
         )
 
@@ -182,7 +182,7 @@ class TestInventoryHoldingCosts:
         product_ids = sorted(set(entry.product_id for entry in forecast.entries))
         products = create_test_products(product_ids)
 
-        model = UnifiedNodeModel(
+        model = SlidingWindowModel(
             nodes=simple_network['nodes'] + [frozen_node],
             routes=simple_network['routes'] + [frozen_route],
             forecast=simple_forecast,
@@ -191,7 +191,7 @@ class TestInventoryHoldingCosts:
             cost_structure=cost_structure_with_holding,
             start_date=date(2025, 10, 1),
             end_date=date(2025, 10, 7),
-            use_batch_tracking=True,
+            use_pallet_tracking=True,
             allow_shortages=False,
         )
 
@@ -217,7 +217,7 @@ class TestInventoryHoldingCosts:
         product_ids = sorted(set(entry.product_id for entry in forecast.entries))
         products = create_test_products(product_ids)
 
-        model = UnifiedNodeModel(
+        model = SlidingWindowModel(
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
@@ -226,7 +226,7 @@ class TestInventoryHoldingCosts:
             cost_structure=cost_structure_with_holding,
             start_date=date(2025, 10, 1),
             end_date=date(2025, 10, 7),
-            use_batch_tracking=True,
+            use_pallet_tracking=True,
             allow_shortages=False,
         )
 
@@ -250,7 +250,7 @@ class TestInventoryHoldingCosts:
         product_ids = sorted(set(entry.product_id for entry in forecast.entries))
         products = create_test_products(product_ids)
 
-        model = UnifiedNodeModel(
+        model = SlidingWindowModel(
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
@@ -259,7 +259,7 @@ class TestInventoryHoldingCosts:
             cost_structure=cost_structure_with_holding,
             start_date=date(2025, 10, 1),
             end_date=date(2025, 10, 7),
-            use_batch_tracking=True,
+            use_pallet_tracking=True,
             allow_shortages=False,
         )
 
@@ -309,7 +309,7 @@ class TestInventoryHoldingCosts:
         product_ids = sorted(set(entry.product_id for entry in forecast.entries))
         products = create_test_products(product_ids)
 
-        model = UnifiedNodeModel(
+        model = SlidingWindowModel(
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
@@ -318,7 +318,7 @@ class TestInventoryHoldingCosts:
             cost_structure=zero_cost_structure,
             start_date=date(2025, 10, 1),
             end_date=date(2025, 10, 7),
-            use_batch_tracking=True,
+            use_pallet_tracking=True,
             allow_shortages=False,
         )
 
@@ -329,19 +329,19 @@ class TestInventoryHoldingCosts:
         assert zero_cost_structure.storage_cost_frozen_per_unit_day == 0.0
         assert zero_cost_structure.storage_cost_ambient_per_unit_day == 0.0
 
-    def test_holding_cost_calculation_from_cohort_inventory(
+    def test_holding_cost_calculation_from_aggregate_inventory(
         self,
         simple_network,
         simple_forecast,
         labor_calendar,
         cost_structure_with_holding
     ):
-        """Test that holding cost is calculated from cohort_inventory correctly."""
+        """Test that holding cost is calculated from inventory_state correctly."""
         # Create products for model (extract unique product IDs from forecast)
         product_ids = sorted(set(entry.product_id for entry in forecast.entries))
         products = create_test_products(product_ids)
 
-        model = UnifiedNodeModel(
+        model = SlidingWindowModel(
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
@@ -350,12 +350,12 @@ class TestInventoryHoldingCosts:
             cost_structure=cost_structure_with_holding,
             start_date=date(2025, 10, 1),
             end_date=date(2025, 10, 7),
-            use_batch_tracking=True,
+            use_pallet_tracking=True,
             allow_shortages=False,
         )
 
         # Mock solution with known cohort inventory
-        mock_cohort_inventory = {
+        mock_aggregate_inventory = {
             ('MFG', 'P1', date(2025, 10, 1), date(2025, 10, 2), 'ambient'): 100.0,
             ('MFG', 'P1', date(2025, 10, 1), date(2025, 10, 3), 'ambient'): 50.0,
             ('FROZEN', 'P1', date(2025, 10, 1), date(2025, 10, 2), 'frozen'): 200.0,
@@ -383,7 +383,7 @@ class TestInventoryHoldingCosts:
         product_ids = sorted(set(entry.product_id for entry in forecast.entries))
         products = create_test_products(product_ids)
 
-        model = UnifiedNodeModel(
+        model = SlidingWindowModel(
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
@@ -392,7 +392,7 @@ class TestInventoryHoldingCosts:
             cost_structure=cost_structure_with_holding,
             start_date=date(2025, 10, 1),
             end_date=date(2025, 10, 7),
-            use_batch_tracking=False,  # Aggregated mode
+            use_pallet_tracking=False,  # Aggregated mode
             allow_shortages=False,
         )
 

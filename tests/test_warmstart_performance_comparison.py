@@ -31,7 +31,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from src.parsers.multi_file_parser import MultiFileParser
-from src.optimization.unified_node_model import UnifiedNodeModel
+from src.optimization.sliding_window_model import SlidingWindowModel
 from tests.conftest import create_test_products
 from src.optimization.legacy_to_unified_converter import LegacyToUnifiedConverter
 from src.models.manufacturing import ManufacturingSite
@@ -149,7 +149,7 @@ def test_warmstart_performance_improvement(benchmark_data):
     print("TEST 1: BASELINE (Binary WITHOUT warmstart)")
     print("-"*80)
 
-    model_baseline = UnifiedNodeModel(
+    model_baseline = SlidingWindowModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
@@ -161,7 +161,7 @@ def test_warmstart_performance_improvement(benchmark_data):
         truck_schedules=unified_truck_schedules,
         initial_inventory=initial_inventory.to_optimization_dict() if initial_inventory else None,
         inventory_snapshot_date=inventory_snapshot_date,
-        use_batch_tracking=True,
+        use_pallet_tracking=True,
         allow_shortages=True,
         enforce_shelf_life=True,
     )
@@ -202,7 +202,7 @@ def test_warmstart_performance_improvement(benchmark_data):
     print("TEST 2: WARMSTART (Binary WITH campaign hints)")
     print("-"*80)
 
-    model_warmstart = UnifiedNodeModel(
+    model_warmstart = SlidingWindowModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
@@ -214,7 +214,7 @@ def test_warmstart_performance_improvement(benchmark_data):
         truck_schedules=unified_truck_schedules,
         initial_inventory=initial_inventory.to_optimization_dict() if initial_inventory else None,
         inventory_snapshot_date=inventory_snapshot_date,
-        use_batch_tracking=True,
+        use_pallet_tracking=True,
         allow_shortages=True,
         enforce_shelf_life=True,
     )
@@ -354,7 +354,7 @@ def test_warmstart_campaign_pattern_validation(benchmark_data):
     product_ids = sorted(set(entry.product_id for entry in forecast.entries))
     products = create_test_products(product_ids)
 
-    model = UnifiedNodeModel(
+    model = SlidingWindowModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
@@ -364,7 +364,7 @@ def test_warmstart_campaign_pattern_validation(benchmark_data):
         start_date=start_date,
         end_date=end_date,
         truck_schedules=unified_truck_schedules,
-        use_batch_tracking=True,
+        use_pallet_tracking=True,
         allow_shortages=True,
         enforce_shelf_life=True,
     )

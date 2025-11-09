@@ -15,7 +15,7 @@ from src.parsers.multi_file_parser import MultiFileParser
 from src.models.manufacturing import ManufacturingSite
 from src.models.forecast import Forecast, ForecastEntry
 from src.optimization.legacy_to_unified_converter import LegacyToUnifiedConverter
-from src.optimization.unified_node_model import UnifiedNodeModel
+from src.optimization.sliding_window_model import SlidingWindowModel
 from tests.conftest import create_test_products
 from src.optimization.solver_config import SolverConfig
 
@@ -152,7 +152,7 @@ def test_model_produces_only_demanded_skus(solver_name):
     product_ids = sorted(set(entry.product_id for entry in forecast.entries))
     products = create_test_products(product_ids)
 
-    model = UnifiedNodeModel(
+    model = SlidingWindowModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
@@ -162,7 +162,7 @@ def test_model_produces_only_demanded_skus(solver_name):
         start_date=planning_start,
         end_date=planning_end,  # 3-day horizon allows for transit time
         truck_schedules=None,  # Disable truck constraints to avoid attribute error
-        use_batch_tracking=True,  # Enable to avoid shipment cohort issues
+        use_pallet_tracking=True,  # Enable to avoid shipment cohort issues
         allow_shortages=False,  # Must meet all demand
         enforce_shelf_life=True,  # Enable shelf life tracking
     )

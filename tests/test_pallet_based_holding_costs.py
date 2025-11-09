@@ -27,7 +27,7 @@ from src.models.unified_route import UnifiedRoute, TransportMode
 from src.models.forecast import Forecast, ForecastEntry
 from src.models.labor_calendar import LaborCalendar, LaborDay
 from src.models.cost_structure import CostStructure
-from src.optimization.unified_node_model import UnifiedNodeModel
+from src.optimization.sliding_window_model import SlidingWindowModel
 from tests.conftest import create_test_products
 from ui.utils.result_adapter import adapt_optimization_results
 
@@ -201,7 +201,7 @@ class TestHoldingCostCalculation:
         product_ids = sorted(set(entry.product_id for entry in forecast.entries))
         products = create_test_products(product_ids)
 
-        model = UnifiedNodeModel(
+        model = SlidingWindowModel(
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
@@ -210,7 +210,7 @@ class TestHoldingCostCalculation:
             cost_structure=cost_structure_unit_based,
             start_date=date(2025, 10, 1),
             end_date=date(2025, 10, 7),
-            use_batch_tracking=True,
+            use_pallet_tracking=True,
             allow_shortages=False,
         )
 
@@ -242,7 +242,7 @@ class TestHoldingCostCalculation:
         product_ids = sorted(set(entry.product_id for entry in forecast.entries))
         products = create_test_products(product_ids)
 
-        model = UnifiedNodeModel(
+        model = SlidingWindowModel(
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
@@ -251,7 +251,7 @@ class TestHoldingCostCalculation:
             cost_structure=mixed_costs,
             start_date=date(2025, 10, 1),
             end_date=date(2025, 10, 7),
-            use_batch_tracking=True,
+            use_pallet_tracking=True,
             allow_shortages=False,
         )
 
@@ -273,7 +273,7 @@ class TestHoldingCostCalculation:
         product_ids = sorted(set(entry.product_id for entry in forecast.entries))
         products = create_test_products(product_ids)
 
-        model = UnifiedNodeModel(
+        model = SlidingWindowModel(
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
@@ -282,7 +282,7 @@ class TestHoldingCostCalculation:
             cost_structure=cost_structure_zero_holding,
             start_date=date(2025, 10, 1),
             end_date=date(2025, 10, 7),
-            use_batch_tracking=True,
+            use_pallet_tracking=True,
             allow_shortages=False,
         )
 
@@ -324,7 +324,7 @@ class TestHoldingCostCalculation:
         product_ids = sorted(set(entry.product_id for entry in forecast.entries))
         products = create_test_products(product_ids)
 
-        model = UnifiedNodeModel(
+        model = SlidingWindowModel(
             nodes=simple_network['nodes'] + [frozen_node],
             routes=simple_network['routes'] + [frozen_route],
             forecast=simple_forecast,
@@ -333,7 +333,7 @@ class TestHoldingCostCalculation:
             cost_structure=cost_structure_pallet_based,
             start_date=date(2025, 10, 1),
             end_date=date(2025, 10, 7),
-            use_batch_tracking=True,
+            use_pallet_tracking=True,
             allow_shortages=False,
         )
 
@@ -355,7 +355,7 @@ class TestHoldingCostCalculation:
         product_ids = sorted(set(entry.product_id for entry in forecast.entries))
         products = create_test_products(product_ids)
 
-        model = UnifiedNodeModel(
+        model = SlidingWindowModel(
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
@@ -364,7 +364,7 @@ class TestHoldingCostCalculation:
             cost_structure=cost_structure_pallet_based,
             start_date=date(2025, 10, 1),
             end_date=date(2025, 10, 7),
-            use_batch_tracking=True,
+            use_pallet_tracking=True,
             allow_shortages=False,
         )
 
@@ -393,7 +393,7 @@ class TestHoldingCostIntegration:
         product_ids = sorted(set(entry.product_id for entry in forecast.entries))
         products = create_test_products(product_ids)
 
-        model = UnifiedNodeModel(
+        model = SlidingWindowModel(
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
@@ -402,7 +402,7 @@ class TestHoldingCostIntegration:
             cost_structure=cost_structure_pallet_based,
             start_date=date(2025, 10, 1),
             end_date=date(2025, 10, 7),
-            use_batch_tracking=True,
+            use_pallet_tracking=True,
             allow_shortages=False,
         )
 
@@ -429,7 +429,7 @@ class TestHoldingCostIntegration:
         product_ids = sorted(set(entry.product_id for entry in forecast.entries))
         products = create_test_products(product_ids)
 
-        model = UnifiedNodeModel(
+        model = SlidingWindowModel(
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
@@ -438,7 +438,7 @@ class TestHoldingCostIntegration:
             cost_structure=cost_structure_pallet_based,
             start_date=date(2025, 10, 1),
             end_date=date(2025, 10, 7),
-            use_batch_tracking=True,
+            use_pallet_tracking=True,
             allow_shortages=False,
         )
 
@@ -573,7 +573,7 @@ class TestBackwardCompatibility:
         product_ids = sorted(set(entry.product_id for entry in forecast.entries))
         products = create_test_products(product_ids)
 
-        model = UnifiedNodeModel(
+        model = SlidingWindowModel(
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
@@ -582,7 +582,7 @@ class TestBackwardCompatibility:
             cost_structure=cost_structure_zero_holding,
             start_date=date(2025, 10, 1),
             end_date=date(2025, 10, 7),
-            use_batch_tracking=True,
+            use_pallet_tracking=True,
             allow_shortages=False,
         )
 
@@ -653,7 +653,7 @@ class TestHoldingCostOptimization:
         product_ids = sorted(set(entry.product_id for entry in forecast.entries))
         products = create_test_products(product_ids)
 
-        model = UnifiedNodeModel(
+        model = SlidingWindowModel(
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
@@ -662,7 +662,7 @@ class TestHoldingCostOptimization:
             cost_structure=cost_structure_pallet_based,
             start_date=date(2025, 10, 1),
             end_date=date(2025, 10, 7),
-            use_batch_tracking=True,
+            use_pallet_tracking=True,
             allow_shortages=True,
         )
 
@@ -693,7 +693,7 @@ class TestHoldingCostOptimization:
         product_ids = sorted(set(entry.product_id for entry in forecast.entries))
         products = create_test_products(product_ids)
 
-        model = UnifiedNodeModel(
+        model = SlidingWindowModel(
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
@@ -702,7 +702,7 @@ class TestHoldingCostOptimization:
             cost_structure=cost_structure_pallet_based,
             start_date=date(2025, 10, 1),
             end_date=date(2025, 10, 7),
-            use_batch_tracking=True,
+            use_pallet_tracking=True,
             allow_shortages=True,
         )
 
@@ -729,7 +729,7 @@ class TestHoldingCostOptimization:
         product_ids = sorted(set(entry.product_id for entry in forecast.entries))
         products = create_test_products(product_ids)
 
-        model = UnifiedNodeModel(
+        model = SlidingWindowModel(
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
@@ -738,7 +738,7 @@ class TestHoldingCostOptimization:
             cost_structure=cost_structure_pallet_based,
             start_date=date(2025, 10, 1),
             end_date=date(2025, 10, 7),
-            use_batch_tracking=True,
+            use_pallet_tracking=True,
             allow_shortages=True,
         )
 
@@ -766,7 +766,7 @@ class TestHoldingCostOptimization:
     ):
         """Test that adding holding costs doesn't make feasible problems infeasible."""
         # Solve WITHOUT holding costs
-        model_no_holding = UnifiedNodeModel(
+        model_no_holding = SlidingWindowModel(
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
@@ -775,7 +775,7 @@ class TestHoldingCostOptimization:
             cost_structure=cost_structure_zero_holding,
             start_date=date(2025, 10, 1),
             end_date=date(2025, 10, 7),
-            use_batch_tracking=True,
+            use_pallet_tracking=True,
             allow_shortages=True,
         )
 
@@ -783,7 +783,7 @@ class TestHoldingCostOptimization:
         assert result_no_holding.is_optimal() or result_no_holding.is_feasible()
 
         # Solve WITH holding costs (same problem)
-        model_with_holding = UnifiedNodeModel(
+        model_with_holding = SlidingWindowModel(
             nodes=simple_network['nodes'],
             routes=simple_network['routes'],
             forecast=simple_forecast,
@@ -792,7 +792,7 @@ class TestHoldingCostOptimization:
             cost_structure=cost_structure_pallet_based,
             start_date=date(2025, 10, 1),
             end_date=date(2025, 10, 7),
-            use_batch_tracking=True,
+            use_pallet_tracking=True,
             allow_shortages=True,
         )
 
@@ -814,14 +814,14 @@ class TestPackagingConstants:
 
     def test_units_per_pallet_constant_exists(self):
         """Test UNITS_PER_PALLET is defined as class constant."""
-        from src.optimization.unified_node_model import UnifiedNodeModel
+        from src.optimization.sliding_window_model import SlidingWindowModel
 
         assert hasattr(UnifiedNodeModel, 'UNITS_PER_PALLET')
         assert UnifiedNodeModel.UNITS_PER_PALLET == 320.0
 
     def test_all_packaging_constants_defined(self):
         """Test all packaging constants are defined."""
-        from src.optimization.unified_node_model import UnifiedNodeModel
+        from src.optimization.sliding_window_model import SlidingWindowModel
 
         assert UnifiedNodeModel.UNITS_PER_CASE == 10.0
         assert UnifiedNodeModel.CASES_PER_PALLET == 32.0
@@ -830,7 +830,7 @@ class TestPackagingConstants:
 
     def test_packaging_constants_consistent(self):
         """Test packaging constants are mathematically consistent."""
-        from src.optimization.unified_node_model import UnifiedNodeModel
+        from src.optimization.sliding_window_model import SlidingWindowModel
 
         # UNITS_PER_PALLET should equal UNITS_PER_CASE × CASES_PER_PALLET
         expected = UnifiedNodeModel.UNITS_PER_CASE * UnifiedNodeModel.CASES_PER_PALLET

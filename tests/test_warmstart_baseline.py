@@ -115,7 +115,7 @@ def test_6week_warmstart_baseline(data_6week):
         truck_schedules=data_6week['truck_schedules'],
         initial_inventory=data_6week['initial_inventory'],
         inventory_snapshot_date=data_6week['inventory_date'],
-        use_batch_tracking=True,
+        use_pallet_tracking=True,
         allow_shortages=True,
         enforce_shelf_life=True,
         solver_name='appsi_highs',

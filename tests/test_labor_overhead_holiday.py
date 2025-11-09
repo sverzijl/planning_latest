@@ -14,7 +14,7 @@ from src.models.unified_route import UnifiedRoute, TransportMode
 from src.models.forecast import Forecast, ForecastEntry
 from src.models.labor_calendar import LaborCalendar, LaborDay
 from src.models.cost_structure import CostStructure
-from src.optimization.unified_node_model import UnifiedNodeModel
+from src.optimization.sliding_window_model import SlidingWindowModel
 from tests.conftest import create_test_products
 
 
@@ -149,7 +149,7 @@ def test_public_holiday_overhead_included():
         changeover_hours=0.5,
     )
 
-    model_obj = UnifiedNodeModel(
+    model_obj = SlidingWindowModel(
         nodes=setup['nodes'],
         routes=setup['routes'],
         forecast=setup['forecast'],
@@ -158,7 +158,7 @@ def test_public_holiday_overhead_included():
         cost_structure=setup['cost_structure'],
         start_date=setup['production_date'],
         end_date=setup['production_date'],
-        use_batch_tracking=True,
+        use_pallet_tracking=True,
         allow_shortages=False,
     )
 
@@ -248,7 +248,7 @@ def test_public_holiday_overhead_below_minimum():
         demand_qty=1400.0,  # 1h production
     )
 
-    model_obj = UnifiedNodeModel(
+    model_obj = SlidingWindowModel(
         nodes=setup['nodes'],
         routes=setup['routes'],
         forecast=setup['forecast'],
@@ -257,7 +257,7 @@ def test_public_holiday_overhead_below_minimum():
         cost_structure=setup['cost_structure'],
         start_date=setup['production_date'],
         end_date=setup['production_date'],
-        use_batch_tracking=True,
+        use_pallet_tracking=True,
         allow_shortages=False,
     )
 

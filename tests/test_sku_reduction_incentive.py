@@ -11,7 +11,7 @@ from src.parsers.multi_file_parser import MultiFileParser
 from src.models.manufacturing import ManufacturingSite
 from src.models.forecast import Forecast, ForecastEntry
 from src.optimization.legacy_to_unified_converter import LegacyToUnifiedConverter
-from src.optimization.unified_node_model import UnifiedNodeModel
+from src.optimization.sliding_window_model import SlidingWindowModel
 from tests.conftest import create_test_products
 
 
@@ -89,7 +89,7 @@ def test_zero_demand_skus_not_produced():
     product_ids = sorted(set(entry.product_id for entry in forecast.entries))
     products = create_test_products(product_ids)
 
-    model = UnifiedNodeModel(
+    model = SlidingWindowModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
@@ -99,7 +99,7 @@ def test_zero_demand_skus_not_produced():
         start_date=test_date,
         end_date=test_date,  # Single day
         truck_schedules=unified_trucks,
-        use_batch_tracking=False,  # Simplify for this test
+        use_pallet_tracking=False,  # Simplify for this test
         allow_shortages=False,  # Must meet demand
         enforce_shelf_life=False,  # Simplify
     )
@@ -209,7 +209,7 @@ def test_sku_reduction_cost_benefit():
     product_ids = sorted(set(entry.product_id for entry in forecast.entries))
     products = create_test_products(product_ids)
 
-    model = UnifiedNodeModel(
+    model = SlidingWindowModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
@@ -219,7 +219,7 @@ def test_sku_reduction_cost_benefit():
         start_date=test_date,
         end_date=test_date,
         truck_schedules=unified_trucks,
-        use_batch_tracking=False,
+        use_pallet_tracking=False,
         allow_shortages=False,
         enforce_shelf_life=False,
     )
@@ -336,7 +336,7 @@ def test_overtime_triggers_sku_reduction():
     product_ids = sorted(set(entry.product_id for entry in forecast.entries))
     products = create_test_products(product_ids)
 
-    model = UnifiedNodeModel(
+    model = SlidingWindowModel(
         nodes=nodes,
         routes=unified_routes,
         forecast=forecast,
@@ -346,7 +346,7 @@ def test_overtime_triggers_sku_reduction():
         start_date=test_date,
         end_date=test_date,
         truck_schedules=unified_trucks,
-        use_batch_tracking=False,
+        use_pallet_tracking=False,
         allow_shortages=False,
         enforce_shelf_life=False,
     )

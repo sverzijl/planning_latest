@@ -10,7 +10,7 @@ from src.models.labor_calendar import LaborCalendar, LaborDay
 from src.models.cost_structure import CostStructure
 from src.models.unified_node import UnifiedNode, NodeCapabilities, StorageMode
 from src.models.unified_route import UnifiedRoute, TransportMode
-from src.optimization.unified_node_model import UnifiedNodeModel
+from src.optimization.sliding_window_model import SlidingWindowModel
 from tests.conftest import create_test_products
 
 
@@ -129,7 +129,7 @@ def test_minimal_overtime_preference():
     print("BUILDING MINIMAL TEST MODEL")
     print("="*80)
 
-    model_obj = UnifiedNodeModel(
+    model_obj = SlidingWindowModel(
         nodes=nodes,
         routes=routes,
         forecast=forecast,
@@ -138,7 +138,7 @@ def test_minimal_overtime_preference():
         cost_structure=cost_structure,
         start_date=start_date,
         end_date=start_date + timedelta(days=6),
-        use_batch_tracking=True,
+        use_pallet_tracking=True,
         allow_shortages=False,
         enforce_shelf_life=False,  # Disable to remove complexity
     )
