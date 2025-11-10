@@ -481,7 +481,7 @@ def test_ui_workflow_4_weeks_with_initial_inventory(parsed_data):
         print("="*80)
 
         # For SlidingWindowModel, check aggregate inventory (not cohort)
-        aggregate_inv = solution.aggregate_inventory
+        aggregate_inv = solution.inventory_state
         if aggregate_inv:
             # Check if first day has inventory
             first_day_inventory = 0.0
@@ -534,8 +534,8 @@ def test_ui_workflow_4_weeks_with_initial_inventory(parsed_data):
     print("="*80)
 
     # Get aggregate inventory for final date
-    if solution.aggregate_inventory:
-        aggregate_inv = solution.aggregate_inventory
+    if solution.inventory_state:
+        aggregate_inv = solution.inventory_state
 
         # Calculate total inventory on FIRST day (model.start_date)
         first_day_inventory = 0.0
