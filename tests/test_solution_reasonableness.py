@@ -196,7 +196,7 @@ class TestSolutionReasonableness:
         )
 
         # Check production distribution
-        producing_days = len([batch for batch in solution.production_batches if batch['quantity'] > 0])
+        producing_days = len([batch for batch in solution.production_batches if batch.quantity > 0])
         assert producing_days >= 15, (
             f"Too few production days: {producing_days} (should be >=15 for 4-week horizon)\n"
             f"  This suggests production is blocked by constraints or costs are miscalibrated"
