@@ -11,7 +11,7 @@ Key Functions:
 
 Example:
     # Day 1: Full solve (expensive)
-    model_day1 = UnifiedNodeModel(...)
+    model_day1 = SlidingWindowModel(...)
     result_day1 = model_day1.solve(use_warmstart=False)
 
     # Extract solution
@@ -23,7 +23,7 @@ Example:
                                            new_end_date=date(2025, 2, 3))
 
     # Solve with warmstart (fast!)
-    model_day2 = UnifiedNodeModel(forecast=forecast_day2, ...)
+    model_day2 = SlidingWindowModel(forecast=forecast_day2, ...)
     result_day2 = model_day2.solve(use_warmstart=True,
                                    warmstart_hints=warmstart_day2)
 """
@@ -63,7 +63,7 @@ def extract_solution_for_warmstart(
     model: Any,
     verbose: bool = False
 ) -> Dict[Tuple, float]:
-    """Extract complete solution from solved UnifiedNodeModel for warmstart.
+    """Extract complete solution from solved optimization model for warmstart.
 
     Extracts all relevant variable values from a solved optimization model
     and converts them to the warmstart hints format. This provides 100%

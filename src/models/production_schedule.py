@@ -1,7 +1,7 @@
 """Production schedule data model for optimization results.
 
 This module provides the ProductionSchedule class used by optimization models
-(e.g., UnifiedNodeModel) to represent production plans with batches, labor hours,
+(e.g., SlidingWindowModel (or archived UnifiedNodeModel)) to represent production plans with batches, labor hours,
 and cost metrics.
 
 Note: This is a clean data model for optimization results, separate from the

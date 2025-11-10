@@ -44,7 +44,7 @@ class CostStructure(BaseModel):
     )
     setup_cost: float = Field(
         default=0.0,
-        description="DEPRECATED: Not used by UnifiedNodeModel. Changeover tracking exists but costs are zero.",
+        description="DEPRECATED: Not used by current optimization models. Changeover tracking exists but costs are zero.",
         ge=0
     )
 
@@ -52,17 +52,17 @@ class CostStructure(BaseModel):
     # Labor rates come from LaborCalendar sheet instead
     default_regular_rate: float = Field(
         default=20.0,
-        description="DEPRECATED: Not used by UnifiedNodeModel. Use LaborCalendar.regular_rate instead.",
+        description="DEPRECATED: Not used by current optimization models. Use LaborCalendar.regular_rate instead.",
         ge=0
     )
     default_overtime_rate: float = Field(
         default=30.0,
-        description="DEPRECATED: Not used by UnifiedNodeModel. Use LaborCalendar.overtime_rate instead.",
+        description="DEPRECATED: Not used by current optimization models. Use LaborCalendar.overtime_rate instead.",
         ge=0
     )
     default_non_fixed_rate: float = Field(
         default=40.0,
-        description="DEPRECATED: Not used by UnifiedNodeModel. Use LaborCalendar.non_fixed_rate instead.",
+        description="DEPRECATED: Not used by current optimization models. Use LaborCalendar.non_fixed_rate instead.",
         ge=0
     )
 
@@ -70,17 +70,17 @@ class CostStructure(BaseModel):
     # Transport costs come from Routes sheet cost column instead
     transport_cost_frozen_per_unit: float = Field(
         default=0.5,
-        description="DEPRECATED: Not used by UnifiedNodeModel. Use Routes sheet 'cost' column instead.",
+        description="DEPRECATED: Not used by current optimization models. Use Routes sheet 'cost' column instead.",
         ge=0
     )
     transport_cost_ambient_per_unit: float = Field(
         default=0.3,
-        description="DEPRECATED: Not used by UnifiedNodeModel. Use Routes sheet 'cost' column instead.",
+        description="DEPRECATED: Not used by current optimization models. Use Routes sheet 'cost' column instead.",
         ge=0
     )
     truck_fixed_cost: float = Field(
         default=100.0,
-        description="DEPRECATED: Not used by UnifiedNodeModel. Fixed truck costs not implemented.",
+        description="DEPRECATED: Not used by current optimization models. Fixed truck costs not implemented.",
         ge=0
     )
 

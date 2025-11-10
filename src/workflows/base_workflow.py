@@ -98,7 +98,7 @@ class WorkflowResult:
     workflow_type: WorkflowType
     solve_timestamp: datetime
     solution: Optional[OptimizationResult] = None
-    model: Optional[Any] = None  # UnifiedNodeModel reference (not persisted)
+    model: Optional[Any] = None  # Optimization model reference (not persisted)
     success: bool = False
     solve_time_seconds: Optional[float] = None
     objective_value: Optional[float] = None

@@ -332,7 +332,7 @@ class DailySnapshotGenerator:
                 self.use_model_inventory = True
                 self.is_aggregate_model = True
             elif inventory_format == "cohort":
-                # UnifiedNodeModel: has cohort_inventory
+                # Cohort-tracking model (archived): has cohort_inventory
                 self.use_model_inventory = True
                 self.is_aggregate_model = False
             # else: inventory_format == "none" → use_model_inventory = False

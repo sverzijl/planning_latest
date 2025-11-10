@@ -209,7 +209,7 @@ def validate_optimization_solution_complete(solution: 'OptimizationSolution') ->
 
     if solution.model_type == "unified_node" and not solution.use_batch_tracking:
         errors.append(
-            "UnifiedNodeModel must set use_batch_tracking=True"
+            "Models using batch tracking must set use_batch_tracking=True"
         )
 
     if errors:

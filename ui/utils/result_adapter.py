@@ -44,7 +44,7 @@ def adapt_optimization_results(
     Raises ValidationError if solution doesn't conform to schema.
 
     Args:
-        model: BaseOptimizationModel instance (SlidingWindowModel or UnifiedNodeModel)
+        model: BaseOptimizationModel instance (SlidingWindowModel (UnifiedNodeModel archived))
         result: Optimization result dictionary from session state (unused, kept for compatibility)
         inventory_snapshot_date: Optional date when initial inventory was loaded
 

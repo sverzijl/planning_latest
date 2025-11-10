@@ -1,4 +1,4 @@
-"""Campaign-based warmstart hint generation for UnifiedNodeModel.
+"""Campaign-based warmstart hint generation for cohort-tracking models (archived).
 
 This module implements a demand-weighted campaign pattern algorithm to generate
 production hints that help the MIP solver find good initial solutions faster.
