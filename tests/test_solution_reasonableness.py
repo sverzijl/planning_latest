@@ -90,9 +90,22 @@ def build_and_solve_model(horizon_days):
     )
 
     # Solve
-    result = model_builder.solve(solver_name='appsi_highs', time_limit_seconds=180, mip_gap=0.01)
+    # Time limit adjusted based on horizon: 1-week=180s, 4-week=600s (longer horizons need more time)
+    time_limit = 600 if horizon_days >= 28 else 180
+    result = model_builder.solve(solver_name='appsi_highs', time_limit_seconds=time_limit, mip_gap=0.01)
+
+    # Debug: Check solve status
+    print(f"\n🔍 DEBUG: Solve result for {horizon_days}-day horizon:")
+    print(f"  Success: {result.success}")
+    print(f"  Termination: {result.termination_condition}")
+    print(f"  Objective: {result.objective_value if result.objective_value else 'None'}")
+
     model = model_builder.model  # Get the solved Pyomo model
     solution = model_builder.extract_solution(model)
+
+    # Debug: Check solution
+    print(f"  Solution total_production: {solution.total_production}")
+    print(f"  Production batches: {len(solution.production_batches)}")
 
     # Get demand and init_inv for this horizon
     # Handle both scaled and unscaled versions
