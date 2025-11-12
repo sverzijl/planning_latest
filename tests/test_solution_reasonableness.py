@@ -563,6 +563,78 @@ class TestHorizonScaling:
         )
 
 
+class TestInitialInventoryConsumption:
+    """Test that initial inventory is consumed appropriately.
+
+    Regression test for $296k bug where hub/demand nodes with initial
+    inventory would take shortages instead of consuming existing stock.
+    """
+
+    @pytest.mark.slow
+    def test_initial_inventory_consumed_not_wasted(self):
+        """Initial inventory should be consumed, not result in unnecessary shortages.
+
+        Bug: Sliding window constraints blocked init_inv consumption when:
+        - Node has init_inv
+        - Node receives arrivals (hubs like 6104, 6125)
+        - Window doesn't include init_inv in Q
+        - Result: O <= Q blocks consumption, takes shortages instead
+
+        Fix: Add init_inv to Q when window includes Day 1
+        """
+        # Build and solve 4-week model with initial inventory
+        model_builder, solution, _, total_demand, init_inv_total = build_and_solve_model(28)
+
+        # CRITICAL ASSERTION: Total shortages should be minimal
+        # With initial inventory available, model should use it instead of taking shortages
+        total_shortages = solution.total_shortages if hasattr(solution, 'total_shortages') else 0
+
+        # Extract shortage penalty cost from objective
+        shortage_penalty_rate = 10.0  # $10/unit from CostParameters
+        max_acceptable_shortage_cost = 50_000  # Allow up to $50k (was $296k before fix)
+        max_acceptable_shortage_units = max_acceptable_shortage_cost / shortage_penalty_rate
+
+        assert total_shortages < max_acceptable_shortage_units, (
+            f"Excessive shortages despite initial inventory available:\n"
+            f"  Initial inventory: {init_inv_total:,.0f} units\n"
+            f"  Total demand: {total_demand:,.0f} units\n"
+            f"  Shortages: {total_shortages:,.0f} units\n"
+            f"  Shortage cost: ${total_shortages * shortage_penalty_rate:,.2f}\n"
+            f"\n"
+            f"  ❌ Bug: Model taking shortages instead of consuming init_inv!\n"
+            f"  Expected: <{max_acceptable_shortage_units:,.0f} shortage units (<${max_acceptable_shortage_cost:,.0f})\n"
+            f"  This indicates sliding window constraints may be blocking init_inv consumption"
+        )
+
+        # Secondary check: End inventory waste should be reasonable
+        # Some end inventory is expected (can't consume everything), but 27k+ is excessive
+        if hasattr(solution, 'inventory_state') and solution.inventory_state:
+            last_date = max(solution.inventory_state.keys())
+            end_inventory_total = sum(
+                qty for (node, prod, state, date), qty in solution.inventory_state.items()
+                if date == last_date
+            )
+
+            # End inventory should be less than initial inventory (we consumed some!)
+            # Allow up to 80% waste for valid business reasons (capacity constraints, etc.)
+            max_acceptable_waste_fraction = 0.80
+
+            assert end_inventory_total < init_inv_total * max_acceptable_waste_fraction, (
+                f"Excessive inventory waste (initial inventory not consumed):\n"
+                f"  Initial inventory: {init_inv_total:,.0f} units\n"
+                f"  End inventory: {end_inventory_total:,.0f} units\n"
+                f"  Waste fraction: {end_inventory_total / init_inv_total:.1%}\n"
+                f"\n"
+                f"  ❌ Bug: Init_inv sitting idle instead of being consumed!\n"
+                f"  This indicates sliding window constraints are blocking consumption"
+            )
+
+        print(f"\n✅ Initial inventory consumption test PASSED")
+        print(f"   Init inv: {init_inv_total:,.0f} units")
+        print(f"   Shortages: {total_shortages:,.0f} units (${total_shortages * 10:,.0f})")
+        print(f"   Model correctly consumes initial inventory instead of taking shortages")
+
+
 if __name__ == "__main__":
     # Allow running individual tests for debugging
     import sys
