@@ -842,12 +842,27 @@ class SlidingWindowModel(BaseOptimizationModel):
                             state
                         ))
 
+        # FLOW DECOMPOSITION: Separate init_inv shipments from new production shipments
+        model.shipment_from_init = Var(
+            in_transit_index,
+            within=NonNegativeReals,
+            doc="Shipments sourced from initial inventory"
+        )
+
+        model.shipment_from_new = Var(
+            in_transit_index,
+            within=NonNegativeReals,
+            doc="Shipments sourced from new production/arrivals"
+        )
+
+        # Total in_transit (for material balance compatibility)
         model.in_transit = Var(
             in_transit_index,
             within=NonNegativeReals,
-            doc="In-transit inventory by route, product, DEPARTURE date, state"
+            doc="Total in-transit (init + new)"
         )
-        print(f"  In-transit variables: {len(in_transit_index)} (indexed by DEPARTURE date)")
+
+        print(f"  In-transit variables (decomposed): {len(in_transit_index)} × 3 (total, from_init, from_new) = {len(in_transit_index) * 3}")
         if skipped_no_truck_days > 0:
             print(f"    Skipped {skipped_no_truck_days} invalid route-day combinations (day-of-week enforcement)")
 
@@ -1290,17 +1305,17 @@ class SlidingWindowModel(BaseOptimizationModel):
                         if departure_date in model.dates and (route.origin_node_id, node_id, prod, departure_date, 'ambient') in model.in_transit:
                             Q_ambient += model.in_transit[route.origin_node_id, node_id, prod, departure_date, 'ambient']
 
-            # Outflows from ambient: shipments + freeze + demand_consumed FROM NEW
-            # FLOW DECOMPOSITION (2025-11-14): Use consumption_from_new only
-            # Init_inv consumption is NOT subject to sliding window (separate bounds)
+            # Outflows from ambient: shipments FROM NEW + freeze + consumption FROM NEW
+            # FLOW DECOMPOSITION (2025-11-14): Use from_new variables only
+            # Init_inv flows are NOT subject to sliding window (separate bounds)
             O_ambient = 0
             for tau in window_dates:
-                # Departures in ambient state (goods leaving on tau via in-transit)
+                # Departures in ambient state - use shipment_from_new only
                 for route in self.routes_from_node[node_id]:
                     if route.transport_mode != TransportMode.FROZEN:  # Ambient route
-                        # Goods departing on tau (indexed by departure date in in_transit)
-                        if (node_id, route.destination_node_id, prod, tau, 'ambient') in model.in_transit:
-                            O_ambient += model.in_transit[node_id, route.destination_node_id, prod, tau, 'ambient']
+                        # Goods departing on tau - decomposed to exclude init_inv shipments
+                        if (node_id, route.destination_node_id, prod, tau, 'ambient') in model.shipment_from_new:
+                            O_ambient += model.shipment_from_new[node_id, route.destination_node_id, prod, tau, 'ambient']
 
                 # Freeze flow
                 if (node_id, prod, tau) in model.freeze:
@@ -1392,14 +1407,15 @@ class SlidingWindowModel(BaseOptimizationModel):
                         if departure_date in model.dates and (route.origin_node_id, node_id, prod, departure_date, 'frozen') in model.in_transit:
                             Q_frozen += model.in_transit[route.origin_node_id, node_id, prod, departure_date, 'frozen']
 
-            # Outflows from frozen: departures_frozen + thaw
+            # Outflows from frozen: departures FROM NEW + thaw
+            # FLOW DECOMPOSITION (2025-11-14): Use shipment_from_new only
             O_frozen = 0
             for tau in window_dates:
-                # Departures in frozen state
+                # Departures in frozen state - use shipment_from_new only
                 for route in self.routes_from_node[node_id]:
                     if route.transport_mode == TransportMode.FROZEN:
-                        if (node_id, route.destination_node_id, prod, tau, 'frozen') in model.in_transit:
-                            O_frozen += model.in_transit[node_id, route.destination_node_id, prod, tau, 'frozen']
+                        if (node_id, route.destination_node_id, prod, tau, 'frozen') in model.shipment_from_new:
+                            O_frozen += model.shipment_from_new[node_id, route.destination_node_id, prod, tau, 'frozen']
 
                 # Thaw flow (frozen → ambient/thawed)
                 if (node_id, prod, tau) in model.thaw:
@@ -1583,16 +1599,18 @@ class SlidingWindowModel(BaseOptimizationModel):
         print(f"    Thawed (14d): ~{len([n for n in self.nodes if self.nodes[n].supports_ambient_storage()]) * len(list(model.products)) * len(list(model.dates)):,}")
 
     def _add_consumption_decomposition(self, model: ConcreteModel):
-        """Decompose total consumption into init_inv and new flows.
+        """Decompose total flows (consumption + shipments) into init_inv and new components.
 
-        Ensures: total_consumption = consumption_from_init + consumption_from_new
+        Ensures:
+        - total_consumption = consumption_from_init + consumption_from_new
+        - total_shipment = shipment_from_init + shipment_from_new
 
-        This decomposition allows sliding windows to constrain "new" flows only,
-        avoiding the phantom inventory issue when init_inv is added to Q.
+        This allows sliding windows to constrain "new" flows only, avoiding phantom inventory.
         """
-        print("\n  Adding consumption decomposition constraints...")
+        print("\n  Adding flow decomposition constraints...")
 
-        def ambient_decomposition_rule(model, node_id, prod, t):
+        # CONSUMPTION DECOMPOSITION
+        def ambient_consumption_decomp_rule(model, node_id, prod, t):
             """Total ambient consumption = from_init + from_new."""
             if (node_id, prod, t) not in model.demand_consumed_from_ambient:
                 return Constraint.Skip
@@ -1603,7 +1621,7 @@ class SlidingWindowModel(BaseOptimizationModel):
 
             return total == from_init + from_new
 
-        def thawed_decomposition_rule(model, node_id, prod, t):
+        def thawed_consumption_decomp_rule(model, node_id, prod, t):
             """Total thawed consumption = from_init + from_new."""
             if (node_id, prod, t) not in model.demand_consumed_from_thawed:
                 return Constraint.Skip
@@ -1616,19 +1634,40 @@ class SlidingWindowModel(BaseOptimizationModel):
 
         demand_keys = list(self.demand.keys())
 
-        model.ambient_decomposition_con = Constraint(
+        model.ambient_consumption_decomp = Constraint(
             demand_keys,
-            rule=ambient_decomposition_rule,
+            rule=ambient_consumption_decomp_rule,
             doc="Decompose ambient consumption into init_inv and new flows"
         )
 
-        model.thawed_decomposition_con = Constraint(
+        model.thawed_consumption_decomp = Constraint(
             demand_keys,
-            rule=thawed_decomposition_rule,
+            rule=thawed_consumption_decomp_rule,
             doc="Decompose thawed consumption into init_inv and new flows"
         )
 
-        print(f"    Decomposition constraints: {len(demand_keys) * 2} (ambient + thawed)")
+        # SHIPMENT DECOMPOSITION
+        def shipment_decomp_rule(model, origin, dest, prod, t, state):
+            """Total shipment = from_init + from_new."""
+            if (origin, dest, prod, t, state) not in model.in_transit:
+                return Constraint.Skip
+
+            total = model.in_transit[origin, dest, prod, t, state]
+            from_init = model.shipment_from_init[origin, dest, prod, t, state]
+            from_new = model.shipment_from_new[origin, dest, prod, t, state]
+
+            return total == from_init + from_new
+
+        # Get all in_transit keys
+        transit_keys = [(o, d, p, t, s) for (o, d, p, t, s) in model.in_transit]
+
+        model.shipment_decomp = Constraint(
+            transit_keys,
+            rule=shipment_decomp_rule,
+            doc="Decompose shipments into init_inv and new flows"
+        )
+
+        print(f"    Flow decomposition constraints: {len(demand_keys) * 2} consumption + {len(transit_keys)} shipment")
 
     def _add_init_inv_outflow_bounds(self, model: ConcreteModel):
         """Bound consumption from init_inv to available quantities.
@@ -1640,25 +1679,32 @@ class SlidingWindowModel(BaseOptimizationModel):
         print("\n  Adding initial inventory outflow bounds...")
 
         def ambient_init_bound_rule(model, node_id, prod):
-            """Total consumption from init_inv <= available init_inv."""
+            """Total outflows (consumption + shipments) from init_inv <= available init_inv."""
             init_inv_qty = self.initial_inventory.get((node_id, prod, 'ambient'), 0)
             if init_inv_qty == 0:
                 return Constraint.Skip
 
-            # Skip for nodes without demand (e.g., manufacturing node 6122)
-            node = self.nodes[node_id]
-            if not node.has_demand_capability():
-                return Constraint.Skip
-
-            # Sum consumption from init over shelf life (17 days)
+            # Sum ALL outflows from init over shelf life (17 days)
             shelf_life_days = 17
             shelf_life_dates = list(model.dates)[:min(shelf_life_days, len(model.dates))]
 
-            total_from_init = sum(
+            # Consumption from init (for demand nodes)
+            total_consumed_from_init = sum(
                 model.consumption_from_init_ambient[node_id, prod, t]
                 for t in shelf_life_dates
                 if (node_id, prod, t) in model.consumption_from_init_ambient
             )
+
+            # Shipments from init (for all nodes with outbound routes)
+            total_shipped_from_init = sum(
+                model.shipment_from_init[node_id, route.destination_node_id, prod, t, 'ambient']
+                for t in shelf_life_dates
+                for route in self.routes_from_node[node_id]
+                if route.transport_mode != TransportMode.FROZEN
+                and (node_id, route.destination_node_id, prod, t, 'ambient') in model.shipment_from_init
+            )
+
+            total_from_init = total_consumed_from_init + total_shipped_from_init
 
             # Skip if trivial (prevents "0 <= constant" → True)
             if isinstance(total_from_init, (int, float)) and total_from_init == 0:
