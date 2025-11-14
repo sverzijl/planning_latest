@@ -920,19 +920,50 @@ class SlidingWindowModel(BaseOptimizationModel):
         #   - Each balance subtracts only its own consumption (no double-counting)
         demand_keys = list(self.demand.keys())
 
+        # FLOW DECOMPOSITION (2025-11-14): Separate init_inv flows from new flows
+        # This allows sliding windows to constrain "new" flows only, avoiding phantom inventory
+
+        # Decomposed ambient consumption
+        model.consumption_from_init_ambient = Var(
+            demand_keys,
+            within=NonNegativeReals,
+            doc="Demand consumed from initial inventory (ambient)"
+        )
+
+        model.consumption_from_new_ambient = Var(
+            demand_keys,
+            within=NonNegativeReals,
+            doc="Demand consumed from new production/arrivals (ambient)"
+        )
+
+        # Total ambient consumption (for material balance compatibility)
         model.demand_consumed_from_ambient = Var(
             demand_keys,
             within=NonNegativeReals,
-            doc="Demand consumed from ambient inventory"
+            doc="Total demand consumed from ambient (init + new)"
         )
 
+        # Decomposed thawed consumption
+        model.consumption_from_init_thawed = Var(
+            demand_keys,
+            within=NonNegativeReals,
+            doc="Demand consumed from initial inventory (thawed)"
+        )
+
+        model.consumption_from_new_thawed = Var(
+            demand_keys,
+            within=NonNegativeReals,
+            doc="Demand consumed from new arrivals (thawed)"
+        )
+
+        # Total thawed consumption (for material balance compatibility)
         model.demand_consumed_from_thawed = Var(
             demand_keys,
             within=NonNegativeReals,
-            doc="Demand consumed from thawed inventory"
+            doc="Total demand consumed from thawed (init + new)"
         )
 
-        print(f"  Demand consumed variables: {len(demand_keys)} × 2 states = {len(demand_keys) * 2}")
+        print(f"  Demand consumed variables (decomposed): {len(demand_keys)} × 2 states × 3 (total, from_init, from_new) = {len(demand_keys) * 6}")
 
         # SHORTAGE VARIABLES (if allowed)
         if self.allow_shortages:
@@ -1107,7 +1138,9 @@ class SlidingWindowModel(BaseOptimizationModel):
         print(f"\nAdding constraints...")
 
         # Core constraints
+        self._add_consumption_decomposition(model)
         self._add_sliding_window_shelf_life(model)
+        self._add_init_inv_outflow_bounds(model)
         self._add_state_balance(model)
         self._add_demand_satisfaction(model)
         self._add_pallet_constraints(model)
@@ -1257,7 +1290,9 @@ class SlidingWindowModel(BaseOptimizationModel):
                         if departure_date in model.dates and (route.origin_node_id, node_id, prod, departure_date, 'ambient') in model.in_transit:
                             Q_ambient += model.in_transit[route.origin_node_id, node_id, prod, departure_date, 'ambient']
 
-            # Outflows from ambient: shipments + freeze + demand_consumed
+            # Outflows from ambient: shipments + freeze + demand_consumed FROM NEW
+            # FLOW DECOMPOSITION (2025-11-14): Use consumption_from_new only
+            # Init_inv consumption is NOT subject to sliding window (separate bounds)
             O_ambient = 0
             for tau in window_dates:
                 # Departures in ambient state (goods leaving on tau via in-transit)
@@ -1271,12 +1306,11 @@ class SlidingWindowModel(BaseOptimizationModel):
                 if (node_id, prod, tau) in model.freeze:
                     O_ambient += model.freeze[node_id, prod, tau]
 
-                # CRITICAL FIX: Include demand consumption in outflows
-                # Without this, consumed inventory doesn't "leave" the window
-                # Causes old inventory to persist indefinitely
-                # UPDATED (2025-11-05): Use state-specific consumption variable
-                if node.has_demand_capability() and (node_id, prod, tau) in model.demand_consumed_from_ambient:
-                    O_ambient += model.demand_consumed_from_ambient[node_id, prod, tau]
+                # FLOW DECOMPOSITION: Use consumption_from_new (not total)
+                # This ensures sliding window only constrains "new" flows
+                # Init_inv consumption handled by separate bounds (no phantom inventory)
+                if node.has_demand_capability() and (node_id, prod, tau) in model.consumption_from_new_ambient:
+                    O_ambient += model.consumption_from_new_ambient[node_id, prod, tau]
 
             # Skip if no activity to avoid trivial True constraint
             # Check if both are constants (not Pyomo expressions)
@@ -1443,13 +1477,13 @@ class SlidingWindowModel(BaseOptimizationModel):
                         if departure_date in model.dates and (route.origin_node_id, node_id, prod, departure_date, 'frozen') in model.in_transit:
                             Q_thawed += model.in_transit[route.origin_node_id, node_id, prod, departure_date, 'frozen']
 
-            # Outflows from thawed: demand consumption
-            # (Thawed is consumed at demand nodes, not shipped further)
-            # UPDATED (2025-11-05): Use state-specific consumption variable
+            # Outflows from thawed: demand consumption FROM NEW
+            # FLOW DECOMPOSITION (2025-11-14): Use consumption_from_new only
+            # Init_inv consumption is NOT subject to sliding window (separate bounds)
             O_thawed = 0
             for tau in window_dates:
-                if node.has_demand_capability() and (node_id, prod, tau) in model.demand_consumed_from_thawed:
-                    O_thawed += model.demand_consumed_from_thawed[node_id, prod, tau]
+                if node.has_demand_capability() and (node_id, prod, tau) in model.consumption_from_new_thawed:
+                    O_thawed += model.consumption_from_new_thawed[node_id, prod, tau]
 
             # Skip if no activity (avoids trivial True constraint)
             try:
@@ -1547,6 +1581,140 @@ class SlidingWindowModel(BaseOptimizationModel):
         print(f"    Ambient (17d): ~{len([n for n in self.nodes if self.nodes[n].supports_ambient_storage()]) * len(list(model.products)) * len(list(model.dates)):,}")
         print(f"    Frozen (120d): ~{len([n for n in self.nodes if self.nodes[n].supports_frozen_storage()]) * len(list(model.products)) * len(list(model.dates)):,}")
         print(f"    Thawed (14d): ~{len([n for n in self.nodes if self.nodes[n].supports_ambient_storage()]) * len(list(model.products)) * len(list(model.dates)):,}")
+
+    def _add_consumption_decomposition(self, model: ConcreteModel):
+        """Decompose total consumption into init_inv and new flows.
+
+        Ensures: total_consumption = consumption_from_init + consumption_from_new
+
+        This decomposition allows sliding windows to constrain "new" flows only,
+        avoiding the phantom inventory issue when init_inv is added to Q.
+        """
+        print("\n  Adding consumption decomposition constraints...")
+
+        def ambient_decomposition_rule(model, node_id, prod, t):
+            """Total ambient consumption = from_init + from_new."""
+            if (node_id, prod, t) not in model.demand_consumed_from_ambient:
+                return Constraint.Skip
+
+            total = model.demand_consumed_from_ambient[node_id, prod, t]
+            from_init = model.consumption_from_init_ambient[node_id, prod, t]
+            from_new = model.consumption_from_new_ambient[node_id, prod, t]
+
+            return total == from_init + from_new
+
+        def thawed_decomposition_rule(model, node_id, prod, t):
+            """Total thawed consumption = from_init + from_new."""
+            if (node_id, prod, t) not in model.demand_consumed_from_thawed:
+                return Constraint.Skip
+
+            total = model.demand_consumed_from_thawed[node_id, prod, t]
+            from_init = model.consumption_from_init_thawed[node_id, prod, t]
+            from_new = model.consumption_from_new_thawed[node_id, prod, t]
+
+            return total == from_init + from_new
+
+        demand_keys = list(self.demand.keys())
+
+        model.ambient_decomposition_con = Constraint(
+            demand_keys,
+            rule=ambient_decomposition_rule,
+            doc="Decompose ambient consumption into init_inv and new flows"
+        )
+
+        model.thawed_decomposition_con = Constraint(
+            demand_keys,
+            rule=thawed_decomposition_rule,
+            doc="Decompose thawed consumption into init_inv and new flows"
+        )
+
+        print(f"    Decomposition constraints: {len(demand_keys) * 2} (ambient + thawed)")
+
+    def _add_init_inv_outflow_bounds(self, model: ConcreteModel):
+        """Bound consumption from init_inv to available quantities.
+
+        Simple constraints: sum(from_init flows) <= init_inv_qty
+        These enforce that we can't consume more init_inv than exists,
+        without adding init_inv to the sliding window Q.
+        """
+        print("\n  Adding initial inventory outflow bounds...")
+
+        def ambient_init_bound_rule(model, node_id, prod):
+            """Total consumption from init_inv <= available init_inv."""
+            init_inv_qty = self.initial_inventory.get((node_id, prod, 'ambient'), 0)
+            if init_inv_qty == 0:
+                return Constraint.Skip
+
+            # Skip for nodes without demand (e.g., manufacturing node 6122)
+            node = self.nodes[node_id]
+            if not node.has_demand_capability():
+                return Constraint.Skip
+
+            # Sum consumption from init over shelf life (17 days)
+            shelf_life_days = 17
+            shelf_life_dates = list(model.dates)[:min(shelf_life_days, len(model.dates))]
+
+            total_from_init = sum(
+                model.consumption_from_init_ambient[node_id, prod, t]
+                for t in shelf_life_dates
+                if (node_id, prod, t) in model.consumption_from_init_ambient
+            )
+
+            # Skip if trivial (prevents "0 <= constant" → True)
+            if isinstance(total_from_init, (int, float)) and total_from_init == 0:
+                return Constraint.Skip
+
+            return total_from_init <= init_inv_qty
+
+        def thawed_init_bound_rule(model, node_id, prod):
+            """Total consumption from init_inv <= available init_inv."""
+            init_inv_qty = self.initial_inventory.get((node_id, prod, 'thawed'), 0)
+            if init_inv_qty == 0:
+                return Constraint.Skip
+
+            # Skip for nodes without demand
+            node = self.nodes[node_id]
+            if not node.has_demand_capability():
+                return Constraint.Skip
+
+            # Sum consumption from init over shelf life (14 days)
+            shelf_life_days = 14
+            shelf_life_dates = list(model.dates)[:min(shelf_life_days, len(model.dates))]
+
+            total_from_init = sum(
+                model.consumption_from_init_thawed[node_id, prod, t]
+                for t in shelf_life_dates
+                if (node_id, prod, t) in model.consumption_from_init_thawed
+            )
+
+            # Skip if trivial (prevents "0 <= constant" → True)
+            if isinstance(total_from_init, (int, float)) and total_from_init == 0:
+                return Constraint.Skip
+
+            return total_from_init <= init_inv_qty
+
+        # Create indices for nodes/products with init_inv
+        ambient_init_entries = [(n, p) for (n, p, s), qty in self.initial_inventory.items()
+                                if s == 'ambient' and qty > 0]
+        thawed_init_entries = [(n, p) for (n, p, s), qty in self.initial_inventory.items()
+                               if s == 'thawed' and qty > 0]
+
+        model.ambient_init_bound = Constraint(
+            ambient_init_entries,
+            rule=ambient_init_bound_rule,
+            doc="Bound ambient consumption from init_inv to available quantity"
+        )
+
+        model.thawed_init_bound = Constraint(
+            thawed_init_entries,
+            rule=thawed_init_bound_rule,
+            doc="Bound thawed consumption from init_inv to available quantity"
+        )
+
+        total_bounds = len(ambient_init_entries) + len(thawed_init_entries)
+        print(f"    Init_inv outflow bounds: {total_bounds} constraints")
+        print(f"      Ambient: {len(ambient_init_entries)}")
+        print(f"      Thawed: {len(thawed_init_entries)}")
 
     def _determine_arrival_state(self, route: UnifiedRoute, dest_node: UnifiedNode) -> str:
         """Determine what state inventory arrives in at destination.
