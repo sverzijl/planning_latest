@@ -607,26 +607,61 @@ class TestInitialInventoryConsumption:
         )
 
         # Secondary check: End inventory waste should be reasonable
-        # Some end inventory is expected (can't consume everything), but 27k+ is excessive
+        # CRITICAL: Check EACH NODE individually to catch node-specific issues
+        # (aggregate check can miss manufacturing site waste diluted by hub consumption)
         if hasattr(solution, 'inventory_state') and solution.inventory_state:
             last_date = max(solution.inventory_state.keys())
+
+            # Aggregate check (overall waste)
             end_inventory_total = sum(
                 qty for (node, prod, state, date), qty in solution.inventory_state.items()
                 if date == last_date
             )
 
-            # End inventory should be less than initial inventory (we consumed some!)
-            # Allow up to 80% waste for valid business reasons (capacity constraints, etc.)
-            max_acceptable_waste_fraction = 0.80
+            # Overall: Allow up to 50% waste (reduced from 80% after catching manufacturing bug)
+            max_acceptable_aggregate_waste_fraction = 0.50
 
-            assert end_inventory_total < init_inv_total * max_acceptable_waste_fraction, (
-                f"Excessive inventory waste (initial inventory not consumed):\n"
+            assert end_inventory_total < init_inv_total * max_acceptable_aggregate_waste_fraction, (
+                f"Excessive AGGREGATE inventory waste:\n"
                 f"  Initial inventory: {init_inv_total:,.0f} units\n"
                 f"  End inventory: {end_inventory_total:,.0f} units\n"
                 f"  Waste fraction: {end_inventory_total / init_inv_total:.1%}\n"
                 f"\n"
-                f"  ❌ Bug: Init_inv sitting idle instead of being consumed!\n"
-                f"  This indicates sliding window constraints are blocking consumption"
+                f"  ❌ Bug: Init_inv not being consumed!\n"
+                f"  This indicates sliding window constraints may be blocking consumption"
+            )
+
+            # PER-NODE check (catches node-specific issues like manufacturing waste)
+            # Build init_inv by node for comparison
+            init_inv_by_node = {}
+            for (node, prod, state), qty in model_builder.initial_inventory.items():
+                init_inv_by_node[node] = init_inv_by_node.get(node, 0) + qty
+
+            # Check each node with init_inv
+            nodes_with_high_waste = []
+            for node_id, node_init_inv in init_inv_by_node.items():
+                node_end_inv = sum(
+                    qty for (n, prod, state, date), qty in solution.inventory_state.items()
+                    if n == node_id and date == last_date
+                )
+
+                waste_fraction = node_end_inv / node_init_inv if node_init_inv > 0 else 0
+
+                # Per-node threshold: Max 20% waste (strict to catch issues early)
+                max_per_node_waste = 0.20
+
+                if waste_fraction > max_per_node_waste:
+                    nodes_with_high_waste.append(
+                        f"  Node {node_id}: {node_end_inv:,.0f}/{node_init_inv:,.0f} = {waste_fraction:.1%} waste (>{max_per_node_waste:.0%} threshold)"
+                    )
+
+            assert len(nodes_with_high_waste) == 0, (
+                f"Excessive per-node inventory waste detected:\n"
+                + "\n".join(nodes_with_high_waste) +
+                f"\n\n"
+                f"  ❌ Bug: Some nodes not consuming their init_inv!\n"
+                f"  This indicates flow decomposition may be incomplete.\n"
+                f"  Check: Manufacturing nodes (should ship init_inv), hubs (should consume/reship)"
             )
 
         print(f"\n✅ Initial inventory consumption test PASSED")
