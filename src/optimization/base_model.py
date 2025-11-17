@@ -533,13 +533,16 @@ class BaseOptimizationModel(ABC):
         self.model = self.build_model()
         self._build_time = time.time() - build_start
 
-        # DIAGNOSTIC: Write model to file for inspection
-        try:
-            print("  Writing model to workflow_model_debug.lp...")
-            self.model.write('workflow_model_debug.lp', format='lp')
-            print("  Model written successfully")
-        except Exception as e:
-            print(f"  Failed to write model: {e}")
+        # NOTE: LP file writing removed (2025-11-17)
+        # Previously caused thousands of "No value for uninitialized VarData" warnings
+        # because Pyomo iterates all variables when writing LP format.
+        # If debugging is needed, uncomment:
+        # try:
+        #     print("  Writing model to workflow_model_debug.lp...")
+        #     self.model.write('workflow_model_debug.lp', format='lp')
+        #     print("  Model written successfully")
+        # except Exception as e:
+        #     print(f"  Failed to write model: {e}")
 
         # Prepare solver options
         options = solver_options or {}
