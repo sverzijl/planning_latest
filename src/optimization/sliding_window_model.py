@@ -3559,18 +3559,15 @@ class SlidingWindowModel(BaseOptimizationModel):
                 pallet_days_ambient = 0
 
                 for (node_id, prod, state, t) in model.pallet_count:
-                    try:
-                        pallets = value(model.pallet_count[node_id, prod, state, t])
-                        if pallets > 0.01:
-                            if state == 'frozen':
-                                solution['frozen_holding_cost'] += pallets * frozen_cost_per_pallet_day
-                                pallet_days_frozen += pallets
-                            elif state in ['ambient', 'thawed']:
-                                solution['ambient_holding_cost'] += pallets * ambient_cost_per_pallet_day
-                                pallet_days_ambient += pallets
-                    except Exception as e:
-                        # Skip variables that aren't set
-                        pass
+                    # Use exception=False to avoid error messages for uninitialized vars
+                    pallets = value(model.pallet_count[node_id, prod, state, t], exception=False)
+                    if pallets is not None and pallets > 0.01:
+                        if state == 'frozen':
+                            solution['frozen_holding_cost'] += pallets * frozen_cost_per_pallet_day
+                            pallet_days_frozen += pallets
+                        elif state in ['ambient', 'thawed']:
+                            solution['ambient_holding_cost'] += pallets * ambient_cost_per_pallet_day
+                            pallet_days_ambient += pallets
 
                 solution['total_holding_cost'] = solution['frozen_holding_cost'] + solution['ambient_holding_cost']
 
@@ -3592,8 +3589,8 @@ class SlidingWindowModel(BaseOptimizationModel):
 
                 pallet_entry_cost = 0
                 for (node_id, prod, state, t) in model.pallet_entry:
-                    entries = value(model.pallet_entry[node_id, prod, state, t])
-                    if entries > 0.01:
+                    entries = value(model.pallet_entry[node_id, prod, state, t], exception=False)
+                    if entries is not None and entries > 0.01:
                         if state == 'frozen':
                             pallet_entry_cost += entries * frozen_fixed_cost
                         elif state in ['ambient', 'thawed']:
@@ -3615,11 +3612,11 @@ class SlidingWindowModel(BaseOptimizationModel):
                 changeover_waste_units = getattr(self.cost_structure, 'changeover_waste_units', 0) or 0
                 production_cost_per_unit = self.cost_structure.production_cost_per_unit or 0
 
-                total_starts = sum(
-                    value(model.product_start[node_id, prod, t])
-                    for (node_id, prod, t) in model.product_start
-                    if value(model.product_start[node_id, prod, t]) > 0.01
-                )
+                total_starts = 0
+                for (node_id, prod, t) in model.product_start:
+                    val = value(model.product_start[node_id, prod, t], exception=False)
+                    if val is not None and val > 0.01:
+                        total_starts += val
 
                 solution['total_changeover_cost'] = changeover_cost_per_start * total_starts
                 solution['total_changeover_waste_cost'] = production_cost_per_unit * changeover_waste_units * total_starts
@@ -3634,11 +3631,12 @@ class SlidingWindowModel(BaseOptimizationModel):
         if waste_multiplier > 0 and hasattr(model, 'inventory'):
             try:
                 last_date = max(model.dates)
-                end_inventory = sum(
-                    value(model.inventory[node_id, prod, state, last_date])
-                    for (node_id, prod, state, t) in model.inventory
-                    if t == last_date and value(model.inventory[node_id, prod, state, last_date]) > 0.01
-                )
+                end_inventory = 0
+                for (node_id, prod, state, t) in model.inventory:
+                    if t == last_date:
+                        val = value(model.inventory[node_id, prod, state, last_date], exception=False)
+                        if val is not None and val > 0.01:
+                            end_inventory += val
                 prod_cost = self.cost_structure.production_cost_per_unit or 1.3
                 solution['total_waste_cost'] = waste_multiplier * prod_cost * end_inventory
             except:
