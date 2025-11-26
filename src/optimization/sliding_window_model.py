@@ -2542,6 +2542,23 @@ class SlidingWindowModel(BaseOptimizationModel):
                 )
                 print(f"    Mix-count to product_produced linking constraints added (MIP optimization)")
 
+                # MIP Performance Optimization (2025-11-26 Phase 4):
+                # Add LOWER bound to create tight LP relaxation.
+                # Without this, LP can set product_produced=0.01 with mix_count=0, causing gap stall at ~1.6%
+                # With this: product_produced=1 implies mix_count>=1, product_produced=0 implies mix_count=0
+                def mix_count_lower_bound_rule(model, node_id, prod, t):
+                    """Force at least 1 mix when producing (tight LP relaxation)."""
+                    if (node_id, prod, t) not in model.product_produced:
+                        return Constraint.Skip
+                    return model.mix_count[node_id, prod, t] >= model.product_produced[node_id, prod, t]
+
+                model.mix_count_lower_bound = Constraint(
+                    model.mix_count.index_set(),
+                    rule=mix_count_lower_bound_rule,
+                    doc="mix_count >= product_produced (tight LP: if producing, at least 1 mix)"
+                )
+                print(f"    Mix-count lower bound constraints added (Phase 4: tight LP relaxation)")
+
         # PRODUCTION CAPACITY: production_time <= labor_hours
         # We need TWO constraints per manufacturing node-date:
         # 1. Link labor_hours_used to production_time (equality)
