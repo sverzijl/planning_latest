@@ -682,9 +682,12 @@ class SlidingWindowModel(BaseOptimizationModel):
             for prod in model.products
             for t in model.dates
         ]
+        # MIP Performance: Add explicit upper bound (validated via A/B test)
+        # Production bounded by max daily capacity: 1400 units/hr × 14 hrs = 19600
         model.production = Var(
             production_index,
             within=NonNegativeReals,
+            bounds=(0, 19600),
             doc="Production quantity by node, product, date"
         )
         print(f"  Production variables: {len(production_index)}")
@@ -730,9 +733,12 @@ class SlidingWindowModel(BaseOptimizationModel):
                             if node_id == '6130' and prod == list(model.products)[0] and t == list(model.dates)[0]:
                                 print(f"  DEBUG: Creating thawed inventory var for 6130 (has_frozen_inbound={has_frozen_inbound})")
 
+        # MIP Performance: Add explicit upper bound (validated via A/B test)
+        # Inventory bounded by storage capacity: 62 pallets × 320 units = 19840
         model.inventory = Var(
             inventory_index,
             within=NonNegativeReals,
+            bounds=(0, 19840),
             doc="End-of-day inventory by node, product, state, date"
         )
         print(f"  Inventory variables: {len(inventory_index)}")
@@ -856,9 +862,12 @@ class SlidingWindowModel(BaseOptimizationModel):
         )
 
         # Total in_transit (for material balance compatibility)
+        # MIP Performance: Add explicit upper bound (validated via A/B test)
+        # In-transit bounded by truck capacity: 44 pallets × 320 units = 14080
         model.in_transit = Var(
             in_transit_index,
             within=NonNegativeReals,
+            bounds=(0, 14080),
             doc="Total in-transit (init + new)"
         )
 
