@@ -1129,12 +1129,29 @@ class SlidingWindowModel(BaseOptimizationModel):
                         mix_index.append((node.id, prod_id, t))
 
         if mix_index:
+            # Calculate max mixes per product based on daily capacity
+            # MIP Performance Optimization (2025-11-25): Bounded integers improve B&B
+            max_daily_hours = 14  # Max hours per day (12 fixed + 2 OT)
+            default_production_rate = 1400  # units/hour
+            max_daily_units = default_production_rate * max_daily_hours  # 19,600 units
+
+            # Build bounds dictionary: max_mixes = max_daily_units / units_per_mix
+            mix_bounds = {}
+            for (node_id, prod_id, t) in mix_index:
+                product = self.products.get(prod_id)
+                if product and hasattr(product, 'units_per_mix') and product.units_per_mix > 0:
+                    max_mixes = int(max_daily_units / product.units_per_mix) + 1
+                else:
+                    max_mixes = 100  # Fallback for products without units_per_mix
+                mix_bounds[(node_id, prod_id, t)] = (0, max_mixes)
+
             model.mix_count = Var(
                 mix_index,
                 within=NonNegativeIntegers,
+                bounds=lambda m, n, p, t: mix_bounds.get((n, p, t), (0, 100)),
                 doc="Number of production mixes (batches)"
             )
-            print(f"  Mix count variables: {len(mix_index)} integers")
+            print(f"  Mix count variables: {len(mix_index)} integers (bounded)")
 
         print(f"\nVariables created")
         total_vars = (len(production_index) + len(inventory_index) +
@@ -2738,38 +2755,20 @@ class SlidingWindowModel(BaseOptimizationModel):
             doc="Link production quantity to product_produced binary (upper bound)"
         )
 
-        # REVERSE LINKING: If production > 0, force product_produced = 1
-        def product_binary_reverse_linking_rule(model, node_id, prod, t):
-            """If production > 0, product_produced must be 1 (lower bound).
-
-            This is the reverse of the Big-M constraint above.
-            Together they ensure: production > 0 ↔ product_produced = 1
-
-            Using epsilon forcing:
-              product_produced >= production / M
-
-            If production > 0: product_produced >= ε > 0, so product_produced = 1 (binary)
-            If production = 0: product_produced >= 0, can be 0 or 1 (minimization sets to 0)
-            """
-            if (node_id, prod, t) not in model.production:
-                return Constraint.Skip
-
-            node = self.nodes[node_id]
-            production_rate = node.capabilities.production_rate_per_hour or 1400
-            max_daily_production = production_rate * 14  # Max hours per day
-
-            # Force: product_produced >= production / M
-            # If production > 0, forces product_produced = 1
-            return model.product_produced[node_id, prod, t] >= model.production[node_id, prod, t] / max_daily_production
-
-        model.product_binary_reverse_linking_con = Constraint(
-            [(node.id, prod, t) for node in self.manufacturing_nodes
-             for prod in model.products for t in model.dates],
-            rule=product_binary_reverse_linking_rule,
-            doc="Link product_produced binary to production quantity (lower bound)"
-        )
-
-        print(f"    Product-binary bidirectional linking constraints added")
+        # REVERSE LINKING: REMOVED (2025-11-25 MIP Performance Optimization)
+        #
+        # Previous implementation used: product_produced >= production / 19,600
+        # This had coefficient 1/19,600 = 0.000051 which caused extreme numerical
+        # scaling issues (coefficient range 10^8) and slow MIP gap closure.
+        #
+        # The upper Big-M (production <= 19,600 * product_produced) combined with
+        # the binary penalty in the objective ($0.01 per product_produced) achieves
+        # the same effect without the tiny coefficient:
+        # - Upper Big-M: Forces production=0 when product_produced=0
+        # - Binary penalty: Incentivizes product_produced=0 when not needed
+        #
+        # See: MIP Performance Optimization Plan (compressed-forging-pillow.md)
+        print(f"    Product-binary upper-bound linking constraints added (reverse linking REMOVED for numerical stability)")
 
         # CHANGEOVER AGGREGATION LINKING (Overhead optimization)
         # Link pre-aggregated variables to binary sums for efficient overhead calculation
@@ -3177,7 +3176,9 @@ class SlidingWindowModel(BaseOptimizationModel):
         if hasattr(model, 'product_produced'):
             # Penalty must be tiny (< smallest real cost difference)
             # But large enough to matter in solver's objective comparisons
-            epsilon_cost = 0.001  # $0.001 per binary (negligible vs real costs $1-$1000)
+            # MIP Performance Optimization (2025-11-25): Increased 10x to better enforce
+            # product_produced=0 when production=0, since reverse Big-M was removed
+            epsilon_cost = 0.01  # $0.01 per binary (was $0.001, still negligible vs real costs $1-$1000)
             from pyomo.environ import quicksum
             binary_penalty = epsilon_cost * quicksum(
                 model.product_produced[node_id, prod, t]
