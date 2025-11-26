@@ -2504,6 +2504,35 @@ class SlidingWindowModel(BaseOptimizationModel):
             )
             print(f"    Mix-based production constraints added")
 
+            # MIP Performance Optimization (2025-11-26 Phase 2):
+            # Link mix_count to product_produced binary to eliminate ~85k useless branch nodes.
+            # Without this, LP relaxation can set product_produced=0.001 (fractional)
+            # while mix_count=5.2, exploiting the gap to get artificially low bounds.
+            if hasattr(model, 'product_produced'):
+                max_daily_hours = 14  # Max hours per day
+                default_production_rate = 1400  # units/hour
+                max_daily_units = default_production_rate * max_daily_hours  # 19,600 units
+
+                def mix_count_product_linking_rule(model, node_id, prod, t):
+                    """Force mix_count=0 when product not produced (product_produced=0)."""
+                    if (node_id, prod, t) not in model.product_produced:
+                        return Constraint.Skip
+
+                    product = self.products.get(prod)
+                    if product and hasattr(product, 'units_per_mix') and product.units_per_mix > 0:
+                        max_mixes = int(max_daily_units / product.units_per_mix) + 1
+                    else:
+                        max_mixes = 100  # Fallback
+
+                    return model.mix_count[node_id, prod, t] <= max_mixes * model.product_produced[node_id, prod, t]
+
+                model.mix_count_product_link = Constraint(
+                    model.mix_count.index_set(),
+                    rule=mix_count_product_linking_rule,
+                    doc="mix_count <= max_mixes × product_produced (forces mix_count=0 when not producing)"
+                )
+                print(f"    Mix-count to product_produced linking constraints added (MIP optimization)")
+
         # PRODUCTION CAPACITY: production_time <= labor_hours
         # We need TWO constraints per manufacturing node-date:
         # 1. Link labor_hours_used to production_time (equality)
@@ -2512,7 +2541,14 @@ class SlidingWindowModel(BaseOptimizationModel):
         def production_time_link_rule(model, node_id, t):
             """Link labor_hours_used to production time + overhead time.
 
-            This constraint sets labor_hours_used = production_time + overhead_time.
+            MIP Performance Optimization (2025-11-26 Phase 2):
+            REFORMULATED to eliminate small coefficient (1/1400 = 0.000714).
+
+            Instead of: labor_hours_used == production/1400 + overhead
+            We use:     labor_hours_used * 1400 == production + overhead * 1400
+
+            This changes the smallest coefficient from 0.000714 to 1.0,
+            reducing the coefficient range from 10^7 to ~10^4.
 
             Overhead includes:
             - Startup time (if producing)
@@ -2528,52 +2564,42 @@ class SlidingWindowModel(BaseOptimizationModel):
             if not production_rate or production_rate <= 0:
                 return Constraint.Skip
 
-            # Total production
+            # Total production (units)
             total_production = sum(
                 model.production[node_id, prod, t]
                 for prod in model.products
                 if (node_id, prod, t) in model.production
             )
-            production_time = total_production / production_rate
 
-            # Calculate overhead time (startup + shutdown + changeover)
-            # OPTIMIZED: Use pre-aggregated variables instead of inline sums
-            overhead_time = 0
+            # Calculate scaled overhead (overhead_time × production_rate)
+            # This avoids dividing by production_rate, keeping coefficients ≥ 1.0
+            scaled_overhead = 0
             if hasattr(model, 'total_starts') and (node_id, t) in model.total_starts:
                 # Get overhead parameters from node capabilities
                 startup_hours = node.capabilities.daily_startup_hours or 0.5
                 shutdown_hours = node.capabilities.daily_shutdown_hours or 0.25
                 changeover_hours = node.capabilities.default_changeover_hours or 0.5
 
-                # Use pre-computed aggregation variables (reduces constraint complexity)
-                # Old: 2N binary variables in inline sums
-                # New: 1 binary + 1 integer variable (N linking constraints elsewhere)
-                #
-                # Overhead calculation:
+                # Overhead calculation (scaled by production_rate):
                 # - Startup/shutdown: applied once if producing (any products)
                 # - Changeover: applied per product start
-                # If 1 product: overhead = startup + shutdown (1 start, no changeover between products)
-                # If 2 products: overhead = startup + shutdown + 1 changeover (2 starts)
-                # If N products: overhead = startup + shutdown + (N-1) changeovers (N starts)
-                #
-                # Formula: overhead = (startup + shutdown) * any_production +
-                #                     changeover * (total_starts - any_production)
-                overhead_time = (
+                # Formula: scaled_overhead = production_rate × overhead_time
+                #        = production_rate × [(startup + shutdown) × any_production +
+                #                             changeover × (total_starts - any_production)]
+                scaled_overhead = production_rate * (
                     (startup_hours + shutdown_hours) * model.any_production[node_id, t] +
                     changeover_hours * (model.total_starts[node_id, t] - model.any_production[node_id, t])
                 )
-
-            # Total time = production time + overhead time
-            total_time = production_time + overhead_time
 
             # Get available hours
             labor_day = self.labor_calendar.get_labor_day(t)
             if not labor_day:
                 return total_production == 0  # No labor → no production
 
-            # Link to labor hours variable (if it exists)
+            # Reformulated constraint: labor_hours × rate == production + scaled_overhead
+            # This has coefficient 1.0 for production instead of 1/1400 = 0.000714
             if (node_id, t) in model.labor_hours_used:
-                return model.labor_hours_used[node_id, t] == total_time
+                return model.labor_hours_used[node_id, t] * production_rate == total_production + scaled_overhead
             else:
                 # No labor variable, skip linking
                 return Constraint.Skip

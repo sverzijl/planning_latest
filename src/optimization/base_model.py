@@ -293,9 +293,9 @@ class BaseOptimizationModel(ABC):
             solver.highs_options['mip_heuristic_run_zi_round'] = True
             solver.highs_options['mip_heuristic_run_shifting'] = True
         else:
-            # MIP Performance Optimization (2025-11-25): Increased heuristic effort
-            # for better incumbent solutions and faster gap closure (was 0.5)
-            solver.highs_options['mip_heuristic_effort'] = 0.8
+            # MIP Performance Optimization (2025-11-26 Phase 2): Maximum heuristic effort
+            # for best incumbent solutions and fastest gap closure (was 0.5 → 0.8 → 1.0)
+            solver.highs_options['mip_heuristic_effort'] = 1.0
             solver.highs_options['mip_lp_age_limit'] = 10
 
         # Solve (with safe solution loading for APPSI)
@@ -640,9 +640,9 @@ class BaseOptimizationModel(ABC):
                 options['mip_heuristic_run_zi_round'] = True  # Enable ZI Round heuristic
                 options['mip_heuristic_run_shifting'] = True  # Enable Shifting heuristic
             else:
-                # MIP Performance Optimization (2025-11-25): Increased heuristic effort
-                # for better incumbent solutions and faster gap closure (was 0.5)
-                options['mip_heuristic_effort'] = 0.8
+                # MIP Performance Optimization (2025-11-26 Phase 2): Maximum heuristic effort
+                # for best incumbent solutions and fastest gap closure (was 0.5 → 0.8 → 1.0)
+                options['mip_heuristic_effort'] = 1.0
                 options['mip_lp_age_limit'] = 10  # Standard LP age limit (HiGHS default)
 
         # Create solver
