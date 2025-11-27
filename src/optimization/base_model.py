@@ -316,6 +316,10 @@ class BaseOptimizationModel(ABC):
             print(f"  best_objective_bound: {getattr(results, 'best_objective_bound', None)}")
 
             # Check if we should load solution
+            # Load for optimal OR if we have a feasible solution (e.g., maxTimeLimit with feasible)
+            has_feasible = (hasattr(results, 'best_feasible_objective') and
+                           results.best_feasible_objective is not None)
+
             if results.termination_condition == AppsiTC.optimal:
                 print(f"  -> Solver reports OPTIMAL")
                 # Safe to load solution
@@ -327,8 +331,17 @@ class BaseOptimizationModel(ABC):
                     # This is OK - we can continue with results.best_feasible_objective
                     print(f"  -> Solution loading failed (but have objective): {load_error}")
                     pass
+            elif has_feasible:
+                # Time limit or other condition but we have a feasible solution
+                print(f"  -> Solver has feasible solution (termination: {results.termination_condition})")
+                try:
+                    solver.load_vars()
+                    print(f"  -> Solution loaded successfully")
+                except Exception as load_error:
+                    print(f"  -> Solution loading failed: {load_error}")
+                    pass
             else:
-                print(f"  -> Solver did NOT report optimal")
+                print(f"  -> No feasible solution found (termination: {results.termination_condition})")
         except RuntimeError as e:
             # Catch APPSI RuntimeError during solve
             solve_time = time.time() - solve_start
