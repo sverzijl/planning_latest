@@ -469,3 +469,64 @@ class FEFOBatchAllocator:
             remaining_to_thaw -= thaw_qty
 
         return thawed_batches
+
+    def apply_disposal(
+        self,
+        node_id: str,
+        product_id: str,
+        state: str,
+        quantity: float,
+        disposal_date: Date
+    ) -> List[Batch]:
+        """Remove disposed inventory from batch tracking.
+
+        When the optimization model disposes of expired inventory, this method
+        removes those batches from the FEFO allocator's tracking to prevent
+        them from appearing in the Daily Inventory Snapshot.
+
+        Args:
+            node_id: Node where disposal occurs
+            product_id: Product ID
+            state: Product state being disposed (ambient/frozen/thawed)
+            quantity: Quantity to dispose
+            disposal_date: Date of disposal
+
+        Returns:
+            List of batches that were disposed (fully or partially)
+        """
+        inv_key = (node_id, product_id, state)
+        available_batches = self.batch_inventory.get(inv_key, [])
+
+        # Sort by age (oldest first - dispose oldest first, matching FEFO)
+        sorted_batches = sorted(available_batches, key=lambda b: b.state_entry_date)
+
+        disposed_batches = []
+        remaining_to_dispose = quantity
+
+        for batch in sorted_batches:
+            if remaining_to_dispose <= 0:
+                break
+
+            if batch.quantity <= 0:
+                continue
+
+            dispose_qty = min(batch.quantity, remaining_to_dispose)
+            batch.quantity -= dispose_qty
+            remaining_to_dispose -= dispose_qty
+
+            # Track disposed batch
+            disposed_batches.append({
+                'batch_id': batch.id,
+                'disposed_quantity': dispose_qty,
+                'disposal_date': disposal_date,
+                'node_id': node_id,
+                'product_id': product_id,
+                'state': state
+            })
+
+            # Remove batch from inventory if fully disposed
+            if batch.quantity <= 0:
+                if batch in self.batch_inventory[inv_key]:
+                    self.batch_inventory[inv_key].remove(batch)
+
+        return disposed_batches

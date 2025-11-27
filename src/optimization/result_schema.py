@@ -405,6 +405,13 @@ class OptimizationSolution(BaseModel):
                     "DemandKey = (node_id: str, product_id: str, date: Date)"
     )
 
+    disposal_flows: Optional[Dict[Any, float]] = Field(
+        None,
+        description="Disposal events for expired inventory: Dict[DisposalKey, float] where "
+                    "DisposalKey = (node_id: str, product_id: str, state: str, date: Date). "
+                    "Used by FEFO allocator to remove disposed batches from inventory tracking."
+    )
+
     shortages: Optional[Dict[Any, float]] = Field(
         None,
         description="Unmet demand (ShortagesDict): Dict[DemandKey, float] where "

@@ -3379,6 +3379,20 @@ class SlidingWindowModel(BaseOptimizationModel):
         solution['thaw_flows'] = thaw_flows
         solution['freeze_flows'] = freeze_flows
 
+        # Extract disposal flows (expired inventory removed from system)
+        # Key: (node_id, product_id, state, date) - includes state for FEFO processing
+        disposal_flows = {}
+        if hasattr(model, 'disposal'):
+            for (node_id, prod, state, t) in model.disposal:
+                try:
+                    qty = value(model.disposal[node_id, prod, state, t])
+                    if qty and qty > 0.01:
+                        disposal_flows[(node_id, prod, state, t)] = qty
+                except:
+                    pass
+
+        solution['disposal_flows'] = disposal_flows
+
         # Extract in-transit flows (pipeline inventory tracking)
         # Convert to shipments_by_route format for UI compatibility (using delivery_date)
         shipments_by_route = {}
@@ -3903,6 +3917,7 @@ class SlidingWindowModel(BaseOptimizationModel):
             production_by_date_product=solution_dict.get('production_by_date_product'),
             thaw_flows=solution_dict.get('thaw_flows'),
             freeze_flows=solution_dict.get('freeze_flows'),
+            disposal_flows=solution_dict.get('disposal_flows'),
             shortages=solution_dict.get('shortages'),
             demand_consumed=solution_dict.get('demand_consumed'),  # For Daily Snapshot consumption tracking
             truck_assignments=truck_assignments if truck_assignments else None,
@@ -4045,6 +4060,7 @@ class SlidingWindowModel(BaseOptimizationModel):
         shipments_by_route = getattr(self.solution, 'shipments_by_route_product_date', {})
         freeze_flows = self.solution.freeze_flows or {}
         thaw_flows = self.solution.thaw_flows or {}
+        disposal_flows = self.solution.disposal_flows or {}
 
         # Create batches from initial inventory (at start_date)
         if self.initial_inventory:
@@ -4146,6 +4162,12 @@ class SlidingWindowModel(BaseOptimizationModel):
 
         for (node_id, prod, thaw_date), qty in sorted(thaw_flows.items(), key=lambda x: x[0][2]):
             allocator.apply_thaw_transition(node_id, prod, qty, thaw_date)
+
+        # Process disposal events (expired inventory removed from tracking)
+        # Key format: (node_id, product_id, state, disposal_date)
+        for (node_id, prod, state, disposal_date), qty in sorted(disposal_flows.items(), key=lambda x: x[0][3]):
+            if qty > 0:
+                allocator.apply_disposal(node_id, prod, state, qty, disposal_date)
 
         # Daily snapshots are now recorded during processing:
         # - At production_date when batch created
