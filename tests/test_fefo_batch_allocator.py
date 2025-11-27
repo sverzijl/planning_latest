@@ -183,6 +183,9 @@ class TestFEFOShipmentAllocation:
             delivery_date=date(2025, 10, 17)
         )
 
+        # Apply pending moves to finalize locations
+        allocator.apply_pending_moves()
+
         # Assert
         assert len(allocated) == 1  # Should allocate from 1 batch (oldest has enough)
         assert allocated[0]['batch_id'] == 'batch_old'
@@ -246,6 +249,9 @@ class TestFEFOShipmentAllocation:
             delivery_date=date(2025, 10, 17)
         )
 
+        # Apply pending moves to finalize locations
+        allocator.apply_pending_moves()
+
         # Assert
         assert len(allocated) == 2  # From 2 batches
         assert allocated[0]['batch_id'] == 'batch_old'
@@ -292,6 +298,9 @@ class TestFEFOShipmentAllocation:
             quantity=1000.0,
             delivery_date=date(2025, 10, 17)
         )
+
+        # Apply pending moves to finalize locations
+        allocator.apply_pending_moves()
 
         # Assert
         assert batch.location_id == '6104'  # Moved to destination
@@ -467,6 +476,9 @@ class TestIntegrationWithSlidingWindow:
         Scenario:
         - Day 1: Produce 1000 units at 6122
         - Day 2: Ship 600 to 6104, 400 to Lineage
+
+        FIX (2025-11): Two-phase allocation now allows multiple shipments
+        from same origin. Both shipments should succeed.
         """
         # Arrange
         solution = {
@@ -492,22 +504,26 @@ class TestIntegrationWithSlidingWindow:
         # Act - process in order
         batches = allocator.create_batches_from_production(solution)
 
-        # Manually allocate shipments (simulating what process_solution would do)
+        # Allocate shipments (batches stay at origin until apply_pending_moves)
         allocator.allocate_shipment('6122', '6104', 'Product_A', 'ambient', 600.0, date(2025, 10, 17))
         allocator.allocate_shipment('6122', 'Lineage', 'Product_A', 'ambient', 400.0, date(2025, 10, 17))
+
+        # Apply pending moves after all allocations complete
+        allocator.apply_pending_moves()
 
         # Assert - batches created
         assert len(batches) == 1
         batch = batches[0]
-        # Note: Batch gets moved to first destination (6104) after first allocation
-        # Second shipment to Lineage can't find batch at 6122 anymore!
-        # This test reveals we need to allocate ALL shipments before moving batches
 
-        # Check allocations - only first shipment succeeds
-        assert len(allocator.shipment_allocations) == 1  # Only first shipment allocated
+        # With two-phase allocation, BOTH shipments should succeed
+        assert len(allocator.shipment_allocations) == 2
         assert allocator.shipment_allocations[0]['destination'] == '6104'
         assert allocator.shipment_allocations[0]['quantity'] == 600.0
+        assert allocator.shipment_allocations[1]['destination'] == 'Lineage'
+        assert allocator.shipment_allocations[1]['quantity'] == 400.0
 
-        # Batch at 6104 with 400 remaining
+        # Batch fully consumed (600 + 400 = 1000)
+        assert batch.quantity == 0.0
+        # Final location is first destination processed (6104)
+        # Since batch is fully consumed (qty=0), location is informational only
         assert batch.location_id == '6104'
-        assert batch.quantity == 400.0

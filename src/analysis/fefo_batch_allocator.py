@@ -113,6 +113,10 @@ class FEFOBatchAllocator:
         # Shipment allocations (for genealogy)
         self.shipment_allocations: List[Dict] = []
 
+        # Deferred batch movements (two-phase allocation)
+        # Allows multiple shipments from same origin before moving batches
+        self.pending_moves: List[Dict] = []
+
     def create_batches_from_production(self, solution) -> List[Batch]:
         """Create batches from production events in solution.
 
@@ -236,32 +240,73 @@ class FEFOBatchAllocator:
                 'state': state
             })
 
-            # Update batch quantity
+            # Update batch quantity (reduce available stock at origin)
             batch.quantity -= allocated_qty
             remaining_to_allocate -= allocated_qty
 
-            # Record location AFTER shipment (on delivery_date)
-            # Update batch location (move to destination)
-            # Remove from origin inventory
-            if batch in self.batch_inventory[inv_key]:
-                self.batch_inventory[inv_key].remove(batch)
-
-            # Update location
-            batch.location_id = destination_node
-
-            # Record snapshot at delivery (batch now at destination)
-            batch.record_snapshot(delivery_date)
-
-            # Add to destination inventory (only if quantity remains)
-            dest_inv_key = (destination_node, product_id, state)
-            if batch.quantity > 0:
-                self.batch_inventory[dest_inv_key].append(batch)
+            # Queue the move for later - DON'T move batch yet!
+            # This allows multiple shipments from same origin to allocate
+            # from the same batch before it gets moved.
+            self.pending_moves.append({
+                'batch': batch,
+                'origin': origin_node,
+                'destination': destination_node,
+                'product_id': product_id,
+                'delivery_date': delivery_date,
+                'state': state,
+                'allocated_qty': allocated_qty
+            })
 
         # Store allocation for genealogy
         if allocations:
             self.shipment_allocations.extend(allocations)
 
         return allocations
+
+    def apply_pending_moves(self):
+        """Apply all pending batch moves after allocations complete.
+
+        This two-phase approach allows multiple shipments from same origin
+        to allocate from the same batch before it's moved.
+
+        Call this AFTER all allocate_shipment() calls are complete.
+        """
+        # Track which batches have been processed to handle duplicates
+        # (same batch may appear multiple times if partially allocated)
+        processed_batches = set()
+
+        for move in self.pending_moves:
+            batch = move['batch']
+            origin = move['origin']
+            dest = move['destination']
+            state = move['state']
+            delivery_date = move['delivery_date']
+
+            # Skip if already processed (batch may have multiple partial allocations)
+            batch_key = (id(batch), origin, state)
+            if batch_key in processed_batches:
+                continue
+            processed_batches.add(batch_key)
+
+            # Remove from origin inventory (if still there)
+            inv_key = (origin, batch.product_id, state)
+            if batch in self.batch_inventory[inv_key]:
+                self.batch_inventory[inv_key].remove(batch)
+
+            # Update batch location to final destination
+            batch.location_id = dest
+
+            # Record snapshot at delivery date
+            batch.record_snapshot(delivery_date)
+
+            # Add to destination inventory (only if quantity remains)
+            if batch.quantity > 0:
+                dest_inv_key = (dest, batch.product_id, state)
+                if batch not in self.batch_inventory[dest_inv_key]:
+                    self.batch_inventory[dest_inv_key].append(batch)
+
+        # Clear pending moves
+        self.pending_moves = []
 
     def apply_freeze_transition(
         self,

@@ -4057,6 +4057,9 @@ class SlidingWindowModel(BaseOptimizationModel):
                     # Initial inventory exists at inventory_snapshot_date with unknown age
                     # Estimate production date conservatively based on state shelf life
                     # This prevents showing "future" production dates in Daily Inventory Snapshot
+                    #
+                    # NOTE: Age estimation uses midpoint heuristics (ambient=8d, frozen=60d, thawed=7d)
+                    # Future enhancement: Parse actual age/production_date from inventory data if available
                     if state == 'ambient':
                         # Ambient shelf life: 17 days
                         # Assume midpoint age (8 days) for conservative estimate
@@ -4079,7 +4082,7 @@ class SlidingWindowModel(BaseOptimizationModel):
                         estimated_production_date = self.start_date - timedelta(days=estimated_age_days)
 
                     batch = Batch(
-                        id=f"INIT_{product_id[:15]}_{state}_{uuid.uuid4().hex[:6]}",
+                        id=f"INIT_{product_id}_{state}_{uuid.uuid4().hex[:8]}",
                         product_id=product_id,
                         manufacturing_site_id=node_id,
                         production_date=estimated_production_date,  # ✅ FIX: Past date, not start_date
@@ -4115,7 +4118,12 @@ class SlidingWindowModel(BaseOptimizationModel):
         for (origin, dest, prod, delivery_date), qty in sorted(shipments_by_route.items(), key=lambda x: x[0][3]):
             route = next((r for r in self.routes
                          if r.origin_node_id == origin and r.destination_node_id == dest), None)
-            state = 'ambient'
+
+            # Derive state from route transport mode (fixes hardcoded 'ambient' bug)
+            if route and hasattr(route, 'transport_mode'):
+                state = route.transport_mode.value if hasattr(route.transport_mode, 'value') else str(route.transport_mode)
+            else:
+                state = 'ambient'  # Fallback if route not found
 
             allocator.allocate_shipment(
                 origin_node=origin,
@@ -4126,6 +4134,11 @@ class SlidingWindowModel(BaseOptimizationModel):
                 delivery_date=delivery_date,
                 use_weighted_age=use_weighted_age  # LP uses weighted age for sorting
             )
+
+        # Apply pending batch moves AFTER all shipments allocated
+        # This two-phase approach allows multiple shipments from same origin
+        # to allocate from the same batch before batches are moved
+        allocator.apply_pending_moves()
 
         # Process state transitions (both methods)
         for (node_id, prod, freeze_date), qty in sorted(freeze_flows.items(), key=lambda x: x[0][2]):
